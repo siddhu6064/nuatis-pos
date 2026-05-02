@@ -1,18 +1,17 @@
 import type { Service } from "@/lib/services";
-import { CATEGORY_COLORS, formatPrice, formatDuration } from "@/lib/services";
+import { formatPrice, formatDuration } from "@/lib/services";
 
 interface ServiceTileProps {
   service: Service;
+  color: string;
   onTap: (service: Service) => void;
 }
 
-export function ServiceTile({ service, onTap }: ServiceTileProps) {
-  const bgColor = CATEGORY_COLORS[service.category];
-
+export function ServiceTile({ service, color, onTap }: ServiceTileProps) {
   return (
     <button
       onClick={() => onTap(service)}
-      style={{ backgroundColor: bgColor }}
+      style={{ backgroundColor: color }}
       className="
         flex flex-col justify-between
         min-h-[140px] w-full

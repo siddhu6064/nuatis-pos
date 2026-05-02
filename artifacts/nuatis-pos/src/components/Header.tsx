@@ -12,6 +12,10 @@ interface HeaderProps {
   onOpenReports: () => void;
   heldCount: number;
   onOpenHeldTickets: () => void;
+  // Vertical switcher
+  activeVerticalDisplayName: string;
+  switcherDisabled: boolean;
+  onOpenVerticalSwitcher: () => void;
 }
 
 function useClock() {
@@ -37,6 +41,9 @@ export function Header({
   onOpenReports,
   heldCount,
   onOpenHeldTickets,
+  activeVerticalDisplayName,
+  switcherDisabled,
+  onOpenVerticalSwitcher,
 }: HeaderProps) {
   const clock = useClock();
   const [accountOpen, setAccountOpen] = useState(false);
@@ -68,7 +75,7 @@ export function Header({
       className="flex items-center justify-between px-6 py-3 border-b border-black/10 flex-shrink-0"
       style={{ backgroundColor: "#F8F7F4" }}
     >
-      {/* Left: brand + held pill + reports link */}
+      {/* Left: brand + vertical pill + held pill + reports link */}
       <div className="flex items-center gap-3">
         <span
           className="text-[22px] font-bold text-gray-900 tracking-tight"
@@ -77,7 +84,28 @@ export function Header({
           Nuatis POS
         </span>
 
-        {/* Held tickets pill — only when count > 0 */}
+        {/* Vertical pill */}
+        <button
+          onClick={
+            !switcherDisabled ? onOpenVerticalSwitcher : undefined
+          }
+          disabled={switcherDisabled}
+          title={
+            switcherDisabled ? "Clear cart to switch verticals" : undefined
+          }
+          className="h-[28px] px-3 rounded-md flex items-center gap-1 text-[13px] font-semibold transition-all duration-100"
+          style={{
+            fontFamily: "'Epilogue', sans-serif",
+            backgroundColor: "white",
+            color: switcherDisabled ? "#D1D5DB" : "#E84A00",
+            border: `1.5px solid ${switcherDisabled ? "#E5E7EB" : "#E84A00"}`,
+            cursor: switcherDisabled ? "not-allowed" : "pointer",
+          }}
+        >
+          {activeVerticalDisplayName} ▾
+        </button>
+
+        {/* Held tickets pill */}
         {heldCount > 0 && (
           <button
             onClick={actionsEnabled ? onOpenHeldTickets : undefined}
@@ -119,7 +147,6 @@ export function Header({
 
       {/* Right: staff + account */}
       <div className="flex items-center gap-4">
-        {/* Active staff */}
         <div className="flex items-center gap-2">
           <div className="text-right">
             <p
@@ -144,7 +171,6 @@ export function Header({
           </button>
         </div>
 
-        {/* Account dropdown */}
         <div className="relative" ref={accountRef}>
           <button
             onClick={() => setAccountOpen((o) => !o)}

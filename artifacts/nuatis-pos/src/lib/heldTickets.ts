@@ -1,4 +1,5 @@
 import type { CartLine, CartCustomer } from "@/hooks/useCart";
+import { heldTicketsKey } from "@/lib/storage";
 
 export interface HeldTicket {
   id: string;
@@ -9,38 +10,46 @@ export interface HeldTicket {
   compReason?: string | null;
 }
 
-const HELD_KEY = "nuatis-pos:heldTickets";
 const MAX_HELD = 5;
 
-export function getHeldTickets(): HeldTicket[] {
+export function getHeldTickets(verticalId: string): HeldTicket[] {
   try {
-    const raw = localStorage.getItem(HELD_KEY);
+    const raw = localStorage.getItem(heldTicketsKey(verticalId));
     return raw ? (JSON.parse(raw) as HeldTicket[]) : [];
   } catch {
     return [];
   }
 }
 
-function saveHeldTickets(tickets: HeldTicket[]): void {
-  localStorage.setItem(HELD_KEY, JSON.stringify(tickets));
+function saveHeldTickets(verticalId: string, tickets: HeldTicket[]): void {
+  localStorage.setItem(heldTicketsKey(verticalId), JSON.stringify(tickets));
 }
 
-export function holdTicket(ticket: HeldTicket): void {
-  const current = getHeldTickets();
+export function holdTicket(ticket: HeldTicket, verticalId: string): void {
+  const current = getHeldTickets(verticalId);
   const updated = [...current, ticket];
   const capped = updated.length > MAX_HELD ? updated.slice(-MAX_HELD) : updated;
-  saveHeldTickets(capped);
+  saveHeldTickets(verticalId, capped);
 }
 
-export function resumeTicket(id: string): HeldTicket | null {
-  const current = getHeldTickets();
+export function resumeTicket(
+  id: string,
+  verticalId: string,
+): HeldTicket | null {
+  const current = getHeldTickets(verticalId);
   const ticket = current.find((t) => t.id === id) ?? null;
   if (!ticket) return null;
-  saveHeldTickets(current.filter((t) => t.id !== id));
+  saveHeldTickets(
+    verticalId,
+    current.filter((t) => t.id !== id),
+  );
   return ticket;
 }
 
-export function removeHeldTicket(id: string): void {
-  const current = getHeldTickets();
-  saveHeldTickets(current.filter((t) => t.id !== id));
+export function removeHeldTicket(id: string, verticalId: string): void {
+  const current = getHeldTickets(verticalId);
+  saveHeldTickets(
+    verticalId,
+    current.filter((t) => t.id !== id),
+  );
 }

@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { CartLine as CartLineType } from "@/hooks/useCart";
 import type { Modifier } from "@/lib/modifiers";
 import { STAFF } from "@/lib/staff";
-import { getModifiersForService } from "@/lib/modifiers";
 import { formatCurrency } from "@/lib/currency";
 import {
   calcLineTotalCents,
@@ -10,6 +9,7 @@ import {
   MANAGER_DISCOUNT_THRESHOLD,
 } from "@/lib/cartMath";
 import { useManagerOverride } from "@/hooks/useManagerOverride";
+import { useActiveVertical } from "@/hooks/useActiveVertical";
 
 interface CartLineProps {
   line: CartLineType;
@@ -37,6 +37,7 @@ export function CartLine({
   onSetDiscount,
 }: CartLineProps) {
   const { requestManagerOverride } = useManagerOverride();
+  const { config } = useActiveVertical();
 
   const [staffPickerOpen, setStaffPickerOpen] = useState(false);
   const [modPickerOpen, setModPickerOpen] = useState(false);
@@ -47,7 +48,10 @@ export function CartLine({
   const lineTotal = calcLineTotalCents(line);
   const discountCents = calcLineDiscountCents(line);
   const assignedStaff = STAFF.find((s) => s.id === line.staffId);
-  const applicableMods = getModifiersForService(line.serviceId);
+
+  // Modifiers come from the active vertical's config (supports both salon + spa)
+  const applicableMods: Modifier[] =
+    config.modifiersByService[line.serviceId] ?? [];
   const hasApplicableMods = applicableMods.length > 0;
   const hasDiscount = line.discountPercent > 0;
   const isManagerDiscount = line.discountPercent > MANAGER_DISCOUNT_THRESHOLD;
@@ -65,7 +69,6 @@ export function CartLine({
         `Line discount of ${val}%`,
       );
       if (!approved) {
-        // Clear staged value; picker stays open for retry
         setCustomRaw("");
         return;
       }

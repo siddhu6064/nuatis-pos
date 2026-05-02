@@ -1,5 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { CartLine, CartCustomer } from "@/hooks/useCart";
+import { transactionsKey } from "@/lib/storage";
+import { useActiveVertical } from "@/hooks/useActiveVertical";
 
 export type CheckoutState =
   | "idle"
@@ -47,22 +49,27 @@ export interface ConfirmData {
   compReason: string | null;
 }
 
-const TRANSACTIONS_KEY = "nuatis-pos:transactions";
-
-function appendTransaction(tx: Transaction): void {
+function appendTransaction(tx: Transaction, verticalId: string): void {
   try {
-    const raw = localStorage.getItem(TRANSACTIONS_KEY);
+    const key = transactionsKey(verticalId);
+    const raw = localStorage.getItem(key);
     const existing: Transaction[] = raw
       ? (JSON.parse(raw) as Transaction[])
       : [];
     const updated = [...existing, tx].slice(-10);
-    localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(updated));
+    localStorage.setItem(key, JSON.stringify(updated));
   } catch {
     // silent fail
   }
 }
 
 export function useCheckout(onComplete: () => void) {
+  const { activeVerticalId } = useActiveVertical();
+  const verticalIdRef = useRef(activeVerticalId);
+  useEffect(() => {
+    verticalIdRef.current = activeVerticalId;
+  }, [activeVerticalId]);
+
   const [state, setState] = useState<CheckoutState>("idle");
   const [tipCents, setTipCents] = useState(0);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
@@ -103,7 +110,6 @@ export function useCheckout(onComplete: () => void) {
   const confirmCheckout = useCallback((data: ConfirmData) => {
     setProcessingTotalCents(data.totalCents);
     setState("processing");
-    // Comped tickets skip the full card-read simulation — 800ms instead of 2000ms
     const delay = data.compApplied ? 800 : 2000;
     setTimeout(() => {
       const tx: Transaction = {
@@ -137,7 +143,7 @@ export function useCheckout(onComplete: () => void) {
           receiptDelivery: delivery,
           receiptDestination: destination,
         };
-        appendTransaction(updated);
+        appendTransaction(updated, verticalIdRef.current);
         return updated;
       });
       setState("completed");

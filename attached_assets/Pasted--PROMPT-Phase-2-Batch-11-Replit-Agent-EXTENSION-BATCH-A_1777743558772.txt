@@ -1,0 +1,169 @@
+▶ PROMPT [Phase 2 · Batch 11 · Replit Agent — EXTENSION BATCH · ARCHITECTURAL THESIS TEST]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-10 complete: full salon operator loop including discounts, comp, manager PIN override, refunds. This is EXTENSION batch 3 of 3 — the architectural thesis test. Validates that ONE UI engine handles multiple verticals via config alone.
+
+Adds Spa vertical (12 hardcoded services + modifiers + business identity) and a header vertical switcher. Per-vertical localStorage namespacing — cart, transactions, held tickets are isolated per vertical. Active staff is shared across verticals. Salon data migrates into the new salon namespace on first load. Production will lock each tenant to one vertical at signup — the switcher is prototype-only.
+
+GOAL
+Operator sees a vertical pill in the header showing current vertical (Salon | Spa). Tapping it opens a switcher modal listing both verticals. Switching Spa ↔ Salon swaps the entire register grid + colors + business identity on receipts + per-vertical cart/transactions/held-tickets state. Active staff and operator session persist across switches. The switcher is gated — disabled if cart has items or checkout is non-idle.
+
+SCOPE — BUILD THIS — VERTICAL CONFIG FOUNDATION
+
+1. lib/verticals.ts — central per-vertical config:
+   export type VerticalId = 'salon' | 'spa';
+   export type VerticalConfig = {
+     id: VerticalId;
+     displayName: string;
+     business: { name: string; address: string; phone: string };
+     services: Service[];
+     modifiersByService: Record<string, Modifier[]>;
+     categoryColors: Record<string, string>; // category -> hex
+   };
+   export const VERTICALS: Record<VerticalId, VerticalConfig> = { salon: {...}, spa: {...} };
+   export const getActiveVerticalConfig(id: VerticalId): VerticalConfig.
+
+   Salon config — wrap existing data: SERVICES from lib/services.ts, MODIFIERS_BY_SERVICE from lib/modifiers.ts, business { name: "Nuatis POS Demo Salon", address: "123 Main St, Austin, TX 78701", phone: "(512) 555-0100" }, categoryColors { cuts: "#FBCFE8", color: "#FEF3C7", treatments: "#E9D5FF", styling: "#FED7AA" }.
+
+2. Spa services — 12 services, 4 categories:
+   Massages (4):
+   - spa_swedish_60: Swedish Massage, $90, 60 min, category 'massages'
+   - spa_deep_tissue_60: Deep Tissue Massage, $110, 60 min, 'massages'
+   - spa_hot_stone_60: Hot Stone Massage, $130, 60 min, 'massages'
+   - spa_prenatal_60: Prenatal Massage, $95, 60 min, 'massages'
+   Facials (3):
+   - spa_classic_facial: Classic Facial, $85, 60 min, 'facials'
+   - spa_antiaging_facial: Anti-Aging Facial, $125, 75 min, 'facials'
+   - spa_hydrating_facial: Hydrating Facial, $95, 60 min, 'facials'
+   Body (3):
+   - spa_body_scrub: Body Scrub, $75, 45 min, 'body'
+   - spa_detox_wrap: Detox Body Wrap, $110, 60 min, 'body'
+   - spa_aroma_wrap: Aromatherapy Wrap, $95, 60 min, 'body'
+   Wellness (2):
+   - spa_reflexology: Foot Reflexology, $65, 30 min, 'wellness'
+   - spa_sauna: Sauna Session, $40, 30 min, 'wellness'
+
+3. Spa modifiers — fixed-price chips, same pattern as salon:
+   - spa_swedish_60: [{ id: 'addon_30min_upgrade_swedish', name: '+30 min Upgrade', priceCents: 4000 }, { id: 'addon_aromatherapy', name: 'Aromatherapy Oil', priceCents: 2000 }]
+   - spa_deep_tissue_60: [{ id: 'addon_30min_upgrade_deep', name: '+30 min Upgrade', priceCents: 5000 }]
+   - spa_hot_stone_60: [{ id: 'addon_30min_upgrade_hotstone', name: '+30 min Upgrade', priceCents: 6000 }]
+   - spa_classic_facial: [{ id: 'addon_led_light', name: 'LED Light Therapy', priceCents: 2500 }, { id: 'addon_eye_treatment_classic', name: 'Eye Treatment', priceCents: 2000 }]
+   - spa_antiaging_facial: [{ id: 'addon_eye_treatment_aa', name: 'Eye Treatment', priceCents: 2000 }]
+   - All other 7 spa services: empty arrays (no modifiers).
+
+4. Spa category colors — distinct palette so visual difference is obvious at a glance:
+   - massages: '#A7F3D0' (mint)
+   - facials: '#FECDD3' (blush)
+   - body: '#FDE68A' (ochre)
+   - wellness: '#BAE6FD' (sky)
+
+5. Spa business identity:
+   - name: "Nuatis POS Demo Spa"
+   - address: "456 Wellness Ave, Austin, TX 78704"
+   - phone: "(512) 555-0200"
+
+SCOPE — BUILD THIS — ACTIVE VERTICAL STATE + NAMESPACED STORAGE
+
+6. hooks/useActiveVertical.ts — persists active vertical id to localStorage key `nuatis-pos:activeVerticalId`. Default 'salon' on first load. Provides { activeVerticalId, setActiveVerticalId, config } where config = VERTICALS[activeVerticalId].
+
+7. lib/storage.ts (new) — centralize localStorage keys behind small helpers:
+   - cartKey(verticalId) → \`nuatis-pos:\${verticalId}:cart\`
+   - transactionsKey(verticalId) → \`nuatis-pos:\${verticalId}:transactions\`
+   - heldTicketsKey(verticalId) → \`nuatis-pos:\${verticalId}:heldTickets\`
+   - Constant: ACTIVE_STAFF_KEY = 'nuatis-pos:activeStaffId' (shared, no vertical prefix)
+   - Constant: ACTIVE_VERTICAL_KEY = 'nuatis-pos:activeVerticalId'
+
+8. ONE-TIME MIGRATION on first load — in lib/storage.ts, exported runMigrations() called from App mount:
+   - If `nuatis-pos:cart` exists → copy value to `nuatis-pos:salon:cart` (only if salon key doesn't already exist) → delete old key.
+   - Same for `nuatis-pos:transactions` → `nuatis-pos:salon:transactions`.
+   - Same for `nuatis-pos:heldTickets` → `nuatis-pos:salon:heldTickets`.
+   - Idempotent: re-running does nothing if old keys already absent.
+   - Wrap in try/catch — silent migration; log to console only on error.
+
+9. hooks/useCart.ts — read/write to cartKey(activeVerticalId). When activeVerticalId changes, useCart reloads cart state from the new namespace. Don't merge or copy across — they are isolated.
+
+10. hooks/useCheckout.ts — write transactions to transactionsKey(activeVerticalId). On read (Today's Sales overlay), reads from current vertical's namespace.
+
+11. lib/heldTickets.ts — all functions take verticalId param OR read from active vertical (cleaner API: take activeVerticalId as a function parameter). Read/write to heldTicketsKey(verticalId).
+
+12. Cart line tile-tap rule — services from lib/verticals.ts via active config. Services injected from active vertical config replace direct imports of lib/services.ts in components (or services.ts re-exports the salon list for backwards compat — your call, just be consistent).
+
+SCOPE — BUILD THIS — VERTICAL SWITCHER UI
+
+13. Header — to the LEFT of "Held: N" pill (and to the LEFT of "Today's Sales" link), add a vertical pill — small rounded-md pill with a chevron icon (text "▾"), showing active vertical's displayName. Style: white background, accent #E84A00 border, accent text, ~28px tall, Epilogue 600 13px.
+
+14. components/VerticalSwitcher.tsx — centered modal, dim backdrop. Lists both verticals as tappable rows:
+    - Each row: name (Fraunces 600 18px), tagline below (Epilogue 400 12px muted) — Salon "Hair, color, and styling services"; Spa "Massage, facials, body treatments, wellness"
+    - Active vertical row gets accent border + bold; tapping it dismisses without change
+    - Tapping the inactive vertical: switches active vertical, dismisses modal
+    - ESC + backdrop click dismiss
+
+15. Vertical pill is DISABLED (greyed out, cursor-not-allowed, with tooltip "Clear cart to switch verticals") when cart has items OR checkoutState !== 'idle'. Held tickets do NOT block switching — held tickets are per-vertical and persist correctly across the switch.
+
+16. After switching: tile grid re-renders with new vertical's services and colors. Cart is whatever the new vertical's cart was last (may be empty or have items if operator was switching back). Today's Sales reflects only current vertical's transactions. Held tickets reflect only current vertical's held tickets.
+
+SCOPE — BUILD THIS — DOWNSTREAM PROPAGATION
+
+17. components/Receipt.tsx — business identity (name, address, phone) at the top of the receipt now comes from active vertical's config, not hardcoded. Same for ReportsOverlay's receipt detail mode.
+
+18. ReportsOverlay — filter transactions by current vertical's namespace only. Stat block + per-staff breakdown + transaction list all reflect only current vertical's data.
+
+19. Modifiers — getModifiersForService now reads from active vertical config's modifiersByService, not the static salon-only lib/modifiers.ts. (Either refactor lib/modifiers.ts to merge in spa modifiers under their own service ids, or have getModifiersForService consult the active config.)
+
+20. Tile colors — ServiceTile reads category color from active vertical config's categoryColors, not hardcoded.
+
+21. Active staff persists across vertical switch (existing behavior unchanged — staff is shared).
+
+SCOPE — DO NOT BUILD
+- No nail_bar vertical (third launch trio member) — beyond extension scope, would balloon the batch.
+- No per-vertical staff specialties.
+- No cross-vertical Today's Sales view ("all verticals combined").
+- No vertical-specific tax rates (still 8.25% flat for both — production uses TaxJar per location).
+- No vertical lock at signup (this is prototype only — switcher allows free toggle).
+- No vertical-specific receipt branding (logos, color theming) beyond business identity text.
+- No animations beyond existing patterns.
+- No new npm dependencies.
+- No data import from other verticals into a fresh empty cart on switch.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- All currency in integer cents
+- File additions: lib/verticals.ts, lib/storage.ts, hooks/useActiveVertical.ts, components/VerticalSwitcher.tsx
+- Existing files updated: hooks/useCart.ts (vertical-aware storage key), hooks/useCheckout.ts (vertical-aware transactions key), lib/heldTickets.ts (vertical-aware key), components/Header.tsx (vertical pill), components/Receipt.tsx (business identity from config), components/ReportsOverlay.tsx (read from current vertical's transactions), components/ServiceTile.tsx (color from config), src/App.tsx (run migration on mount, wrap in ActiveVerticalProvider if context-based)
+- Migration runs once on App mount before any cart/transaction reads
+- Active vertical state can be Context or hook — either works; pick the simpler for the codebase
+
+ACCEPTANCE
+1. App boot — migration runs silently; existing salon cart/transactions/held tickets now under `nuatis-pos:salon:*` keys. Verify in DevTools localStorage.
+2. Old keys (`nuatis-pos:cart`, etc. without vertical prefix) are deleted after migration.
+3. Header shows "Salon ▾" pill (or current vertical) to the left of Held + Today's Sales.
+4. Tapping pill opens VerticalSwitcher modal listing Salon (active, accented) and Spa (inactive).
+5. Tapping Spa row → modal dismisses → register grid re-renders with 12 spa services in distinct colors (mint massages, blush facials, ochre body, sky wellness).
+6. Cart is empty after switching to Spa (a fresh vertical with no prior cart).
+7. Add a Swedish Massage → cart shows it. Tap "+30 min Upgrade" modifier chip → line total = $90 + $40 = $130.
+8. Switch back to Salon (clear spa cart first if needed) → grid reverts to 12 salon services in original colors. Salon cart preserved (whatever was there before).
+9. Vertical pill disabled when cart has items or checkout non-idle. Tooltip "Clear cart to switch verticals" visible on hover.
+10. Held tickets — hold a salon ticket → switch to spa → Held: N pill shows count for spa only (likely 0). Switch back to salon → Held pill shows the salon held ticket again.
+11. Today's Sales — ring up a sale in salon → check Today's Sales (salon transactions visible). Switch to spa → ring up a sale → check Today's Sales — now shows ONLY spa's one transaction. Switch back to salon — shows ONLY salon's transactions.
+12. Receipt for spa transaction shows "Nuatis POS Demo Spa · 456 Wellness Ave, Austin, TX 78704 · (512) 555-0200" at the top. Salon receipt unchanged.
+13. Active staff (Maria) persists across vertical switches without re-prompt.
+14. Refresh page after switching to Spa → app loads on Spa (active vertical persisted via `nuatis-pos:activeVerticalId`).
+15. localStorage keys after exercising both verticals: `nuatis-pos:activeVerticalId`, `nuatis-pos:activeStaffId`, `nuatis-pos:salon:cart`, `nuatis-pos:salon:transactions`, `nuatis-pos:salon:heldTickets`, `nuatis-pos:spa:cart`, `nuatis-pos:spa:transactions`, `nuatis-pos:spa:heldTickets`. No legacy unprefixed keys remain.
+16. Spa Anti-Aging Facial ($125) + Eye Treatment modifier ($20) + 8.25% tax → subtotal $145, tax $11.96, total $156.96. Math correct.
+17. Per-staff revenue in spa Today's Sales reflects spa transactions only.
+18. Modifiers — service-specific behavior preserved per vertical (Swedish has +30 min and Aromatherapy chips, Foot Reflexology has no chips).
+19. Discount + comp + refund + manager PIN override all work in spa (same flows, same code paths).
+20. No console errors, no React key warnings, no Tailwind compile errors.
+21. README.md updated to reflect 2 verticals (salon + spa) and the new localStorage key structure. replit.md component tree section regenerated to include new files.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Sid runs git himself in the Shell tab.
+
+HARD STOP
+After scope is built and acceptance passes, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions
+This is the LAST extension batch of the day. Next prompt will be final wrap-up: README polish, final commit, screenshot capture instructions.

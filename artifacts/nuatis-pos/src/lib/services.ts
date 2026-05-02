@@ -5,7 +5,7 @@ export interface Service {
   name: string;
   priceCents: number;
   durationMinutes: number;
-  category: Category;
+  category: string;
 }
 
 export const SERVICES: Service[] = [
@@ -23,7 +23,7 @@ export const SERVICES: Service[] = [
   { id: "polish-change", name: "Polish Change", priceCents: 1500, durationMinutes: 15, category: "styling" },
 ];
 
-export const CATEGORY_COLORS: Record<Category, string> = {
+export const CATEGORY_COLORS: Record<string, string> = {
   cuts: "#FBCFE8",
   color: "#FEF3C7",
   treatments: "#E9D5FF",

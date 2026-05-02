@@ -1,7 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { STAFF } from "@/lib/staff";
 import type { CartCustomer } from "@/lib/customers";
 import type { Modifier } from "@/lib/modifiers";
+import { cartKey } from "@/lib/storage";
+import { useActiveVertical } from "@/hooks/useActiveVertical";
 
 export interface CartLine {
   lineId: string;
@@ -16,11 +18,9 @@ export interface CartLine {
 
 export type { CartCustomer };
 
-const STORAGE_KEY = "nuatis-pos:cart";
-
-function loadCart(): CartLine[] {
+function loadCart(verticalId: string): CartLine[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(cartKey(verticalId));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Array<Partial<CartLine>>;
     return parsed
@@ -46,15 +46,31 @@ function loadCart(): CartLine[] {
   }
 }
 
-function saveCart(lines: CartLine[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(lines));
-}
-
 export function useCart() {
-  const [lines, setLines] = useState<CartLine[]>(() => loadCart());
+  const { activeVerticalId } = useActiveVertical();
+
+  // Ref tracks current verticalId for use inside callbacks
+  const verticalIdRef = useRef(activeVerticalId);
+
+  const [lines, setLines] = useState<CartLine[]>(() =>
+    loadCart(activeVerticalId),
+  );
   const [customer, setCustomer] = useState<CartCustomer | null>(null);
   const [compApplied, setCompApplied] = useState(false);
   const [compReason, setCompReason] = useState<string | null>(null);
+
+  // When vertical switches, reload cart from new namespace
+  useEffect(() => {
+    verticalIdRef.current = activeVerticalId;
+    setLines(loadCart(activeVerticalId));
+    setCustomer(null);
+    setCompApplied(false);
+    setCompReason(null);
+  }, [activeVerticalId]);
+
+  function saveCart(next: CartLine[]): void {
+    localStorage.setItem(cartKey(verticalIdRef.current), JSON.stringify(next));
+  }
 
   const addItem = useCallback(
     (serviceId: string, name: string, priceCents: number, staffId: string) => {
@@ -92,6 +108,7 @@ export function useCart() {
         return next;
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -103,6 +120,7 @@ export function useCart() {
       saveCart(next);
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const decrement = useCallback((lineId: string) => {
@@ -115,6 +133,7 @@ export function useCart() {
       saveCart(next);
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const remove = useCallback((lineId: string) => {
@@ -123,6 +142,7 @@ export function useCart() {
       saveCart(next);
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const changeStaff = useCallback((lineId: string, staffId: string) => {
@@ -133,6 +153,7 @@ export function useCart() {
       saveCart(next);
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleModifier = useCallback((lineId: string, modifier: Modifier) => {
@@ -148,6 +169,7 @@ export function useCart() {
       saveCart(next);
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setDiscount = useCallback((lineId: string, percent: number) => {
@@ -160,6 +182,7 @@ export function useCart() {
       saveCart(next);
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const applyComp = useCallback((reason: string) => {
@@ -193,6 +216,7 @@ export function useCart() {
       setCompApplied(heldCompApplied);
       setCompReason(heldCompReason);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -203,6 +227,7 @@ export function useCart() {
     setCustomer(null);
     setCompApplied(false);
     setCompReason(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

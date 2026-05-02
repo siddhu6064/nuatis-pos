@@ -4,24 +4,24 @@ import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
 import { calcDailySummary, calcPerStaffSummary } from "@/lib/reports";
 import { calcLineTotalCents } from "@/lib/cartMath";
+import { transactionsKey } from "@/lib/storage";
+import { useActiveVertical } from "@/hooks/useActiveVertical";
 import { Receipt } from "./Receipt";
 import { RefundPicker } from "./RefundPicker";
 import { Toast } from "./Toast";
 import { useManagerOverride } from "@/hooks/useManagerOverride";
 
-const TRANSACTIONS_KEY = "nuatis-pos:transactions";
-
-function loadTransactions(): Transaction[] {
+function loadTransactions(verticalId: string): Transaction[] {
   try {
-    const raw = localStorage.getItem(TRANSACTIONS_KEY);
+    const raw = localStorage.getItem(transactionsKey(verticalId));
     return raw ? (JSON.parse(raw) as Transaction[]) : [];
   } catch {
     return [];
   }
 }
 
-function saveTransactions(txs: Transaction[]): void {
-  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(txs));
+function saveTransactions(txs: Transaction[], verticalId: string): void {
+  localStorage.setItem(transactionsKey(verticalId), JSON.stringify(txs));
 }
 
 function formatTime(isoString: string): string {
@@ -53,12 +53,8 @@ function txStaffLabel(tx: Transaction): string {
   return "Multiple";
 }
 
-function txRefundStatus(
-  tx: Transaction,
-): "none" | "partial" | "full" {
-  const refundedIds = new Set(
-    (tx.refunds ?? []).flatMap((r) => r.lineIds),
-  );
+function txRefundStatus(tx: Transaction): "none" | "partial" | "full" {
+  const refundedIds = new Set((tx.refunds ?? []).flatMap((r) => r.lineIds));
   if (refundedIds.size === 0) return "none";
   if (tx.lineItems.every((l) => refundedIds.has(l.lineId))) return "full";
   return "partial";
@@ -86,6 +82,7 @@ function ReceiptDetail({
   onUpdateTransaction,
 }: ReceiptDetailProps) {
   const { requestManagerOverride } = useManagerOverride();
+  const { config } = useActiveVertical();
   const [expandedInput, setExpandedInput] = useState<"email" | "sms" | null>(
     null,
   );
@@ -118,7 +115,6 @@ function ReceiptDetail({
   }
 
   function handleRefundComplete(selectedLineIds: string[]) {
-    // Compute refund math
     const selectedLines = tx.lineItems.filter((l) =>
       selectedLineIds.includes(l.lineId),
     );
@@ -157,7 +153,6 @@ function ReceiptDetail({
     <>
       {toastMsg && <Toast message={toastMsg} />}
 
-      {/* Top bar */}
       <div
         className="flex items-center px-5 py-4 border-b flex-shrink-0"
         style={{ borderColor: "#E5E7EB" }}
@@ -191,7 +186,6 @@ function ReceiptDetail({
       </div>
 
       {inRefundPicker ? (
-        /* Refund picker */
         <div className="flex-1 overflow-hidden flex flex-col">
           <RefundPicker
             transaction={tx}
@@ -201,9 +195,9 @@ function ReceiptDetail({
           />
         </div>
       ) : (
-        /* Receipt detail */
         <div className="flex-1 overflow-y-auto p-5">
-          <Receipt transaction={tx} />
+          {/* Pass vertical business identity to Receipt */}
+          <Receipt transaction={tx} businessInfo={config.business} />
 
           <div
             className="mt-5 pt-4 border-t"
@@ -237,9 +231,7 @@ function ReceiptDetail({
                     backgroundColor: isValidEmail(emailInput)
                       ? "#E84A00"
                       : "#D1D5DB",
-                    cursor: isValidEmail(emailInput)
-                      ? "pointer"
-                      : "not-allowed",
+                    cursor: isValidEmail(emailInput) ? "pointer" : "not-allowed",
                   }}
                 >
                   Send
@@ -282,7 +274,6 @@ function ReceiptDetail({
               </div>
             )}
 
-            {/* Refund button */}
             {canRefund && (
               <button
                 onClick={() => void handleRefundTap()}
@@ -298,7 +289,6 @@ function ReceiptDetail({
               </button>
             )}
 
-            {/* Re-delivery buttons */}
             <div className="flex gap-2">
               <button
                 onClick={() => showToast("Sent to printer (mock)")}
@@ -363,11 +353,13 @@ interface ReportsOverlayProps {
 }
 
 export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
+  const { activeVerticalId, config } = useActiveVertical();
+
   const [viewMode, setViewMode] = useState<"summary" | "receipt">("summary");
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [filter, setFilter] = useState<"today" | "all">("today");
   const [transactions, setTransactions] = useState<Transaction[]>(() =>
-    loadTransactions(),
+    loadTransactions(activeVerticalId),
   );
 
   useEffect(() => {
@@ -381,7 +373,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
   function updateTransaction(updated: Transaction) {
     setTransactions((prev) => {
       const next = prev.map((t) => (t.id === updated.id ? updated : t));
-      saveTransactions(next);
+      saveTransactions(next, activeVerticalId);
       return next;
     });
     setSelectedTx(updated);
@@ -394,30 +386,13 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
   const displayTxs = filter === "today" ? todayTxs : transactions;
   const summary = calcDailySummary(todayTxs);
   const staffSummaries = calcPerStaffSummary(todayTxs, STAFF);
-
   const netRevenueCents = summary.revenueCents - summary.refundCents;
 
   const stats = [
-    {
-      label: "Transactions",
-      value: String(summary.count),
-      valueColor: "#111827",
-    },
-    {
-      label: "Tips",
-      value: formatCurrency(summary.tipCents),
-      valueColor: "#111827",
-    },
-    {
-      label: "Avg Ticket",
-      value: formatCurrency(summary.avgTicketCents),
-      valueColor: "#111827",
-    },
-    {
-      label: "Discounts",
-      value: formatCurrency(summary.discountCents),
-      valueColor: "#DC2626",
-    },
+    { label: "Transactions", value: String(summary.count), valueColor: "#111827" },
+    { label: "Tips", value: formatCurrency(summary.tipCents), valueColor: "#111827" },
+    { label: "Avg Ticket", value: formatCurrency(summary.avgTicketCents), valueColor: "#111827" },
+    { label: "Discounts", value: formatCurrency(summary.discountCents), valueColor: "#DC2626" },
     {
       label: "Refunds",
       value: summary.refundCents > 0 ? `−${formatCurrency(summary.refundCents)}` : "$0.00",
@@ -442,12 +417,20 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
               className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0"
               style={{ borderColor: "#E5E7EB" }}
             >
-              <p
-                className="text-[22px] font-bold text-gray-900"
-                style={{ fontFamily: "'Fraunces', serif" }}
-              >
-                Today's Sales
-              </p>
+              <div>
+                <p
+                  className="text-[22px] font-bold text-gray-900"
+                  style={{ fontFamily: "'Fraunces', serif" }}
+                >
+                  Today's Sales
+                </p>
+                <p
+                  className="text-[12px] text-gray-400"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                >
+                  {config.displayName}
+                </p>
+              </div>
               <button
                 onClick={onClose}
                 className="text-[20px] text-gray-400 hover:text-gray-700 transition-colors leading-none"
@@ -465,7 +448,6 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                   {formatTodayDate()}
                 </p>
 
-                {/* Revenue + Net sub-line */}
                 <div className="mb-4">
                   <p
                     className="text-[48px] font-bold text-gray-900 tabular-nums leading-none"
@@ -510,7 +492,6 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                   ))}
                 </div>
 
-                {/* By Staff */}
                 <div
                   className="border-t pt-4"
                   style={{ borderColor: "#E5E7EB" }}
@@ -565,7 +546,6 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                 </div>
               </div>
 
-              {/* Transaction list */}
               <div
                 className="border-t px-5 pt-4 pb-5"
                 style={{ borderColor: "#E5E7EB" }}

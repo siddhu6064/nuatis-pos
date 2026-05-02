@@ -2,6 +2,12 @@ import { useAuth } from "@workspace/replit-auth-web";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { ManagerOverrideProvider } from "@/hooks/useManagerOverride";
+import { ActiveVerticalProvider } from "@/hooks/useActiveVertical";
+import { runMigrations } from "@/lib/storage";
+
+// Run once on module load — migrates legacy localStorage keys into vertical-namespaced
+// keys before any hook reads from storage.
+runMigrations();
 
 function App() {
   const { user, isLoading, isAuthenticated, login, logout } = useAuth();
@@ -27,9 +33,11 @@ function App() {
   }
 
   return (
-    <ManagerOverrideProvider>
-      <RegisterPage user={user} onLogout={logout} />
-    </ManagerOverrideProvider>
+    <ActiveVerticalProvider>
+      <ManagerOverrideProvider>
+        <RegisterPage user={user} onLogout={logout} />
+      </ManagerOverrideProvider>
+    </ActiveVerticalProvider>
   );
 }
 

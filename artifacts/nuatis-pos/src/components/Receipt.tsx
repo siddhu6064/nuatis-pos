@@ -1,10 +1,18 @@
 import type { Transaction } from "@/hooks/useCheckout";
+import type { BusinessInfo } from "@/lib/verticals";
 import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
 import { calcLineDiscountCents, calcLineTotalCents } from "@/lib/cartMath";
 
+const DEFAULT_BUSINESS: BusinessInfo = {
+  name: "Nuatis POS Demo Salon",
+  address: "123 Main St, Austin, TX 78701",
+  phone: "(512) 555-0100",
+};
+
 interface ReceiptProps {
   transaction: Transaction;
+  businessInfo?: BusinessInfo;
 }
 
 function formatReceiptDate(isoString: string): string {
@@ -37,11 +45,13 @@ function Divider() {
   return <hr className="border-t border-gray-200 my-3" />;
 }
 
-export function Receipt({ transaction }: ReceiptProps) {
+export function Receipt({
+  transaction,
+  businessInfo = DEFAULT_BUSINESS,
+}: ReceiptProps) {
   const txShort = transaction.id.slice(-8).toUpperCase();
   const isComped = transaction.compApplied ?? false;
 
-  // Refund state
   const allRefundedLineIds = new Set(
     (transaction.refunds ?? []).flatMap((r) => r.lineIds),
   );
@@ -107,18 +117,16 @@ export function Receipt({ transaction }: ReceiptProps) {
         </div>
       )}
 
-      {/* Business header */}
+      {/* Business header — from active vertical config */}
       <div className="text-center mb-3">
         <p
           className="text-[22px] font-bold mb-0.5"
           style={{ fontFamily: "'Fraunces', serif" }}
         >
-          Nuatis POS Demo Salon
+          {businessInfo.name}
         </p>
-        <p className="text-[12px] text-gray-500">
-          123 Main St, Austin, TX 78701
-        </p>
-        <p className="text-[12px] text-gray-500">(512) 555-0100</p>
+        <p className="text-[12px] text-gray-500">{businessInfo.address}</p>
+        <p className="text-[12px] text-gray-500">{businessInfo.phone}</p>
       </div>
 
       <Divider />
@@ -284,7 +292,6 @@ export function Receipt({ transaction }: ReceiptProps) {
           </span>
         </div>
 
-        {/* Refund rows */}
         {(transaction.refunds ?? []).map((refund, i) => (
           <div
             key={refund.id}
@@ -303,7 +310,6 @@ export function Receipt({ transaction }: ReceiptProps) {
           </div>
         ))}
 
-        {/* Net after refunds */}
         {hasAnyRefund && (
           <div className="flex justify-between text-[13px] font-semibold pt-1 border-t border-gray-200">
             <span
@@ -313,10 +319,7 @@ export function Receipt({ transaction }: ReceiptProps) {
             </span>
             <span
               className="tabular-nums"
-              style={{
-                fontFamily: "'Fraunces', serif",
-                color: "#374151",
-              }}
+              style={{ fontFamily: "'Fraunces', serif", color: "#374151" }}
             >
               {formatCurrency(netCents)}
             </span>

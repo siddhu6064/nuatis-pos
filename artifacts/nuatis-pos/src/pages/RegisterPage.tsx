@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from "react";
-import { SERVICES, type Service } from "@/lib/services";
+import { useState, useCallback, useRef, useEffect } from "react";
+import type { Service } from "@/lib/services";
 import { ServiceTile } from "@/components/ServiceTile";
 import { Header } from "@/components/Header";
 import { Cart } from "@/components/Cart";
@@ -8,10 +8,12 @@ import { StaffSwitcher } from "@/components/StaffSwitcher";
 import { CustomerSearch } from "@/components/CustomerSearch";
 import { ReportsOverlay } from "@/components/ReportsOverlay";
 import { HeldTicketsModal } from "@/components/HeldTicketsModal";
+import { VerticalSwitcher } from "@/components/VerticalSwitcher";
 import { Toast } from "@/components/Toast";
 import { useCart } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
 import { useActiveStaff } from "@/hooks/useActiveStaff";
+import { useActiveVertical } from "@/hooks/useActiveVertical";
 import { calcSubtotal, calcTax, calcTotal } from "@/lib/cartMath";
 import {
   getHeldTickets,
@@ -20,6 +22,7 @@ import {
   removeHeldTicket,
   type HeldTicket,
 } from "@/lib/heldTickets";
+import type { VerticalId } from "@/lib/verticals";
 import type { AuthUser } from "@workspace/replit-auth-web";
 
 interface RegisterPageProps {
@@ -28,6 +31,8 @@ interface RegisterPageProps {
 }
 
 export function RegisterPage({ user, onLogout }: RegisterPageProps) {
+  const { activeVerticalId, setActiveVerticalId, config } = useActiveVertical();
+
   const {
     lines,
     customer,
@@ -56,16 +61,22 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [showHeldModal, setShowHeldModal] = useState(false);
+  const [showVerticalSwitcher, setShowVerticalSwitcher] = useState(false);
   const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() =>
-    getHeldTickets(),
+    getHeldTickets(activeVerticalId),
   );
   const [holdToast, setHoldToast] = useState(false);
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Reload held tickets when vertical changes
+  useEffect(() => {
+    setHeldTickets(getHeldTickets(activeVerticalId));
+  }, [activeVerticalId]);
+
   const refreshHeld = useCallback(() => {
-    setHeldTickets(getHeldTickets());
-  }, []);
+    setHeldTickets(getHeldTickets(activeVerticalId));
+  }, [activeVerticalId]);
 
   const handleTileTap = useCallback(
     (service: Service) => {
@@ -106,17 +117,17 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       compApplied,
       compReason,
     };
-    holdTicket(ticket);
+    holdTicket(ticket, activeVerticalId);
     refreshHeld();
     clear();
     if (holdToastTimerRef.current) clearTimeout(holdToastTimerRef.current);
     setHoldToast(true);
     holdToastTimerRef.current = setTimeout(() => setHoldToast(false), 1500);
-  }, [lines, customer, compApplied, compReason, clear, refreshHeld]);
+  }, [lines, customer, compApplied, compReason, activeVerticalId, clear, refreshHeld]);
 
   const handleResume = useCallback(
     (ticket: HeldTicket) => {
-      resumeTicket(ticket.id);
+      resumeTicket(ticket.id, activeVerticalId);
       loadHeld(
         ticket.lineItems,
         ticket.customer,
@@ -126,17 +137,28 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       refreshHeld();
       setShowHeldModal(false);
     },
-    [loadHeld, refreshHeld],
+    [activeVerticalId, loadHeld, refreshHeld],
   );
 
   const handleDiscard = useCallback(
     (id: string) => {
-      removeHeldTicket(id);
+      removeHeldTicket(id, activeVerticalId);
       refreshHeld();
       if (heldTickets.length <= 1) setShowHeldModal(false);
     },
-    [heldTickets.length, refreshHeld],
+    [activeVerticalId, heldTickets.length, refreshHeld],
   );
+
+  const handleVerticalSwitch = useCallback(
+    (id: VerticalId) => {
+      setActiveVerticalId(id);
+      setShowVerticalSwitcher(false);
+    },
+    [setActiveVerticalId],
+  );
+
+  // Vertical pill is disabled when cart has items or checkout is non-idle
+  const switcherDisabled = lines.length > 0 || checkout.state !== "idle";
 
   return (
     <div
@@ -154,15 +176,21 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         onOpenReports={() => setReportsOpen(true)}
         heldCount={heldTickets.length}
         onOpenHeldTickets={() => setShowHeldModal(true)}
+        activeVerticalDisplayName={config.displayName}
+        switcherDisabled={switcherDisabled}
+        onOpenVerticalSwitcher={() => setShowVerticalSwitcher(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-y-auto px-5 py-4 min-w-0">
           <div className="grid grid-cols-4 gap-3">
-            {SERVICES.map((service) => (
+            {config.services.map((service) => (
               <ServiceTile
                 key={service.id}
                 service={service}
+                color={
+                  config.categoryColors[service.category] ?? "#F3F4F6"
+                }
                 onTap={handleTileTap}
               />
             ))}
@@ -238,6 +266,14 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           onResume={handleResume}
           onDiscard={handleDiscard}
           onClose={() => setShowHeldModal(false)}
+        />
+      )}
+
+      {showVerticalSwitcher && (
+        <VerticalSwitcher
+          activeVerticalId={activeVerticalId}
+          onSwitch={handleVerticalSwitch}
+          onClose={() => setShowVerticalSwitcher(false)}
         />
       )}
     </div>
