@@ -1,0 +1,155 @@
+▶ PROMPT [Phase 2 · Batch 12 · Replit Agent — FINAL WRAP, NO NEW FEATURES]
+
+CONTEXT
+This is the FINAL batch of the Replit Prototype Day. Batches 1-11 complete: full operator loop including discounts, comp, manager PIN override, refunds, AND multi-vertical engine (salon + spa) with namespaced storage. Repo on prototype/replit-day-1 branch, currently tagged v0.0.1-prototype (from Batch 8). This batch updates README + replit.md to reflect the post-Batch-8 work (Batches 9, 10, 11), bumps the tag to v0.0.2-prototype, and prepares the repo for mothballing.
+
+NO NEW FEATURES. Documentation only.
+
+GOAL
+Repo is documented to reflect everything shipped today (12 batches), README accurately describes the multi-vertical state, replit.md architecture doc is current, and all relevant files are clean and ready for screenshot capture + final push.
+
+SCOPE — BUILD THIS
+
+1. Update README.md at repo root:
+
+   "What Was Validated" section — extend the bullet list to include:
+   - Per-line % discount with manager-override gate above 20%
+   - Whole-ticket comp with 6-reason picker
+   - Manager PIN override modal (4-box auto-advance, mock-validate)
+   - Line-level partial refund with proportional tax allocation
+   - REFUNDED / PARTIAL / COMPED transaction badges
+   - Multi-vertical engine (salon + spa) via config alone
+   - Header vertical switcher with cart-empty gating
+   - Per-vertical namespaced localStorage
+
+   "Stack Deviations from Master Plan" table — add two new rows:
+   - Manager Auth | bcrypt PIN hash + audit log | Mock — any 4 digits accepted
+   - Refund | Stripe Refund API | Mock 1500ms simulated
+
+   "What Is NOT In This Prototype" section — add bullets:
+   - Cross-vertical aggregated reporting (Suite-side concern)
+   - Vertical lock at signup (production-only behavior)
+   - PIN brute-force lockout
+   - Real refund processing (Stripe Refund API)
+   - Audit log viewer
+   - Discount limits per staff role
+   - Z report with cash drawer reconciliation
+   - Nail bar vertical (3rd launch trio member, not validated)
+
+   "localStorage Keys" table — replace existing with the post-Batch-11 namespaced structure:
+   - nuatis-pos:activeVerticalId | Currently selected vertical (shared)
+   - nuatis-pos:activeStaffId | Currently selected staff (shared across verticals)
+   - nuatis-pos:salon:cart | Salon active cart
+   - nuatis-pos:salon:transactions | Salon transaction log (last 10)
+   - nuatis-pos:salon:heldTickets | Salon held tickets (cap 5)
+   - nuatis-pos:spa:cart | Spa active cart
+   - nuatis-pos:spa:transactions | Spa transaction log (last 10)
+   - nuatis-pos:spa:heldTickets | Spa held tickets (cap 5)
+
+   "Hardcoded Mock Data" section — update:
+   - 2 verticals (salon + spa), each with 12 services and service-specific modifiers
+   - Salon business: "Nuatis POS Demo Salon · 123 Main St, Austin, TX 78701 · (512) 555-0100"
+   - Spa business: "Nuatis POS Demo Spa · 456 Wellness Ave, Austin, TX 78704 · (512) 555-0200"
+   - 3 staff shared across verticals (Maria, James, Lisa)
+   - 6 customers shared across verticals (full names already documented)
+   - Manager PIN: ANY 4 digits accepted (mock validation)
+
+   "Batch History" section — NEW section near the end, before "When Production Build Starts". Brief one-line summary of each of the 12 batches:
+   - Batch 1 — Auth + register grid
+   - Batch 2 — Cart + tax + persistence
+   - Batch 3 — Tip + simulated card reader
+   - Batch 4 — Receipt + mock delivery
+   - Batch 5 — Customer attach + staff attribution
+   - Batch 6 — Today's Sales overlay
+   - Batch 7 — Modifiers + Hold/Resume
+   - Batch 8 — README + cleanup + tag v0.0.1-prototype
+   - Batch 9 — Discount + comp
+   - Batch 10 — Manager PIN + refund
+   - Batch 11 — Spa vertical + multi-vertical engine
+   - Batch 12 — Final docs + tag v0.0.2-prototype
+
+2. Update replit.md at repo root:
+
+   "Component Tree" section — regenerate from the actual current src/ layout. Include all post-Batch-8 additions: PinModal, RefundPicker, CompModal, DiscountPicker (or wherever the inline picker lives), VerticalSwitcher.
+
+   "Hooks table" — add useManagerOverride, useActiveVertical.
+
+   "State Architecture" bullets — add:
+   - useManagerOverride (hooks/useManagerOverride.ts) — promise-based PIN gate, mock validation
+   - useActiveVertical (hooks/useActiveVertical.ts) — current vertical id, persisted
+
+   "Money Math" section — extend:
+   - Discount math: line total = ((priceCents + sum modifier prices) × quantity) × (1 - discountPercent/100), Math.round to integer cents
+   - Discount applied BEFORE tax
+   - Refund tax allocation: taxRefundCents = Math.round((lineRefundCents / originalSubtotalCents) × originalTaxCents)
+   - Tip never refunded on partials
+   - Comp zeros out tax + tip + total; subtotal preserved for receipt display
+
+   "State Machines" section — extend the checkout state diagram to show the comp short-circuit (skips simulated card read).
+
+   "Storage Architecture" section — NEW section explaining:
+   - Per-vertical namespacing pattern: nuatis-pos:{verticalId}:{key}
+   - Shared keys (no namespace): activeVerticalId, activeStaffId
+   - Migration runs once on App mount, idempotent on re-runs
+   - Each vertical's cart, transactions, and held tickets are isolated
+
+   "Things to Carry Forward" — add bullets:
+   - Manager override gate-on-upgrade-only rule (downgrades don't re-prompt)
+   - Refund initiated from Today's Sales receipt detail (post-sale only)
+   - Refund line-picker pattern with proportional tax allocation
+   - Per-vertical namespaced storage for engine isolation
+   - Vertical switcher gated when cart has items
+   - 4-box PIN entry with auto-advance focus
+
+   "Things to Discard" — add:
+   - Mock 4-digit PIN acceptance
+   - Mock refund processing
+   - Vertical switcher (production locks vertical at signup)
+   - Cross-namespace migration logic (one-time only, prototype scaffolding)
+
+3. Verify console.log statements — same scan as Batch 8. Any debug logs added in Batches 9, 10, 11 that aren't intentional should be removed. Document any removals in the report.
+
+4. Verify no unused imports introduced in Batches 9-11. Light TODO if any found, no refactor.
+
+SCOPE — DO NOT BUILD
+- No new features.
+- No refactors. Even if you see something that "could be cleaner" — leave it.
+- No tests.
+- No CI files, no GitHub Actions, no Husky, no lint config changes.
+- No package.json changes.
+- No new npm dependencies.
+- No screenshot generation, no demo data seeding scripts.
+- No deployment configuration.
+- Do not move files, rename files, or restructure folders.
+- Do NOT add cross-vertical aggregated reporting (declined — outside prototype scope).
+
+TECH CONSTRAINTS
+- Only files modified: README.md, replit.md, plus any file containing a stray debug console.log
+- Do NOT touch lib/, components/, pages/, or hooks for anything beyond stray log removals
+
+ACCEPTANCE
+1. README.md "What Was Validated" reflects all 12 batches.
+2. README.md "Stack Deviations" table includes Manager Auth + Refund rows.
+3. README.md "What Is NOT In This Prototype" includes the 8 new exclusions.
+4. README.md "localStorage Keys" lists all 8 namespaced keys.
+5. README.md "Hardcoded Mock Data" reflects 2 verticals.
+6. README.md "Batch History" section lists all 12 batches with one-line summaries.
+7. replit.md "Component Tree" includes PinModal, RefundPicker, CompModal, VerticalSwitcher (and any other new components).
+8. replit.md "Hooks Table" includes useManagerOverride + useActiveVertical.
+9. replit.md "Money Math" section documents discount, refund tax allocation, and comp zeroing rules.
+10. replit.md "Storage Architecture" section documents per-vertical namespacing.
+11. App still runs without errors after any debug log removals.
+12. No new files created beyond README.md / replit.md updates (and possibly removed debug logs).
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Sid runs git himself in the Shell tab.
+
+REPORT FORMAT — REQUIRED
+After scope is built and acceptance passes, your report MUST include these four sections in this order:
+
+1. WHAT WAS BUILT — bulleted list of every file modified + brief description of changes per file
+2. ERRORS ENCOUNTERED — any errors found during work, how each was resolved (or "None" if zero)
+3. ITEMS SKIPPED — anything in scope that was deferred, with reason (or "None")
+4. OPEN QUESTIONS — anything Sid needs to decide before any future work (or "None — final batch of the day")
+
+Then wait for next prompt. Do not begin any further work — this is the final batch.

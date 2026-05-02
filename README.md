@@ -8,7 +8,7 @@
 
 ## What This Is
 
-- A tablet-portrait single-vertical (salon) point-of-sale UX prototype.
+- A tablet-portrait multi-vertical point-of-sale UX prototype (salon + spa).
 - Single-page React app simulating the operator flow from tile-tap to mock checkout to mock receipt.
 - State lives in localStorage. No backend, no real payments, no real auth beyond Replit's session.
 
@@ -26,6 +26,14 @@
 - Today's Sales overlay with per-staff breakdown
 - Service-specific modifiers (fixed price)
 - Hold/Resume tickets (cap 5, persisted)
+- Per-line % discount with manager-override gate above 20%
+- Whole-ticket comp with 6-reason picker
+- Manager PIN override modal (4-box auto-advance, mock-validate)
+- Line-level partial refund with proportional tax allocation
+- REFUNDED / PARTIAL / COMPED transaction badges
+- Multi-vertical engine (salon + spa) via config alone
+- Header vertical switcher with cart-empty gating
+- Per-vertical namespaced localStorage
 
 ---
 
@@ -41,6 +49,8 @@
 | Persistence | Supabase Postgres + RLS | localStorage |
 | Receipts | Star TSP100III ESC/POS + Resend + Telnyx | Mock toasts only |
 | State | Server-authoritative | In-memory + localStorage |
+| Manager Auth | bcrypt PIN hash + audit log | Mock — any 4 digits accepted |
+| Refund | Stripe Refund API | Mock 1500ms simulated |
 
 These deviations are intentional. The prototype was built to answer UX questions, not architecture questions. Production answers all the architecture questions and ignores this code entirely.
 
@@ -51,19 +61,22 @@ These deviations are intentional. The prototype was built to answer UX questions
 - Stripe Terminal hardware integration
 - Multi-tenant isolation
 - Offline mode + sync queue
-- Multi-vertical engine (only salon — 12 hardcoded services)
 - Real authentication beyond Replit's
 - Real receipt delivery (no Resend, no Telnyx, no printer driver)
 - TaxJar (8.25% flat tax hardcoded)
-- Manager override flows
 - PIN auth for staff
-- Audit log
-- Discounts, comps, voids, refunds
 - Multi-station support, real-time sync
 - Customer profiles / purchase history
 - Tip allocation across staff
 - Date range reporting (Today / All toggle only)
-- Configurable business identity (hardcoded to "Nuatis POS Demo Salon")
+- Cross-vertical aggregated reporting (Suite-side concern)
+- Vertical lock at signup (production-only behavior)
+- PIN brute-force lockout
+- Real refund processing (Stripe Refund API)
+- Audit log viewer
+- Discount limits per staff role
+- Z report with cash drawer reconciliation
+- Nail bar vertical (3rd launch trio member, not validated)
 
 ---
 
@@ -71,21 +84,31 @@ These deviations are intentional. The prototype was built to answer UX questions
 
 | Key | Purpose |
 |---|---|
-| `nuatis-pos:cart` | Active cart (lineItems + customer) |
-| `nuatis-pos:transactions` | Last 10 completed transactions |
-| `nuatis-pos:heldTickets` | Up to 5 held tickets |
-| `nuatis-pos:activeStaffId` | Current operator's staff id |
+| `nuatis-pos:activeVerticalId` | Currently selected vertical (shared across verticals) |
+| `nuatis-pos:activeStaffId` | Currently selected staff (shared across verticals) |
+| `nuatis-pos:salon:cart` | Salon active cart |
+| `nuatis-pos:salon:transactions` | Salon transaction log (last 10) |
+| `nuatis-pos:salon:heldTickets` | Salon held tickets (cap 5) |
+| `nuatis-pos:spa:cart` | Spa active cart |
+| `nuatis-pos:spa:transactions` | Spa transaction log (last 10) |
+| `nuatis-pos:spa:heldTickets` | Spa held tickets (cap 5) |
+
+Legacy unprefixed keys (`nuatis-pos:cart`, `nuatis-pos:transactions`, `nuatis-pos:heldTickets`) are migrated to `nuatis-pos:salon:*` on first boot and then deleted.
 
 ---
 
 ## Hardcoded Mock Data
 
-- **12 salon services** (`lib/services.ts`) — Women's Cut, Men's Cut, Beard Trim, Kids Cut, Highlights Full, Color Root, Gloss, Olaplex Treatment, Deep Conditioning, Wax, Blowout, Polish Change
-- **3 staff** (`lib/staff.ts`) — Maria / Stylist, James / Colorist, Lisa / Stylist
-- **6 customers** (`lib/customers.ts`) — Sarah Chen, Marcus Rodriguez, Priya Patel, David Kim, Emma Thompson, Jordan Williams
-- **Service-specific modifiers** (`lib/modifiers.ts`) — only 5 of 12 services have modifiers (Women's Cut, Men's Cut, Highlights Full, Color Root, Gloss)
+- **2 verticals** — Salon and Spa, each with 12 services and service-specific modifiers (`lib/verticals.ts`)
+- **Salon business** — "Nuatis POS Demo Salon · 123 Main St, Austin, TX 78701 · (512) 555-0100"
+- **Spa business** — "Nuatis POS Demo Spa · 456 Wellness Ave, Austin, TX 78704 · (512) 555-0200"
+- **Salon services** (`lib/services.ts`) — Women's Cut, Men's Cut, Beard Trim, Kids Cut, Highlights Full, Color Root, Gloss, Olaplex Treatment, Deep Conditioning, Wax, Blowout, Polish Change
+- **Spa services** (`lib/verticals.ts`) — Swedish Massage, Deep Tissue Massage, Hot Stone Massage, Prenatal Massage, Classic Facial, Anti-Aging Facial, Hydrating Facial, Body Scrub, Detox Body Wrap, Aromatherapy Wrap, Foot Reflexology, Sauna Session
+- **3 staff shared across verticals** (`lib/staff.ts`) — Maria / Stylist, James / Colorist, Lisa / Stylist
+- **6 customers shared across verticals** (`lib/customers.ts`) — Sarah Chen, Marcus Rodriguez, Priya Patel, David Kim, Emma Thompson, Jordan Williams
+- **Service-specific modifiers** — Salon: Women's Cut, Men's Cut, Highlights Full, Color Root, Gloss. Spa: Swedish Massage, Deep Tissue, Hot Stone, Classic Facial, Anti-Aging Facial
 - **Mock card** — "Card • Visa •••• 4242" on every receipt
-- **Business identity** — "Nuatis POS Demo Salon · 123 Main St, Austin, TX 78701 · (512) 555-0100"
+- **Manager PIN** — ANY 4 digits accepted (mock validation — no real PIN check)
 
 ---
 
@@ -97,6 +120,25 @@ pnpm --filter @workspace/nuatis-pos run dev
 ```
 
 Open the Replit-provided URL. Replit Auth gates the app — log in with any Replit account.
+
+---
+
+## Batch History
+
+| Batch | Summary |
+|---|---|
+| Batch 1 | Auth + register grid |
+| Batch 2 | Cart + tax + persistence |
+| Batch 3 | Tip + simulated card reader |
+| Batch 4 | Receipt + mock delivery |
+| Batch 5 | Customer attach + staff attribution |
+| Batch 6 | Today's Sales overlay |
+| Batch 7 | Modifiers + Hold/Resume |
+| Batch 8 | README + cleanup + tag v0.0.1-prototype |
+| Batch 9 | Discount + comp |
+| Batch 10 | Manager PIN + refund |
+| Batch 11 | Spa vertical + multi-vertical engine |
+| Batch 12 | Final docs + tag v0.0.2-prototype |
 
 ---
 
