@@ -82,10 +82,7 @@ function ReceiptDetail({
   onUpdateTransaction,
 }: ReceiptDetailProps) {
   const { requestManagerOverride } = useManagerOverride();
-  const { config } = useActiveVertical();
-  const [expandedInput, setExpandedInput] = useState<"email" | "sms" | null>(
-    null,
-  );
+  const [expandedInput, setExpandedInput] = useState<"email" | "sms" | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [smsInput, setSmsInput] = useState("");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -196,8 +193,7 @@ function ReceiptDetail({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-5">
-          {/* Pass vertical business identity to Receipt */}
-          <Receipt transaction={tx} businessInfo={config.business} />
+          <Receipt transaction={tx} />
 
           <div
             className="mt-5 pt-4 border-t"
@@ -263,9 +259,7 @@ function ReceiptDetail({
                   className="h-[42px] px-4 rounded-lg text-[13px] font-semibold text-white"
                   style={{
                     fontFamily: "'Epilogue', sans-serif",
-                    backgroundColor: isValidPhone(smsInput)
-                      ? "#E84A00"
-                      : "#D1D5DB",
+                    backgroundColor: isValidPhone(smsInput) ? "#E84A00" : "#D1D5DB",
                     cursor: isValidPhone(smsInput) ? "pointer" : "not-allowed",
                   }}
                 >
@@ -465,7 +459,6 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                   )}
                 </div>
 
-                {/* 5-stat row */}
                 <div className="flex gap-1.5 mb-4">
                   {stats.map(({ label, value, valueColor }) => (
                     <div
@@ -525,17 +518,13 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                         <div className="flex items-center gap-3">
                           <span
                             className="text-[13px] text-gray-500 tabular-nums"
-                            style={{
-                              fontFamily: "'JetBrains Mono', monospace",
-                            }}
+                            style={{ fontFamily: "'JetBrains Mono', monospace" }}
                           >
                             {s.txCount} txn
                           </span>
                           <span
                             className="text-[14px] font-medium text-gray-900 tabular-nums"
-                            style={{
-                              fontFamily: "'JetBrains Mono', monospace",
-                            }}
+                            style={{ fontFamily: "'JetBrains Mono', monospace" }}
                           >
                             {formatCurrency(s.revenueCents)}
                           </span>
@@ -565,8 +554,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                         className="h-[28px] px-3 rounded-full text-[12px] font-medium transition-all duration-100"
                         style={{
                           fontFamily: "'Epilogue', sans-serif",
-                          backgroundColor:
-                            filter === f ? "#FFF0E8" : "#F3F4F6",
+                          backgroundColor: filter === f ? "#FFF0E8" : "#F3F4F6",
                           color: filter === f ? "#E84A00" : "#6B7280",
                           border:
                             filter === f
@@ -586,9 +574,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                     className="text-center text-[16px] text-gray-400 py-8"
                     style={{ fontFamily: "'Epilogue', sans-serif" }}
                   >
-                    {filter === "today"
-                      ? "No sales yet today"
-                      : "No transactions saved"}
+                    {filter === "today" ? "No sales yet today" : "No transactions saved"}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-1">
@@ -608,9 +594,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                             <div className="flex items-center gap-2 flex-wrap">
                               <span
                                 className="text-[14px] font-medium text-gray-500 tabular-nums"
-                                style={{
-                                  fontFamily: "'JetBrains Mono', monospace",
-                                }}
+                                style={{ fontFamily: "'JetBrains Mono', monospace" }}
                               >
                                 {formatTime(tx.completedAt)}
                               </span>
@@ -652,9 +636,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                               )}
                               <span
                                 className="text-[14px] font-medium text-gray-900"
-                                style={{
-                                  fontFamily: "'Epilogue', sans-serif",
-                                }}
+                                style={{ fontFamily: "'Epilogue', sans-serif" }}
                               >
                                 {tx.customer
                                   ? `${tx.customer.firstName} ${tx.customer.lastName}`
@@ -671,9 +653,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                           <div className="flex items-center gap-3 mt-0.5">
                             <span
                               className="text-[12px] text-gray-400"
-                              style={{
-                                fontFamily: "'JetBrains Mono', monospace",
-                              }}
+                              style={{ fontFamily: "'JetBrains Mono', monospace" }}
                             >
                               #{tx.id.slice(-8).toUpperCase()}
                             </span>

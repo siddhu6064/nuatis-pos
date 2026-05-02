@@ -1,11 +1,10 @@
 import { useState, useCallback } from "react";
 import { STAFF, type Staff } from "@/lib/staff";
-
-const STORAGE_KEY = "nuatis-pos:activeStaffId";
+import { ACTIVE_STAFF_KEY } from "@/lib/storage";
 
 function loadActiveStaff(): Staff {
   try {
-    const id = localStorage.getItem(STORAGE_KEY);
+    const id = localStorage.getItem(ACTIVE_STAFF_KEY);
     if (id) {
       const found = STAFF.find((s) => s.id === id);
       if (found) return found;
@@ -23,7 +22,7 @@ export function useActiveStaff() {
 
   const setActiveStaff = useCallback((staff: Staff) => {
     try {
-      localStorage.setItem(STORAGE_KEY, staff.id);
+      localStorage.setItem(ACTIVE_STAFF_KEY, staff.id);
     } catch {
       // silent fail
     }

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { CartLine as CartLineType } from "@/hooks/useCart";
 import type { Modifier } from "@/lib/modifiers";
-import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
 import {
   calcLineTotalCents,
@@ -10,6 +9,7 @@ import {
 } from "@/lib/cartMath";
 import { useManagerOverride } from "@/hooks/useManagerOverride";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
+import { useVerticalSettings } from "@/hooks/useVerticalSettings";
 
 interface CartLineProps {
   line: CartLineType;
@@ -38,6 +38,7 @@ export function CartLine({
 }: CartLineProps) {
   const { requestManagerOverride } = useManagerOverride();
   const { config } = useActiveVertical();
+  const { settings } = useVerticalSettings();
 
   const [staffPickerOpen, setStaffPickerOpen] = useState(false);
   const [modPickerOpen, setModPickerOpen] = useState(false);
@@ -47,9 +48,12 @@ export function CartLine({
 
   const lineTotal = calcLineTotalCents(line);
   const discountCents = calcLineDiscountCents(line);
-  const assignedStaff = STAFF.find((s) => s.id === line.staffId);
 
-  // Modifiers come from the active vertical's config (supports both salon + spa)
+  // Active staff from settings (not hardcoded STAFF constant)
+  const activeStaffList = settings.staff.filter((s) => s.active);
+  const assignedStaff = activeStaffList.find((s) => s.id === line.staffId)
+    ?? settings.staff.find((s) => s.id === line.staffId); // fallback to inactive too for display
+
   const applicableMods: Modifier[] =
     config.modifiersByService[line.serviceId] ?? [];
   const hasApplicableMods = applicableMods.length > 0;
@@ -65,9 +69,7 @@ export function CartLine({
     if (isNaN(val) || val < 1 || val > 99) return;
 
     if (val > MANAGER_DISCOUNT_THRESHOLD) {
-      const approved = await requestManagerOverride(
-        `Line discount of ${val}%`,
-      );
+      const approved = await requestManagerOverride(`Line discount of ${val}%`);
       if (!approved) {
         setCustomRaw("");
         return;
@@ -118,10 +120,7 @@ export function CartLine({
           )}
           <span
             className="text-[12px] tabular-nums"
-            style={{
-              fontFamily: "'Epilogue', sans-serif",
-              color: "#DC2626",
-            }}
+            style={{ fontFamily: "'Epilogue', sans-serif", color: "#DC2626" }}
           >
             −{line.discountPercent}% (−{formatCurrency(discountCents)})
           </span>
@@ -194,7 +193,7 @@ export function CartLine({
           </button>
         ) : (
           <div className="flex gap-1 flex-wrap">
-            {STAFF.map((s) => (
+            {activeStaffList.map((s) => (
               <button
                 key={s.id}
                 onClick={() => {
@@ -204,8 +203,7 @@ export function CartLine({
                 className="h-[26px] px-2.5 rounded-md text-[11px] font-medium transition-colors duration-100"
                 style={{
                   fontFamily: "'Epilogue', sans-serif",
-                  backgroundColor:
-                    s.id === line.staffId ? "#E84A00" : "#F3F4F6",
+                  backgroundColor: s.id === line.staffId ? "#E84A00" : "#F3F4F6",
                   color: s.id === line.staffId ? "white" : "#374151",
                 }}
               >
@@ -241,9 +239,7 @@ export function CartLine({
                 return (
                   <button
                     key={mod.id}
-                    onClick={() =>
-                      !frozen && onToggleModifier(line.lineId, mod)
-                    }
+                    onClick={() => !frozen && onToggleModifier(line.lineId, mod)}
                     className="h-[26px] px-2 rounded-md text-[11px] transition-all duration-100"
                     style={{
                       fontFamily: "'Epilogue', sans-serif",

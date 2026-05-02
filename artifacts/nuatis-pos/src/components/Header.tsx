@@ -12,10 +12,10 @@ interface HeaderProps {
   onOpenReports: () => void;
   heldCount: number;
   onOpenHeldTickets: () => void;
-  // Vertical switcher
   activeVerticalDisplayName: string;
   switcherDisabled: boolean;
   onOpenVerticalSwitcher: () => void;
+  onOpenSettings: () => void;
 }
 
 function useClock() {
@@ -44,6 +44,7 @@ export function Header({
   activeVerticalDisplayName,
   switcherDisabled,
   onOpenVerticalSwitcher,
+  onOpenSettings,
 }: HeaderProps) {
   const clock = useClock();
   const [accountOpen, setAccountOpen] = useState(false);
@@ -86,13 +87,9 @@ export function Header({
 
         {/* Vertical pill */}
         <button
-          onClick={
-            !switcherDisabled ? onOpenVerticalSwitcher : undefined
-          }
+          onClick={!switcherDisabled ? onOpenVerticalSwitcher : undefined}
           disabled={switcherDisabled}
-          title={
-            switcherDisabled ? "Clear cart to switch verticals" : undefined
-          }
+          title={switcherDisabled ? "Clear cart to switch verticals" : undefined}
           className="h-[28px] px-3 rounded-md flex items-center gap-1 text-[13px] font-semibold transition-all duration-100"
           style={{
             fontFamily: "'Epilogue', sans-serif",
@@ -171,6 +168,7 @@ export function Header({
           </button>
         </div>
 
+        {/* Account dropdown */}
         <div className="relative" ref={accountRef}>
           <button
             onClick={() => setAccountOpen((o) => !o)}
@@ -190,6 +188,17 @@ export function Header({
               >
                 {displayEmail}
               </p>
+              <div className="h-px mx-3 bg-gray-100" />
+              <button
+                onClick={() => {
+                  setAccountOpen(false);
+                  onOpenSettings();
+                }}
+                className="w-full text-left px-4 py-2.5 text-[14px] font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                style={{ fontFamily: "'Epilogue', sans-serif" }}
+              >
+                Settings
+              </button>
               <div className="h-px mx-3 bg-gray-100" />
               <button
                 onClick={() => {

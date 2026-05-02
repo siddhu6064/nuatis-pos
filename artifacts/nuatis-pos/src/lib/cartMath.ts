@@ -36,6 +36,13 @@ export function calcTax(subtotalCents: number): number {
   return Math.round(subtotalCents * TAX_RATE);
 }
 
+export function calcTaxWithRate(
+  subtotalCents: number,
+  ratePercent: number,
+): number {
+  return Math.round(subtotalCents * (ratePercent / 100));
+}
+
 export function calcTip(subtotalCents: number, percent: number): number {
   return Math.round(subtotalCents * (percent / 100));
 }

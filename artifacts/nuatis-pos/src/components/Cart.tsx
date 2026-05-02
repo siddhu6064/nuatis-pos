@@ -6,7 +6,8 @@ import { CartLine } from "./CartLine";
 import { TipPicker } from "./TipPicker";
 import { CompModal } from "./CompModal";
 import { formatCurrency } from "@/lib/currency";
-import { calcSubtotal, calcTax, calcTotal } from "@/lib/cartMath";
+import { calcSubtotal, calcTaxWithRate, calcTotal } from "@/lib/cartMath";
+import { useVerticalSettings } from "@/hooks/useVerticalSettings";
 
 interface CartProps {
   lines: CartLineType[];
@@ -19,16 +20,13 @@ interface CartProps {
   onStaffChange: (lineId: string, staffId: string) => void;
   onToggleModifier: (lineId: string, modifier: Modifier) => void;
   onSetDiscount: (lineId: string, percent: number) => void;
-  // comp
   compApplied: boolean;
   compReason: string | null;
   onApplyComp: (reason: string) => void;
   onRemoveComp: () => void;
-  // customer
   customer: CartCustomer | null;
   onOpenCustomerSearch: () => void;
   onDetachCustomer: () => void;
-  // checkout
   checkoutState: CheckoutState;
   tipCents: number;
   selectedPreset: string | null;
@@ -66,13 +64,13 @@ export function Cart({
   onTipPresetSelect,
   onCustomTipApply,
 }: CartProps) {
+  const { settings } = useVerticalSettings();
   const [showCompModal, setShowCompModal] = useState(false);
 
   const subtotalCents = calcSubtotal(lines);
-  const rawTaxCents = calcTax(subtotalCents);
+  const rawTaxCents = calcTaxWithRate(subtotalCents, settings.taxRatePercent);
   const rawTotalCents = calcTotal(subtotalCents, rawTaxCents, tipCents);
 
-  // Override math when comp applied
   const displayTaxCents = compApplied ? 0 : rawTaxCents;
   const displayTotalCents = compApplied ? 0 : rawTotalCents;
 
@@ -80,6 +78,8 @@ export function Cart({
   const isIdle = checkoutState === "idle";
   const inTipState = checkoutState === "tip";
   const frozen = !isIdle;
+
+  const taxLabel = `Tax (${settings.taxRatePercent % 1 === 0 ? settings.taxRatePercent.toFixed(0) : settings.taxRatePercent}%)`;
 
   return (
     <div
@@ -206,6 +206,7 @@ export function Cart({
             <TipPicker
               subtotalCents={subtotalCents}
               selectedPreset={selectedPreset}
+              tipPresets={settings.tipPresets}
               onPresetSelect={onTipPresetSelect}
               onCustomApply={onCustomTipApply}
             />
@@ -235,7 +236,7 @@ export function Cart({
             className="text-[14px] text-gray-500"
             style={{ fontFamily: "'Epilogue', sans-serif" }}
           >
-            Tax (8.25%)
+            {taxLabel}
           </span>
           <span
             className="text-[14px] font-medium tabular-nums"
@@ -265,7 +266,6 @@ export function Cart({
           </div>
         )}
 
-        {/* Comp Ticket link / comped indicator */}
         {isIdle && !isEmpty && (
           <div className="flex items-center justify-between mb-2">
             {compApplied ? (

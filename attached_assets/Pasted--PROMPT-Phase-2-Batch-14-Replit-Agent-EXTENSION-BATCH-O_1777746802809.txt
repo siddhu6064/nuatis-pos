@@ -1,0 +1,158 @@
+▶ PROMPT [Phase 2 · Batch 14 · Replit Agent — EXTENSION BATCH · OWNER UX]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-13 complete: full operator loop including discounts, comp, refunds, manager PIN, multi-vertical engine across salon + spa + nail bar (launch trio). Repo on prototype/replit-day-1 branch.
+
+Every batch so far has validated OPERATOR UX — the staff member ringing tickets. This batch is the first non-operator surface: SETTINGS for the owner. Validates a different mental model entirely. Different user, different rhythm, different visual hierarchy. Form-heavy admin pattern that production needs for tax config, tip preset config, business identity edit, staff CRUD. Edits persist per-vertical to localStorage; Receipt + math reads dynamically from the edited config rather than hardcoded constants.
+
+Locked: Settings is a SEPARATE OVERLAY accessed from the Account dropdown in the header (NOT a route, NOT a tab). All edits scoped to active vertical only. Edits are persisted per-vertical to localStorage and override the config defaults from lib/verticals.ts. Reset-to-default available per section.
+
+GOAL
+Owner taps Account dropdown → "Settings" → modal overlay opens. Three tabs: Business Identity, Tax & Tips, Staff. Each tab is a form-heavy admin surface. Edits persist to nuatis-pos:{verticalId}:settings localStorage key, override the static lib/verticals.ts defaults at runtime, and propagate through Receipt rendering, tip presets, tax math, and staff list. Per-vertical scoping — editing salon's tax rate doesn't affect spa or nail bar.
+
+SCOPE — BUILD THIS — SETTINGS FOUNDATION
+
+1. Type definition — extend lib/storage.ts with settingsKey(verticalId) → \`nuatis-pos:\${verticalId}:settings\`.
+
+2. lib/verticalSettings.ts (new):
+   export type VerticalSettings = {
+     business: { name: string; address: string; phone: string };
+     taxRatePercent: number;            // e.g. 8.25
+     tipPresets: number[];              // e.g. [15, 18, 20, 25]
+     staff: Array<{ id: string; firstName: string; role: string; active: boolean }>;
+   };
+   - getVerticalSettings(verticalId, defaultsFromConfig): VerticalSettings — reads localStorage, falls back to defaults from VERTICALS[verticalId]
+   - setVerticalSettings(verticalId, settings): void — writes to localStorage
+   - resetSection(verticalId, section): void — clears one section, falls back to default
+   - resetAll(verticalId): void — clears entire settings entry for that vertical
+   - Default tipPresets: [15, 18, 20, 25] (matches existing TipPicker)
+   - Default staff: pulled from STAFF constant in lib/staff.ts (3 staff)
+   - Default business + taxRatePercent: pulled from VERTICALS[verticalId]
+   - Defaults are read once at runtime — config is the source of truth, settings layer is the override
+
+3. hooks/useVerticalSettings.ts — reads + persists active vertical's settings, exposes:
+   - settings: VerticalSettings (always returns a usable value, never undefined)
+   - updateBusiness(business)
+   - updateTaxRate(percent)
+   - updateTipPresets(presets)
+   - updateStaff(staffArray)
+   - resetSection(section)
+   - resetAll()
+   - Re-reads on activeVerticalId change
+
+4. Wire across the app:
+   - Receipt.tsx reads business identity from useVerticalSettings, NOT from config directly
+   - useCart / cartMath reads taxRatePercent from useVerticalSettings — TAX_RATE constant becomes a fallback default only
+   - TipPicker reads tipPresets from useVerticalSettings; falls back to [15,18,20,25] if empty
+   - Staff list (header switcher, per-line picker, customer search modal use? — only header + per-line picker) reads from useVerticalSettings.staff filtered to active === true
+   - useActiveStaff initialization fallback: if persisted activeStaffId is no longer in active vertical's active staff list, default to first active staff in the list
+
+SCOPE — BUILD THIS — SETTINGS UI
+
+5. Account dropdown extended — components/Header.tsx Account "•••" dropdown gains a "Settings" item above logout. Tap → opens Settings overlay. Logout still works.
+
+6. components/SettingsOverlay.tsx — fixed inset-0 z-50 with #0F0F10 backdrop (same depth as ReportsOverlay). Centered white panel, max-width 720px, max-height 88vh, rounded-lg, internal scroll.
+   - Top bar: "Settings · {VerticalDisplayName}" title (Fraunces 700, 22px) left + close ✕ right
+   - Subtitle: "These settings apply to {vertical} only. Switch verticals to edit theirs." (Epilogue 400, 13px muted)
+   - Tab strip below top bar: [Business] [Tax & Tips] [Staff] — three buttons in a row, active tab gets accent #E84A00 underline + bold
+   - Body changes per active tab
+   - Bottom bar: "Reset This Section" text link left (red #DC2626), "Save Changes" button right (accent fill, white text, 48px, only enabled when section has unsaved edits)
+   - "Done" button next to Save when no unsaved edits
+   - ESC + backdrop click prompt confirmation if unsaved edits exist; else dismiss directly
+
+7. Tab 1 — Business Identity:
+   - Header: "Business Identity" (Fraunces 600, 18px) + small italic note "Shown on every receipt." (Epilogue 400, 12px muted)
+   - Three labeled text inputs stacked, each with floating label pattern (label above field):
+     - Business Name (required, max 60 chars) — current value as placeholder/initial
+     - Street Address (required, max 100 chars)
+     - Phone (required, validate via existing normalizePhone helper — must normalize to 10 digits)
+   - Live preview card below the form: small white card mocking the receipt header — shows business name in Fraunces 700 18px centered, address + phone in Epilogue 400 12px muted centered. Updates as inputs change.
+   - "Save Changes" disabled until at least one field changed AND all fields valid
+
+8. Tab 2 — Tax & Tips:
+   - Section A — Tax:
+     - Header: "Tax Rate" (Fraunces 600, 18px) + note "Applied to subtotal on every ticket. Production will use TaxJar by location." (Epilogue 400, 12px muted)
+     - Single labeled input — "Sales Tax Rate (%)" — numeric, 0-15 range, accepts up to 3 decimals (e.g. 8.250). Validate.
+     - Live preview row: "$100.00 → tax $X.XX → total $X.XX" updating as input changes
+   - Section B — Tip Presets:
+     - Header: "Tip Presets" (Fraunces 600, 18px) + note "Operator sees these as quick-tap buttons during checkout."
+     - Stack of 4 numeric inputs labeled Preset 1 through Preset 4, each 0-100 integer percent only
+     - Constraint: at least 1 preset must be > 0; up to 4 allowed; "+ Add Preset" link adds a 5th up to a max of 6; small ✕ on each removes (down to a minimum of 1)
+     - Live preview row: renders the actual TipPicker component below the form (read-only, just for visual confirmation)
+   - Save Changes button validates both sections — only enabled when valid AND something edited
+
+9. Tab 3 — Staff:
+   - Header: "Staff Members" (Fraunces 600, 18px) + note "Only active staff appear in the operator switcher and per-line picker."
+   - Staff table — for each staff entry: row with First Name input + Role input + Active toggle + ✕ delete (delete only if more than 1 active staff would remain)
+   - "+ Add Staff" link below — adds a new row with empty first name, role placeholder, active=true
+   - Validation: every staff row must have non-empty firstName; at least 1 active staff at all times
+   - Deactivating active staff removes them from header switcher + per-line picker dropdowns immediately on save (not on input — only after Save)
+   - If the currently-selected active staff (in header) becomes inactive after save, fall back to first active staff in list and update header on save
+
+10. Unsaved edits — local Settings overlay state holds a working copy per tab. Switching tabs preserves edits in-tab; closing overlay without Save prompts confirm. Save commits to localStorage via useVerticalSettings updaters and clears unsaved-edits flag for that tab.
+
+11. "Reset This Section" link — confirms via inline prompt ("Reset Business / Tax / Tips / Staff to defaults?") then calls resetSection(activeVerticalId, section). UI re-syncs to defaults from VERTICALS[activeVerticalId].
+
+12. Per-vertical scoping verification — switching active vertical while Settings overlay is open closes the overlay (settings are vertical-scoped; cross-vertical edit confusion prevented).
+
+SCOPE — DO NOT BUILD
+- No PIN gate on Settings — owner is assumed authenticated (already logged into Replit). Production will gate with role check; prototype skips.
+- No backend save, no API, no Supabase write.
+- No staff PIN field, no manager flag (deferred to production where role-based perms matter).
+- No add/edit services from Settings (services are config-locked for prototype; this would be its own batch).
+- No add/edit modifiers from Settings.
+- No multi-currency, no locale, no language picker.
+- No receipt logo upload.
+- No business hours, no holidays.
+- No customer database settings (customers are mock-only).
+- No new npm dependencies.
+- No animations beyond existing patterns.
+- Do NOT add cross-vertical "All Verticals" view (declined).
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- All currency in integer cents (tax math)
+- File additions: lib/verticalSettings.ts, hooks/useVerticalSettings.ts, components/SettingsOverlay.tsx
+- Existing files updated: lib/storage.ts (add settingsKey helper), components/Header.tsx (Settings menu item), components/Receipt.tsx (read business from useVerticalSettings), hooks/useCart.ts (read tax rate from useVerticalSettings), components/TipPicker.tsx (read tipPresets from useVerticalSettings), components/StaffSwitcher.tsx + components/CartLine.tsx (read staff from useVerticalSettings filtered to active)
+- All settings reads via the hook — no direct localStorage reads outside lib/verticalSettings.ts
+- Settings-aware components must re-render on settings change (hook should subscribe to change events or use Context that triggers re-render)
+
+ACCEPTANCE
+1. Account "•••" dropdown shows "Settings" item above Logout.
+2. Tap Settings → overlay opens with Business tab active by default. Title shows current vertical name.
+3. Edit business name to "Test Salon Edits" → live preview card updates → Save → close overlay → ring up a sale → Receipt shows "Test Salon Edits".
+4. Switch to Spa → open Settings → Spa shows its own (unchanged) business name. Salon's edit is isolated.
+5. Reset Business section in salon → confirm → restores to "Nuatis POS Demo Salon" (lib/verticals.ts default).
+6. Tax tab — change salon tax to 5.0% → Save → ring up a $100 service → tax = $5.00, total = $105.00.
+7. Tax preview row updates live as input changes (without saving): "$100 → tax $5.00 → total $105".
+8. Tip Presets tab — change presets to [10, 15, 20] (3 instead of 4) → Save → register screen → Charge → tip picker shows [No Tip] [10%] [15%] [20%] [Custom] (4 buttons + Custom + No Tip).
+9. Add 5th preset (e.g. 30) → Save → tip picker shows 5 percent buttons + No Tip + Custom.
+10. Tip Presets validation — try to remove all → Save disabled until at least 1 remains.
+11. Staff tab — add new staff "Alex / Stylist" → Save → header Switch Staff modal shows 4 staff (3 default + Alex). Per-line staff picker also shows 4.
+12. Deactivate Lisa → Save → header switcher and per-line picker show 3 active (Maria, James, Alex). Lisa hidden but not deleted.
+13. Re-activate Lisa → save → reappears in pickers.
+14. Delete Alex → save → removed entirely. Settings staff list now back to 3.
+15. Try to delete down to 0 active staff → delete button disabled when only 1 active remains.
+16. Switching active vertical while Settings overlay open closes the overlay automatically.
+17. Closing Settings overlay with unsaved edits prompts confirmation; Cancel keeps overlay open with edits intact; Discard closes without saving.
+18. Tab switch within overlay preserves unsaved edits in the leaving tab.
+19. Reset This Section confirms inline before applying.
+20. localStorage after exercising settings: nuatis-pos:salon:settings exists with edits; nuatis-pos:spa:settings only exists if spa was edited (otherwise falls back to defaults dynamically); nuatis-pos:nail_bar:settings same logic.
+21. Settings persist across page reload — reload after editing salon name → reopen Settings → edit reflects.
+22. Refund flow + manager PIN + comp + discount all still work in all 3 verticals after settings edits (no logic regressions).
+23. Per-staff revenue in Today's Sales uses the active vertical's current staff list — historical transactions still attribute to whatever staffId was on the line at the time, even if that staff is now inactive. (Inactive staff still shown in reports if they appear on past line items, just not selectable for new tickets.)
+24. No console errors, no React key warnings, no Tailwind compile errors.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Sid runs git himself in the Shell tab.
+
+REPORT FORMAT — REQUIRED
+After scope is built and acceptance passes, your report MUST include these four sections in this order:
+
+1. WHAT WAS BUILT — bulleted list of every file modified + brief description of changes per file
+2. ERRORS ENCOUNTERED — any errors found during work, how each was resolved (or "None" if zero)
+3. ITEMS SKIPPED — anything in scope that was deferred, with reason (or "None")
+4. OPEN QUESTIONS — anything Sid needs to decide before any future work (or "None")
+
+Then wait for next prompt.

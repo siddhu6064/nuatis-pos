@@ -1,18 +1,11 @@
 import type { Transaction } from "@/hooks/useCheckout";
-import type { BusinessInfo } from "@/lib/verticals";
 import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
 import { calcLineDiscountCents, calcLineTotalCents } from "@/lib/cartMath";
-
-const DEFAULT_BUSINESS: BusinessInfo = {
-  name: "Nuatis POS Demo Salon",
-  address: "123 Main St, Austin, TX 78701",
-  phone: "(512) 555-0100",
-};
+import { useVerticalSettings } from "@/hooks/useVerticalSettings";
 
 interface ReceiptProps {
   transaction: Transaction;
-  businessInfo?: BusinessInfo;
 }
 
 function formatReceiptDate(isoString: string): string {
@@ -45,10 +38,10 @@ function Divider() {
   return <hr className="border-t border-gray-200 my-3" />;
 }
 
-export function Receipt({
-  transaction,
-  businessInfo = DEFAULT_BUSINESS,
-}: ReceiptProps) {
+export function Receipt({ transaction }: ReceiptProps) {
+  const { settings } = useVerticalSettings();
+  const businessInfo = settings.business;
+
   const txShort = transaction.id.slice(-8).toUpperCase();
   const isComped = transaction.compApplied ?? false;
 
@@ -117,7 +110,7 @@ export function Receipt({
         </div>
       )}
 
-      {/* Business header — from active vertical config */}
+      {/* Business header — from active vertical settings */}
       <div className="text-center mb-3">
         <p
           className="text-[22px] font-bold mb-0.5"
@@ -260,7 +253,7 @@ export function Receipt({
           </span>
         </div>
         <div className="flex justify-between text-[12px] text-gray-600">
-          <span>Tax (8.25%)</span>
+          <span>Tax</span>
           <span
             className="tabular-nums"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}

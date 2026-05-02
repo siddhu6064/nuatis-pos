@@ -9,12 +9,14 @@ import { CustomerSearch } from "@/components/CustomerSearch";
 import { ReportsOverlay } from "@/components/ReportsOverlay";
 import { HeldTicketsModal } from "@/components/HeldTicketsModal";
 import { VerticalSwitcher } from "@/components/VerticalSwitcher";
+import { SettingsOverlay } from "@/components/SettingsOverlay";
 import { Toast } from "@/components/Toast";
 import { useCart } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
 import { useActiveStaff } from "@/hooks/useActiveStaff";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
-import { calcSubtotal, calcTax, calcTotal } from "@/lib/cartMath";
+import { useVerticalSettings } from "@/hooks/useVerticalSettings";
+import { calcSubtotal, calcTaxWithRate, calcTotal } from "@/lib/cartMath";
 import {
   getHeldTickets,
   holdTicket,
@@ -32,6 +34,7 @@ interface RegisterPageProps {
 
 export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const { activeVerticalId, setActiveVerticalId, config } = useActiveVertical();
+  const { settings } = useVerticalSettings();
 
   const {
     lines,
@@ -62,6 +65,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [reportsOpen, setReportsOpen] = useState(false);
   const [showHeldModal, setShowHeldModal] = useState(false);
   const [showVerticalSwitcher, setShowVerticalSwitcher] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() =>
     getHeldTickets(activeVerticalId),
   );
@@ -73,6 +77,21 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   useEffect(() => {
     setHeldTickets(getHeldTickets(activeVerticalId));
   }, [activeVerticalId]);
+
+  // If active staff is no longer in the active staff list, fall back to first active
+  const activeStaffIds = settings.staff
+    .filter((s) => s.active)
+    .map((s) => s.id)
+    .join(",");
+  useEffect(() => {
+    const activeList = settings.staff.filter((s) => s.active);
+    const inList = activeList.find((s) => s.id === activeStaff.id);
+    if (!inList && activeList.length > 0) {
+      const first = activeList[0];
+      setActiveStaff({ id: first.id, firstName: first.firstName, role: first.role });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStaffIds]);
 
   const refreshHeld = useCallback(() => {
     setHeldTickets(getHeldTickets(activeVerticalId));
@@ -90,7 +109,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
   const handleConfirmCharge = useCallback(() => {
     const subtotalCents = calcSubtotal(lines);
-    const taxCents = compApplied ? 0 : calcTax(subtotalCents);
+    const taxCents = compApplied
+      ? 0
+      : calcTaxWithRate(subtotalCents, settings.taxRatePercent);
     const tipCents = compApplied ? 0 : checkout.tipCents;
     const totalCents = compApplied
       ? 0
@@ -105,7 +126,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       compApplied,
       compReason,
     });
-  }, [lines, checkout, customer, compApplied, compReason]);
+  }, [lines, checkout, customer, compApplied, compReason, settings.taxRatePercent]);
 
   const handleHold = useCallback(() => {
     if (lines.length === 0) return;
@@ -157,8 +178,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [setActiveVerticalId],
   );
 
-  // Vertical pill is disabled when cart has items or checkout is non-idle
   const switcherDisabled = lines.length > 0 || checkout.state !== "idle";
+  const activeStaffList = settings.staff.filter((s) => s.active);
 
   return (
     <div
@@ -179,6 +200,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         activeVerticalDisplayName={config.displayName}
         switcherDisabled={switcherDisabled}
         onOpenVerticalSwitcher={() => setShowVerticalSwitcher(true)}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -188,9 +210,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
               <ServiceTile
                 key={service.id}
                 service={service}
-                color={
-                  config.categoryColors[service.category] ?? "#F3F4F6"
-                }
+                color={config.categoryColors[service.category] ?? "#F3F4F6"}
                 onTap={handleTileTap}
               />
             ))}
@@ -239,6 +259,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
       {showStaffSwitcher && (
         <StaffSwitcher
+          staff={activeStaffList}
           activeStaffId={activeStaff.id}
           onSelect={setActiveStaff}
           onClose={() => setShowStaffSwitcher(false)}
@@ -275,6 +296,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           onSwitch={handleVerticalSwitch}
           onClose={() => setShowVerticalSwitcher(false)}
         />
+      )}
+
+      {showSettings && (
+        <SettingsOverlay onClose={() => setShowSettings(false)} />
       )}
     </div>
   );

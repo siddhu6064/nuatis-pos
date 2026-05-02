@@ -1,13 +1,16 @@
 import { useEffect } from "react";
-import { STAFF, type Staff } from "@/lib/staff";
+import type { Staff } from "@/lib/staff";
+import type { SettingsStaff } from "@/lib/verticalSettings";
 
 interface StaffSwitcherProps {
+  staff: SettingsStaff[];
   activeStaffId: string;
   onSelect: (staff: Staff) => void;
   onClose: () => void;
 }
 
 export function StaffSwitcher({
+  staff,
   activeStaffId,
   onSelect,
   onClose,
@@ -38,23 +41,21 @@ export function StaffSwitcher({
           Switch Staff
         </p>
         <div className="flex flex-col gap-2">
-          {STAFF.map((staff) => {
-            const isActive = staff.id === activeStaffId;
+          {staff.map((s) => {
+            const isActive = s.id === activeStaffId;
             return (
               <button
-                key={staff.id}
+                key={s.id}
                 onClick={() => {
-                  onSelect(staff);
+                  onSelect({ id: s.id, firstName: s.firstName, role: s.role });
                   onClose();
                 }}
-                className="
-                  flex items-center justify-between
-                  w-full px-4 py-3 rounded-xl
-                  text-left transition-colors duration-100
-                "
+                className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-left transition-colors duration-100"
                 style={{
                   backgroundColor: isActive ? "#FFF0E8" : "#F3F4F6",
-                  border: isActive ? "2px solid #E84A00" : "2px solid transparent",
+                  border: isActive
+                    ? "2px solid #E84A00"
+                    : "2px solid transparent",
                 }}
               >
                 <div>
@@ -62,19 +63,22 @@ export function StaffSwitcher({
                     className="text-[16px] font-semibold text-gray-900"
                     style={{ fontFamily: "'Epilogue', sans-serif" }}
                   >
-                    {staff.firstName}
+                    {s.firstName}
                   </p>
                   <p
                     className="text-[13px] text-gray-500"
                     style={{ fontFamily: "'Epilogue', sans-serif" }}
                   >
-                    {staff.role}
+                    {s.role}
                   </p>
                 </div>
                 {isActive && (
                   <span
                     className="text-[12px] font-semibold"
-                    style={{ color: "#E84A00", fontFamily: "'Epilogue', sans-serif" }}
+                    style={{
+                      color: "#E84A00",
+                      fontFamily: "'Epilogue', sans-serif",
+                    }}
                   >
                     Active
                   </span>
