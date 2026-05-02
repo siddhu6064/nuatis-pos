@@ -5,6 +5,7 @@ import {
   markAppointmentStarted,
   markAppointmentNoShow,
   resetAppointmentStatus,
+  takeAppointmentDeposit,
   type Appointment,
 } from "@/lib/appointments";
 
@@ -30,5 +31,9 @@ export function useAppointments() {
     setAppointments(resetAppointmentStatus(activeVerticalId, id));
   }
 
-  return { appointments, startAppointment, markNoShow, resetStatus };
+  function takeDeposit(id: string, txId: string): void {
+    setAppointments(takeAppointmentDeposit(activeVerticalId, id, txId));
+  }
+
+  return { appointments, startAppointment, markNoShow, resetStatus, takeDeposit };
 }

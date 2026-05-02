@@ -38,6 +38,12 @@ export interface Transaction {
   compReason: string | null;
   refunds?: RefundRecord[];
   refundedTotalCents?: number;
+  // Extended fields (B19)
+  type?: "service" | "deposit";       // default 'service' on legacy read
+  depositApplied?: number;            // cents credited from prior deposit
+  appointmentRef?: string;            // links to appointment.id
+  totalPaid?: number;                 // actual cash that changed hands
+  depositBalanceDueCents?: number;    // only on type='deposit': servicePriceCents - depositAmountCents
 }
 
 export interface ConfirmData {
@@ -52,6 +58,8 @@ export interface ConfirmData {
   paymentMethod?: "card" | "cash";
   amountTendered?: number;
   changeGiven?: number;
+  depositApplied?: number;
+  appointmentRef?: string;
 }
 
 function appendTransaction(tx: Transaction, verticalId: string): void {
@@ -61,11 +69,17 @@ function appendTransaction(tx: Transaction, verticalId: string): void {
     const existing: Transaction[] = raw
       ? (JSON.parse(raw) as Transaction[])
       : [];
-    const updated = [...existing, tx].slice(-10);
+    const updated = [...existing, tx].slice(-50); // increased from 10 for deposit+service pairs
     localStorage.setItem(key, JSON.stringify(updated));
   } catch {
     // silent fail
   }
+}
+
+// ─── Module-level utility: append without going through checkout state machine ─
+
+export function addTransactionDirect(verticalId: string, tx: Transaction): void {
+  appendTransaction(tx, verticalId);
 }
 
 export function useCheckout(onComplete: () => void) {
@@ -114,9 +128,10 @@ export function useCheckout(onComplete: () => void) {
 
   const confirmCheckout = useCallback((data: ConfirmData) => {
     const method = data.paymentMethod ?? "card";
+    const depositApplied = data.depositApplied ?? 0;
+    const totalPaid = Math.max(0, data.totalCents - depositApplied);
 
     if (method === "cash") {
-      // Cash: skip card reader simulation, go directly to receipt
       const tx: Transaction = {
         id: crypto.randomUUID(),
         lineItems: data.lineItems,
@@ -131,14 +146,18 @@ export function useCheckout(onComplete: () => void) {
         customer: data.customer,
         compApplied: data.compApplied,
         compReason: data.compReason,
+        type: "service",
+        totalPaid,
+        ...(depositApplied > 0 && { depositApplied }),
+        ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
       };
       setCompletedTx(tx);
       setState("receipt");
       return;
     }
 
-    // Card: existing 2-sec reader simulation
-    setProcessingTotalCents(data.totalCents);
+    // Card: 2-sec reader simulation
+    setProcessingTotalCents(totalPaid);
     setState("processing");
     const delay = data.compApplied ? 800 : 2000;
     setTimeout(() => {
@@ -154,6 +173,10 @@ export function useCheckout(onComplete: () => void) {
         customer: data.customer,
         compApplied: data.compApplied,
         compReason: data.compReason,
+        type: "service",
+        totalPaid,
+        ...(depositApplied > 0 && { depositApplied }),
+        ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
       };
       setCompletedTx(tx);
       setState("receipt");

@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { STAFF } from "@/lib/staff";
 import type { CartCustomer } from "@/lib/customers";
 import type { Modifier } from "@/lib/modifiers";
-import { cartKey } from "@/lib/storage";
+import { cartKey, cartMetaKey } from "@/lib/storage";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
 
 export interface CartLine {
@@ -17,6 +17,11 @@ export interface CartLine {
 }
 
 export type { CartCustomer };
+
+interface CartMeta {
+  appointmentRef: string | null;
+  depositApplied: number;
+}
 
 function loadCart(verticalId: string): CartLine[] {
   try {
@@ -46,10 +51,30 @@ function loadCart(verticalId: string): CartLine[] {
   }
 }
 
+function loadCartMeta(verticalId: string): CartMeta {
+  try {
+    const raw = localStorage.getItem(cartMetaKey(verticalId));
+    if (!raw) return { appointmentRef: null, depositApplied: 0 };
+    const parsed = JSON.parse(raw) as Partial<CartMeta>;
+    return {
+      appointmentRef: typeof parsed.appointmentRef === "string" ? parsed.appointmentRef : null,
+      depositApplied: typeof parsed.depositApplied === "number" ? parsed.depositApplied : 0,
+    };
+  } catch {
+    return { appointmentRef: null, depositApplied: 0 };
+  }
+}
+
+function saveCartMeta(verticalId: string, meta: CartMeta): void {
+  try {
+    localStorage.setItem(cartMetaKey(verticalId), JSON.stringify(meta));
+  } catch {
+    // silent fail
+  }
+}
+
 export function useCart() {
   const { activeVerticalId } = useActiveVertical();
-
-  // Ref tracks current verticalId for use inside callbacks
   const verticalIdRef = useRef(activeVerticalId);
 
   const [lines, setLines] = useState<CartLine[]>(() =>
@@ -58,14 +83,22 @@ export function useCart() {
   const [customer, setCustomer] = useState<CartCustomer | null>(null);
   const [compApplied, setCompApplied] = useState(false);
   const [compReason, setCompReason] = useState<string | null>(null);
+  const [appointmentRef, setAppointmentRefState] = useState<string | null>(
+    () => loadCartMeta(activeVerticalId).appointmentRef,
+  );
+  const [depositApplied, setDepositAppliedState] = useState<number>(
+    () => loadCartMeta(activeVerticalId).depositApplied,
+  );
 
-  // When vertical switches, reload cart from new namespace
   useEffect(() => {
     verticalIdRef.current = activeVerticalId;
     setLines(loadCart(activeVerticalId));
     setCustomer(null);
     setCompApplied(false);
     setCompReason(null);
+    const meta = loadCartMeta(activeVerticalId);
+    setAppointmentRefState(meta.appointmentRef);
+    setDepositAppliedState(meta.depositApplied);
   }, [activeVerticalId]);
 
   function saveCart(next: CartLine[]): void {
@@ -203,6 +236,20 @@ export function useCart() {
     setCustomer(null);
   }, []);
 
+  const setDepositContext = useCallback((ref: string, depositCents: number) => {
+    setAppointmentRefState(ref);
+    setDepositAppliedState(depositCents);
+    saveCartMeta(verticalIdRef.current, { appointmentRef: ref, depositApplied: depositCents });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const clearDepositContext = useCallback(() => {
+    setAppointmentRefState(null);
+    setDepositAppliedState(0);
+    saveCartMeta(verticalIdRef.current, { appointmentRef: null, depositApplied: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const loadHeld = useCallback(
     (
       lineItems: CartLine[],
@@ -215,6 +262,10 @@ export function useCart() {
       setCustomer(heldCustomer);
       setCompApplied(heldCompApplied);
       setCompReason(heldCompReason);
+      // Clear deposit context when resuming a held ticket
+      setAppointmentRefState(null);
+      setDepositAppliedState(0);
+      saveCartMeta(verticalIdRef.current, { appointmentRef: null, depositApplied: 0 });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -227,6 +278,9 @@ export function useCart() {
     setCustomer(null);
     setCompApplied(false);
     setCompReason(null);
+    setAppointmentRefState(null);
+    setDepositAppliedState(0);
+    saveCartMeta(verticalIdRef.current, { appointmentRef: null, depositApplied: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -235,6 +289,8 @@ export function useCart() {
     customer,
     compApplied,
     compReason,
+    appointmentRef,
+    depositApplied,
     addItem,
     increment,
     decrement,
@@ -246,6 +302,8 @@ export function useCart() {
     removeComp,
     attachCustomer,
     detachCustomer,
+    setDepositContext,
+    clearDepositContext,
     loadHeld,
     clear,
   };

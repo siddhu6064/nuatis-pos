@@ -73,6 +73,8 @@ interface ReceiptDetailProps {
   onBack: () => void;
   onClose: () => void;
   onUpdateTransaction: (updated: Transaction) => void;
+  allTransactions: Transaction[];
+  onSelectTx: (tx: Transaction) => void;
 }
 
 function ReceiptDetail({
@@ -80,6 +82,8 @@ function ReceiptDetail({
   onBack,
   onClose,
   onUpdateTransaction,
+  allTransactions,
+  onSelectTx,
 }: ReceiptDetailProps) {
   const { requestManagerOverride } = useManagerOverride();
   const [expandedInput, setExpandedInput] = useState<"email" | "sms" | null>(null);
@@ -102,7 +106,19 @@ function ReceiptDetail({
   );
   const refundStatus = txRefundStatus(tx);
   const isFullyRefunded = refundStatus === "full";
-  const canRefund = tx.totalCents > 0 && !isFullyRefunded;
+  const isDepositTx = (tx.type ?? "service") === "deposit";
+  const canRefund = tx.totalCents > 0 && !isFullyRefunded && !isDepositTx;
+
+  // Linked transaction (deposit ↔ service)
+  const linkedTx = isDepositTx && tx.appointmentRef
+    ? allTransactions.find(
+        (t) => (t.type ?? "service") === "service" && t.appointmentRef === tx.appointmentRef,
+      )
+    : !isDepositTx && tx.appointmentRef && (tx.depositApplied ?? 0) > 0
+      ? allTransactions.find(
+          (t) => (t.type ?? "service") === "deposit" && t.appointmentRef === tx.appointmentRef,
+        )
+      : undefined;
 
   async function handleRefundTap() {
     const approved = await requestManagerOverride("Refund authorization");
@@ -193,7 +209,45 @@ function ReceiptDetail({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-5">
-          <Receipt transaction={tx} />
+          <Receipt
+            transaction={tx}
+            linkedDepositTx={
+              !isDepositTx ? linkedTx : undefined
+            }
+          />
+
+          {/* Linked transaction panel */}
+          {linkedTx && (
+            <button
+              onClick={() => onSelectTx(linkedTx)}
+              className="w-full text-left mt-3 p-3 rounded-xl border transition-colors hover:bg-gray-50"
+              style={{ borderColor: "#E5E7EB" }}
+            >
+              <p
+                className="text-[11px] text-gray-400 mb-0.5"
+                style={{ fontFamily: "'Epilogue', sans-serif" }}
+              >
+                {isDepositTx ? "Linked service transaction" : "Linked deposit"}
+              </p>
+              <div className="flex items-center justify-between">
+                <span
+                  className="text-[13px] font-medium text-gray-700"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                >
+                  #{linkedTx.id.slice(-8).toUpperCase()}
+                </span>
+                <span
+                  className="text-[13px] font-semibold tabular-nums"
+                  style={{
+                    fontFamily: "'Fraunces', serif",
+                    color: isDepositTx ? "#E84A00" : "#7C3AED",
+                  }}
+                >
+                  {formatCurrency(linkedTx.totalPaid ?? linkedTx.totalCents)}
+                </span>
+              </div>
+            </button>
+          )}
 
           <div
             className="mt-5 pt-4 border-t"
@@ -403,11 +457,11 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
   );
   const showPaymentMix = cardTxsToday.length > 0 && cashTxsToday.length > 0;
   const cardNetRevenue = cardTxsToday.reduce(
-    (s, tx) => s + tx.totalCents - (tx.refundedTotalCents ?? 0),
+    (s, tx) => s + (tx.totalPaid ?? tx.totalCents) - (tx.refundedTotalCents ?? 0),
     0,
   );
   const cashNetRevenue = cashTxsToday.reduce(
-    (s, tx) => s + tx.totalCents - (tx.refundedTotalCents ?? 0),
+    (s, tx) => s + (tx.totalPaid ?? tx.totalCents) - (tx.refundedTotalCents ?? 0),
     0,
   );
 
@@ -690,6 +744,18 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                                   PARTIAL
                                 </span>
                               )}
+                              {(tx.type ?? "service") === "deposit" && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#7C3AED",
+                                    backgroundColor: "#F3E8FF",
+                                  }}
+                                >
+                                  DEPOSIT
+                                </span>
+                              )}
                               <span
                                 className="text-[14px] font-medium text-gray-900"
                                 style={{ fontFamily: "'Epilogue', sans-serif" }}
@@ -703,7 +769,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                               className="text-[16px] font-semibold text-gray-900 tabular-nums ml-2 flex-shrink-0"
                               style={{ fontFamily: "'Fraunces', serif" }}
                             >
-                              {formatCurrency(tx.totalCents)}
+                              {formatCurrency(tx.totalPaid ?? tx.totalCents)}
                             </span>
                           </div>
                           <div className="flex items-center gap-3 mt-0.5">
@@ -752,6 +818,8 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
               onBack={() => setViewMode("summary")}
               onClose={onClose}
               onUpdateTransaction={updateTransaction}
+              allTransactions={transactions}
+              onSelectTx={(linked) => setSelectedTx(linked)}
             />
           )
         )}

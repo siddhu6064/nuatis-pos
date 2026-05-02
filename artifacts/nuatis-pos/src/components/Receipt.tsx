@@ -6,6 +6,7 @@ import { useVerticalSettings } from "@/hooks/useVerticalSettings";
 
 interface ReceiptProps {
   transaction: Transaction;
+  linkedDepositTx?: Transaction;  // for service txs with depositApplied, optional
 }
 
 function formatReceiptDate(isoString: string): string {
@@ -38,7 +39,7 @@ function Divider() {
   return <hr className="border-t border-gray-200 my-3" />;
 }
 
-export function Receipt({ transaction }: ReceiptProps) {
+export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
   const { settings } = useVerticalSettings();
   const businessInfo = settings.business;
 
@@ -46,6 +47,9 @@ export function Receipt({ transaction }: ReceiptProps) {
   const isComped = transaction.compApplied ?? false;
   const paymentMethod = transaction.paymentMethod ?? "card";
   const isCash = paymentMethod === "cash";
+  const isDepositTx = (transaction.type ?? "service") === "deposit";
+  const depositApplied = transaction.depositApplied ?? 0;
+  const hasDepositCredit = !isDepositTx && depositApplied > 0;
 
   const allRefundedLineIds = new Set(
     (transaction.refunds ?? []).flatMap((r) => r.lineIds),
@@ -69,8 +73,29 @@ export function Receipt({ transaction }: ReceiptProps) {
       className="text-gray-900 text-[13px] w-full relative"
       style={{ fontFamily: "'Epilogue', sans-serif" }}
     >
+      {/* DEPOSIT stamp */}
+      {isDepositTx && (
+        <div
+          style={{
+            position: "absolute",
+            top: "8px",
+            right: "4px",
+            fontFamily: "'Fraunces', serif",
+            fontSize: "14px",
+            fontWeight: 700,
+            color: "#7C3AED",
+            transform: "rotate(-8deg)",
+            userSelect: "none",
+            pointerEvents: "none",
+            letterSpacing: "0.05em",
+          }}
+        >
+          DEPOSIT
+        </div>
+      )}
+
       {/* COMPED stamp */}
-      {isComped && !hasAnyRefund && (
+      {isComped && !hasAnyRefund && !isDepositTx && (
         <div
           style={{
             position: "absolute",
@@ -112,7 +137,7 @@ export function Receipt({ transaction }: ReceiptProps) {
         </div>
       )}
 
-      {/* Business header — from active vertical settings */}
+      {/* Business header */}
       <div className="text-center mb-3">
         <p
           className="text-[22px] font-bold mb-0.5"
@@ -136,6 +161,14 @@ export function Receipt({ transaction }: ReceiptProps) {
           style={{ fontFamily: "'JetBrains Mono', monospace" }}
         >
           Txn #{txShort}
+          {isDepositTx && (
+            <span
+              className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
+              style={{ color: "#7C3AED", backgroundColor: "#F3E8FF", fontFamily: "'Epilogue', sans-serif" }}
+            >
+              DEPOSIT
+            </span>
+          )}
         </p>
         {transaction.customer && (
           <p className="text-[12px] text-gray-700 font-medium">
@@ -143,7 +176,7 @@ export function Receipt({ transaction }: ReceiptProps) {
             {transaction.customer.lastName}
           </p>
         )}
-        {isComped && (
+        {isComped && !isDepositTx && (
           <p className="text-[12px] font-semibold" style={{ color: "#DC2626" }}>
             COMPED · {transaction.compReason ?? "No reason given"}
           </p>
@@ -157,7 +190,8 @@ export function Receipt({ transaction }: ReceiptProps) {
         {transaction.lineItems.map((line) => {
           const lineTotal = calcLineTotalCents(line);
           const discountCents = calcLineDiscountCents(line);
-          const staffMember = STAFF.find((s) => s.id === line.staffId);
+          // staffId "" is the deposit sentinel — show no staff attribution
+          const staffMember = line.staffId ? STAFF.find((s) => s.id === line.staffId) : undefined;
           const isRefunded = allRefundedLineIds.has(line.lineId);
 
           return (
@@ -243,124 +277,196 @@ export function Receipt({ transaction }: ReceiptProps) {
 
       <Divider />
 
-      {/* Math rows */}
-      <div className="space-y-1">
-        <div className="flex justify-between text-[12px] text-gray-600">
-          <span>Subtotal</span>
-          <span
-            className="tabular-nums"
-            style={{ fontFamily: "'JetBrains Mono', monospace" }}
-          >
-            {formatCurrency(transaction.subtotalCents)}
-          </span>
-        </div>
-        <div className="flex justify-between text-[12px] text-gray-600">
-          <span>Tax</span>
-          <span
-            className="tabular-nums"
-            style={{ fontFamily: "'JetBrains Mono', monospace" }}
-          >
-            {formatCurrency(transaction.taxCents)}
-          </span>
-        </div>
-        {transaction.tipCents > 0 && (
-          <div className="flex justify-between text-[12px] text-gray-600">
-            <span>Tip</span>
+      {/* Math rows — deposit-type tx has a simplified layout */}
+      {isDepositTx ? (
+        <div className="space-y-1">
+          <div className="flex justify-between text-[15px] font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
+            <span style={{ fontFamily: "'Epilogue', sans-serif" }}>Deposit</span>
             <span
               className="tabular-nums"
-              style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              style={{ fontFamily: "'Fraunces', serif", color: "#7C3AED" }}
             >
-              {formatCurrency(transaction.tipCents)}
+              {formatCurrency(transaction.totalCents)}
             </span>
           </div>
-        )}
-        <div className="flex justify-between text-[15px] font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
-          <span style={{ fontFamily: "'Epilogue', sans-serif" }}>Total</span>
-          <span
-            className="tabular-nums"
-            style={{
-              fontFamily: "'Fraunces', serif",
-              color: isComped ? "#DC2626" : "inherit",
-            }}
-          >
-            {formatCurrency(transaction.totalCents)}
-          </span>
-        </div>
-
-        {/* Payment info */}
-        <div className="flex justify-between text-[12px] text-gray-600 pt-0.5">
-          <span>Payment</span>
-          <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
-            {isCash ? "Cash" : "Card"}
-          </span>
-        </div>
-
-        {isCash && transaction.amountTendered !== undefined && (
-          <>
-            <div className="flex justify-between text-[12px] text-gray-600">
-              <span>Tendered</span>
+          {(transaction.depositBalanceDueCents ?? 0) > 0 && (
+            <div className="flex justify-between text-[12px] text-gray-500 pt-1">
+              <span>Balance due at service</span>
               <span
                 className="tabular-nums"
                 style={{ fontFamily: "'JetBrains Mono', monospace" }}
               >
-                {formatCurrency(transaction.amountTendered)}
+                {formatCurrency(transaction.depositBalanceDueCents!)}
               </span>
             </div>
-            <div className="flex justify-between text-[12px] text-gray-600">
-              <span>Change</span>
-              <span
-                className="tabular-nums"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
-                {formatCurrency(transaction.changeGiven ?? 0)}
-              </span>
-            </div>
-          </>
-        )}
-
-        {(transaction.refunds ?? []).map((refund, i) => (
-          <div
-            key={refund.id}
-            className="flex justify-between text-[12px] pt-0.5"
-            style={{ color: "#DC2626" }}
-          >
+          )}
+          <div className="flex justify-between text-[12px] text-gray-600 pt-0.5">
+            <span>Payment</span>
             <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
-              Refund #{i + 1} · {formatShortDatetime(refund.refundedAt)}
+              {isCash ? "Cash" : "Card"}
             </span>
+          </div>
+          {isCash && transaction.amountTendered !== undefined && (
+            <>
+              <div className="flex justify-between text-[12px] text-gray-600">
+                <span>Tendered</span>
+                <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                  {formatCurrency(transaction.amountTendered)}
+                </span>
+              </div>
+              <div className="flex justify-between text-[12px] text-gray-600">
+                <span>Change</span>
+                <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                  {formatCurrency(transaction.changeGiven ?? 0)}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex justify-between text-[12px] text-gray-600">
+            <span>Subtotal</span>
             <span
               className="tabular-nums"
               style={{ fontFamily: "'JetBrains Mono', monospace" }}
             >
-              −{formatCurrency(refund.totalRefundCents)}
+              {formatCurrency(transaction.subtotalCents)}
             </span>
           </div>
-        ))}
-
-        {hasAnyRefund && (
-          <div className="flex justify-between text-[13px] font-semibold pt-1 border-t border-gray-200">
+          <div className="flex justify-between text-[12px] text-gray-600">
+            <span>Tax</span>
             <span
-              style={{ fontFamily: "'Epilogue', sans-serif", color: "#374151" }}
+              className="tabular-nums"
+              style={{ fontFamily: "'JetBrains Mono', monospace" }}
             >
-              Net
+              {formatCurrency(transaction.taxCents)}
+            </span>
+          </div>
+          {transaction.tipCents > 0 && (
+            <div className="flex justify-between text-[12px] text-gray-600">
+              <span>Tip</span>
+              <span
+                className="tabular-nums"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {formatCurrency(transaction.tipCents)}
+              </span>
+            </div>
+          )}
+
+          {/* Deposit credit row */}
+          {hasDepositCredit && (
+            <div className="flex justify-between text-[12px]" style={{ color: "#15803D" }}>
+              <span>Deposit applied</span>
+              <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                −{formatCurrency(depositApplied)}
+              </span>
+            </div>
+          )}
+
+          <div className="flex justify-between text-[15px] font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
+            <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
+              {hasDepositCredit ? "Balance paid" : "Total"}
             </span>
             <span
               className="tabular-nums"
-              style={{ fontFamily: "'Fraunces', serif", color: "#374151" }}
+              style={{
+                fontFamily: "'Fraunces', serif",
+                color: isComped ? "#DC2626" : "inherit",
+              }}
             >
-              {formatCurrency(netCents)}
+              {formatCurrency(hasDepositCredit
+                ? (transaction.totalPaid ?? transaction.totalCents)
+                : transaction.totalCents
+              )}
             </span>
           </div>
-        )}
-      </div>
+
+          {/* Payment info */}
+          <div className="flex justify-between text-[12px] text-gray-600 pt-0.5">
+            <span>Payment</span>
+            <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
+              {isCash ? "Cash" : "Card"}
+            </span>
+          </div>
+
+          {isCash && transaction.amountTendered !== undefined && (
+            <>
+              <div className="flex justify-between text-[12px] text-gray-600">
+                <span>Tendered</span>
+                <span
+                  className="tabular-nums"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                >
+                  {formatCurrency(transaction.amountTendered)}
+                </span>
+              </div>
+              <div className="flex justify-between text-[12px] text-gray-600">
+                <span>Change</span>
+                <span
+                  className="tabular-nums"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                >
+                  {formatCurrency(transaction.changeGiven ?? 0)}
+                </span>
+              </div>
+            </>
+          )}
+
+          {(transaction.refunds ?? []).map((refund, i) => (
+            <div
+              key={refund.id}
+              className="flex justify-between text-[12px] pt-0.5"
+              style={{ color: "#DC2626" }}
+            >
+              <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                Refund #{i + 1} · {formatShortDatetime(refund.refundedAt)}
+              </span>
+              <span
+                className="tabular-nums"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                −{formatCurrency(refund.totalRefundCents)}
+              </span>
+            </div>
+          ))}
+
+          {hasAnyRefund && (
+            <div className="flex justify-between text-[13px] font-semibold pt-1 border-t border-gray-200">
+              <span
+                style={{ fontFamily: "'Epilogue', sans-serif", color: "#374151" }}
+              >
+                Net
+              </span>
+              <span
+                className="tabular-nums"
+                style={{ fontFamily: "'Fraunces', serif", color: "#374151" }}
+              >
+                {formatCurrency(netCents)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <Divider />
 
+      {/* Linked deposit footnote */}
+      {hasDepositCredit && linkedDepositTx && (
+        <p className="text-[11px] text-gray-400 mb-2">
+          Deposit of {formatCurrency(depositApplied)} collected {formatShortDatetime(linkedDepositTx.completedAt)} · Txn #{linkedDepositTx.id.slice(-8).toUpperCase()}
+        </p>
+      )}
+
       <p className="text-[12px] text-gray-600">
-        {isComped
-          ? "No charge — comped"
-          : isCash
-            ? "Cash payment"
-            : "Card • Visa •••• 4242"}
+        {isDepositTx
+          ? "Deposit received — balance due at service"
+          : isComped
+            ? "No charge — comped"
+            : isCash
+              ? "Cash payment"
+              : "Card • Visa •••• 4242"}
       </p>
 
       <Divider />

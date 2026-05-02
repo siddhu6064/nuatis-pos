@@ -36,6 +36,7 @@ interface CartProps {
   onOpenCash: () => void;
   onTipPresetSelect: (preset: string, subtotalCents: number) => void;
   onCustomTipApply: (cents: number) => void;
+  depositApplied?: number;
 }
 
 export function Cart({
@@ -65,6 +66,7 @@ export function Cart({
   onOpenCash,
   onTipPresetSelect,
   onCustomTipApply,
+  depositApplied = 0,
 }: CartProps) {
   const { settings } = useVerticalSettings();
   const [showCompModal, setShowCompModal] = useState(false);
@@ -75,6 +77,12 @@ export function Cart({
 
   const displayTaxCents = compApplied ? 0 : rawTaxCents;
   const displayTotalCents = compApplied ? 0 : rawTotalCents;
+
+  // Deposit math
+  const depositCredit = compApplied ? 0 : depositApplied;
+  const balanceCents = Math.max(0, displayTotalCents - depositCredit);
+  const hasDeposit = depositCredit > 0;
+  const buttonAmount = hasDeposit ? balanceCents : displayTotalCents;
 
   const isEmpty = lines.length === 0;
   const isIdle = checkoutState === "idle";
@@ -129,6 +137,22 @@ export function Cart({
           </button>
         )}
       </div>
+
+      {/* Deposit banner */}
+      {hasDeposit && !isEmpty && (
+        <div
+          className="px-4 py-2 border-b flex-shrink-0 flex items-center gap-2"
+          style={{ backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }}
+        >
+          <span style={{ fontSize: "13px" }}>↩</span>
+          <span
+            className="text-[12px] font-semibold"
+            style={{ color: "#15803D", fontFamily: "'Epilogue', sans-serif" }}
+          >
+            Deposit on file: {formatCurrency(depositCredit)} · credited at checkout
+          </span>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-black/8 flex-shrink-0">
@@ -268,6 +292,24 @@ export function Cart({
           </div>
         )}
 
+        {/* Deposit credit row (tip state only) */}
+        {inTipState && hasDeposit && (
+          <div className="flex items-center justify-between mb-1.5">
+            <span
+              className="text-[14px]"
+              style={{ fontFamily: "'Epilogue', sans-serif", color: "#15803D" }}
+            >
+              Deposit credit
+            </span>
+            <span
+              className="text-[14px] font-medium tabular-nums"
+              style={{ fontFamily: "'JetBrains Mono', monospace", color: "#15803D" }}
+            >
+              −{formatCurrency(depositCredit)}
+            </span>
+          </div>
+        )}
+
         {isIdle && !isEmpty && (
           <div className="flex items-center justify-between mb-2">
             {compApplied ? (
@@ -305,12 +347,13 @@ export function Cart({
           </div>
         )}
 
+        {/* Total / Balance due row */}
         <div className="flex items-center justify-between mb-3 pt-2 border-t border-black/8">
           <span
             className="text-[18px] font-semibold text-gray-900"
             style={{ fontFamily: "'Epilogue', sans-serif" }}
           >
-            Total
+            {inTipState && hasDeposit ? "Balance due" : "Total"}
           </span>
           <span
             className="text-[22px] font-bold tabular-nums"
@@ -319,7 +362,7 @@ export function Cart({
               color: compApplied ? "#DC2626" : "#111827",
             }}
           >
-            {formatCurrency(displayTotalCents)}
+            {formatCurrency(inTipState && hasDeposit ? balanceCents : displayTotalCents)}
           </span>
         </div>
 
@@ -358,7 +401,7 @@ export function Cart({
                   backgroundColor: "#E84A00",
                 }}
               >
-                Card {formatCurrency(displayTotalCents)}
+                Card {formatCurrency(buttonAmount)}
               </button>
               <button
                 onClick={onOpenCash}
@@ -368,7 +411,7 @@ export function Cart({
                   backgroundColor: "#E84A00",
                 }}
               >
-                Cash {formatCurrency(displayTotalCents)}
+                Cash {formatCurrency(buttonAmount)}
               </button>
             </div>
           )

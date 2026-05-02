@@ -11,6 +11,8 @@ interface CashTenderModalProps {
   totalCents: number;
   onConfirm: (amountTendered: number) => void;
   onCancel: () => void;
+  confirmLabel?: string;  // default "Complete Cash Sale"
+  zIndex?: number;        // default 40
 }
 
 function TenderedDisplay({
@@ -62,6 +64,8 @@ export function CashTenderModal({
   totalCents,
   onConfirm,
   onCancel,
+  confirmLabel = "Complete Cash Sale",
+  zIndex = 40,
 }: CashTenderModalProps) {
   const [tenderedCents, setTenderedCents] = useState(0);
 
@@ -124,8 +128,8 @@ export function CashTenderModal({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(15,15,16,0.75)" }}
+      className="fixed inset-0 flex items-center justify-center"
+      style={{ backgroundColor: "rgba(15,15,16,0.75)", zIndex }}
       onClick={onCancel}
     >
       <div
@@ -257,7 +261,7 @@ export function CashTenderModal({
               cursor: canConfirm ? "pointer" : "not-allowed",
             }}
           >
-            Complete Cash Sale
+            {confirmLabel}
           </button>
         </div>
       </div>

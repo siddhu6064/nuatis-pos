@@ -2,8 +2,9 @@ import type { Service } from "@/lib/services";
 import type { Modifier } from "@/lib/modifiers";
 import { SERVICES, CATEGORY_COLORS } from "@/lib/services";
 import { MODIFIERS_BY_SERVICE } from "@/lib/modifiers";
+import { TATTOO_SERVICES, TATTOO_MODIFIERS_BY_SERVICE, TATTOO_CATEGORY_COLORS } from "@/lib/tattoo-services";
 
-export type VerticalId = "salon" | "spa" | "nail_bar";
+export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo";
 
 export interface BusinessInfo {
   name: string;
@@ -165,6 +166,19 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     services: NAIL_BAR_SERVICES,
     modifiersByService: NAIL_BAR_MODIFIERS_BY_SERVICE,
     categoryColors: NAIL_BAR_CATEGORY_COLORS,
+  },
+  tattoo: {
+    id: "tattoo",
+    displayName: "Tattoo",
+    tagline: "Custom tattoos, touch-ups, and consultations",
+    business: {
+      name: "Nuatis POS Demo Tattoo",
+      address: "321 Ink Blvd, Austin, TX 78705",
+      phone: "(512) 555-0400",
+    },
+    services: TATTOO_SERVICES,
+    modifiersByService: TATTOO_MODIFIERS_BY_SERVICE,
+    categoryColors: TATTOO_CATEGORY_COLORS,
   },
 };
 

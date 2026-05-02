@@ -16,6 +16,9 @@ export const waitlistKey = (verticalId: string): string =>
 export const appointmentsKey = (verticalId: string): string =>
   `nuatis-pos:${verticalId}:appointments`;
 
+export const cartMetaKey = (verticalId: string): string =>
+  `nuatis-pos:${verticalId}:cartMeta`;
+
 export const ACTIVE_STAFF_KEY = "nuatis-pos:activeStaffId";
 export const ACTIVE_VERTICAL_KEY = "nuatis-pos:activeVerticalId";
 

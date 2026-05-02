@@ -48,6 +48,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     customer,
     compApplied,
     compReason,
+    appointmentRef,
+    depositApplied,
     addItem,
     increment,
     decrement,
@@ -59,6 +61,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     removeComp,
     attachCustomer,
     detachCustomer,
+    setDepositContext,
+    clearDepositContext,
     loadHeld,
     clear,
   } = useCart();
@@ -71,6 +75,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     startAppointment,
     markNoShow,
     resetStatus,
+    takeDeposit,
   } = useAppointments();
 
   const [pulsingServiceId, setPulsingServiceId] = useState<string | null>(null);
@@ -151,8 +156,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       compApplied,
       compReason,
       paymentMethod: "card",
+      ...(depositApplied > 0 ? { depositApplied } : {}),
+      ...(appointmentRef ? { appointmentRef } : {}),
     });
-  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals]);
+  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef]);
 
   const handleOpenCash = useCallback(() => {
     setShowCashModal(true);
@@ -161,7 +168,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const handleConfirmCash = useCallback(
     (tenderedCents: number) => {
       const { subtotalCents, taxCents, tipCents, totalCents } = buildCartTotals();
-      const changeGiven = Math.max(0, tenderedCents - totalCents);
+      const balanceCents = compApplied ? 0 : Math.max(0, totalCents - depositApplied);
+      const changeGiven = Math.max(0, tenderedCents - balanceCents);
       setShowCashModal(false);
       checkout.confirmCheckout({
         lineItems: lines,
@@ -175,12 +183,14 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         paymentMethod: "cash",
         amountTendered: tenderedCents,
         changeGiven,
+        ...(depositApplied > 0 ? { depositApplied } : {}),
+        ...(appointmentRef ? { appointmentRef } : {}),
       });
       if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
       setCashDrawerToast(true);
       cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef],
   );
 
   const handleHold = useCallback(() => {
@@ -299,14 +309,25 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         });
       }
 
+      // Set or clear deposit context
+      if (
+        (appt.depositRequired ?? false) &&
+        appt.depositStatus === "taken" &&
+        (appt.depositAmountCents ?? 0) > 0
+      ) {
+        setDepositContext(appt.id, appt.depositAmountCents!);
+      } else {
+        clearDepositContext();
+      }
+
       // Mark appointment started, close overlay
       startAppointment(appt.id);
       setShowAppointments(false);
     },
-    [attachCustomer, addItem, settings.staff, setActiveStaff, startAppointment],
+    [attachCustomer, addItem, settings.staff, setActiveStaff, startAppointment, setDepositContext, clearDepositContext],
   );
 
-  // Compute cash modal total (tip-inclusive, post-comp)
+  // Compute cash modal total — tip-inclusive, post-comp, post-deposit
   const cashSubtotal = calcSubtotal(lines);
   const cashTax = compApplied
     ? 0
@@ -314,6 +335,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const cashTotalCents = compApplied
     ? 0
     : calcTotal(cashSubtotal, cashTax, checkout.tipCents);
+  const cashBalanceCents = compApplied ? 0 : Math.max(0, cashTotalCents - depositApplied);
 
   // Appointments urgent count: scheduled within next 24h
   const appointmentsUrgentCount = appointments.filter(
@@ -399,6 +421,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             onOpenCash={handleOpenCash}
             onTipPresetSelect={checkout.selectPreset}
             onCustomTipApply={checkout.applyCustomTip}
+            depositApplied={depositApplied}
           />
         </aside>
       </div>
@@ -414,7 +437,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
       {showCashModal && checkout.state === "tip" && (
         <CashTenderModal
-          totalCents={cashTotalCents}
+          totalCents={cashBalanceCents}
           onConfirm={handleConfirmCash}
           onCancel={() => setShowCashModal(false)}
         />
@@ -482,6 +505,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           onStartService={handleStartAppointment}
           onMarkNoShow={markNoShow}
           onResetStatus={resetStatus}
+          onTakeDeposit={takeDeposit}
           cartIsIdle={cartIsIdle}
           onClose={() => setShowAppointments(false)}
         />

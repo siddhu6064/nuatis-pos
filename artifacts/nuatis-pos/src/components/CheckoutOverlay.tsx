@@ -111,7 +111,7 @@ function DeliveryPanel({
           className="text-white text-[52px] font-bold tabular-nums mb-2"
           style={{ fontFamily: "'Fraunces', serif" }}
         >
-          {formatCurrency(tx.totalCents)}
+          {formatCurrency(tx.totalPaid ?? tx.totalCents)}
         </p>
 
         {/* Post-sale customer attach */}

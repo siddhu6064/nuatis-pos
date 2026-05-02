@@ -28,8 +28,8 @@ export function ActiveVerticalProvider({
   const [activeVerticalId, setActiveVerticalIdState] = useState<VerticalId>(
     () => {
       const saved = localStorage.getItem(ACTIVE_VERTICAL_KEY);
-      return saved === "salon" || saved === "spa" || saved === "nail_bar"
-        ? saved
+      return saved === "salon" || saved === "spa" || saved === "nail_bar" || saved === "tattoo"
+        ? (saved as VerticalId)
         : "salon";
     },
   );

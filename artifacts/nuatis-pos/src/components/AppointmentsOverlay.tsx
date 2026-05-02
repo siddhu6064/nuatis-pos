@@ -3,12 +3,15 @@ import { useActiveVertical } from "@/hooks/useActiveVertical";
 import { formatPhone } from "@/lib/phone";
 import { formatCurrency } from "@/lib/currency";
 import { formatAppointmentTime, type Appointment } from "@/lib/appointments";
+import { TakeDepositModal } from "./TakeDepositModal";
+import { Toast } from "./Toast";
 
 interface AppointmentsOverlayProps {
   appointments: Appointment[];
   onStartService: (appt: Appointment) => void;
   onMarkNoShow: (id: string) => void;
   onResetStatus: (id: string) => void;
+  onTakeDeposit: (id: string, txId: string) => void;
   cartIsIdle: boolean;
   onClose: () => void;
 }
@@ -32,17 +35,35 @@ function StatusPill({ status }: { status: Appointment["status"] }) {
   );
 }
 
+function DepositBadge({ status }: { status: "pending" | "taken" }) {
+  return (
+    <span
+      className="text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+      style={{
+        fontFamily: "'Epilogue', sans-serif",
+        backgroundColor: status === "taken" ? "#DCFCE7" : "#FEF3C7",
+        color: status === "taken" ? "#15803D" : "#92400E",
+      }}
+    >
+      {status === "taken" ? "DEP PAID" : "DEP REQ"}
+    </span>
+  );
+}
+
 export function AppointmentsOverlay({
   appointments,
   onStartService,
   onMarkNoShow,
   onResetStatus,
+  onTakeDeposit,
   cartIsIdle,
   onClose,
 }: AppointmentsOverlayProps) {
-  const { config } = useActiveVertical();
+  const { config, activeVerticalId } = useActiveVertical();
   const [activeTab, setActiveTab] = useState<"upcoming" | "history">("upcoming");
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
+  const [depositApptId, setDepositApptId] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const now = Date.now();
   const fourteenDays = 14 * 24 * 3600000;
@@ -66,7 +87,9 @@ export function AppointmentsOverlay({
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        if (confirmState !== null) {
+        if (depositApptId !== null) {
+          setDepositApptId(null);
+        } else if (confirmState !== null) {
           setConfirmState(null);
         } else {
           onClose();
@@ -75,7 +98,12 @@ export function AppointmentsOverlay({
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, confirmState]);
+  }, [onClose, confirmState, depositApptId]);
+
+  function showToast(msg: string) {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 2000);
+  }
 
   function handleNoShowConfirm(id: string) {
     onMarkNoShow(id);
@@ -96,6 +124,11 @@ export function AppointmentsOverlay({
     const phone = appt.customerPhone.length >= 10
       ? formatPhone(appt.customerPhone)
       : appt.customerPhone;
+
+    const depositRequired = appt.depositRequired ?? false;
+    const depositPending = depositRequired && appt.depositStatus !== "taken";
+    const depositTaken = depositRequired && appt.depositStatus === "taken";
+    const canStart = cartIsIdle && !depositPending;
 
     return (
       <div
@@ -131,6 +164,9 @@ export function AppointmentsOverlay({
                 {appt.customerName}
               </span>
               <StatusPill status={appt.status} />
+              {depositRequired && (
+                <DepositBadge status={depositTaken ? "taken" : "pending"} />
+              )}
             </div>
             <p
               className="text-[13px] text-gray-500"
@@ -146,6 +182,12 @@ export function AppointmentsOverlay({
               <span style={{ fontFamily: "'Fraunces', serif" }}>
                 {formatCurrency(appt.servicePriceCents)}
               </span>
+              {depositRequired && (
+                <span style={{ color: depositTaken ? "#15803D" : "#92400E" }}>
+                  {" "}
+                  · Deposit {formatCurrency(appt.depositAmountCents ?? 0)}
+                </span>
+              )}
             </p>
             <p
               className="text-[12px] text-gray-400 mt-0.5"
@@ -161,30 +203,52 @@ export function AppointmentsOverlay({
               {tab === "upcoming" ? (
                 <>
                   <button
-                    onClick={() => cartIsIdle && onStartService(appt)}
-                    disabled={!cartIsIdle}
-                    title={!cartIsIdle ? "Finish current ticket first" : undefined}
+                    onClick={() => canStart && onStartService(appt)}
+                    disabled={!canStart}
+                    title={
+                      !cartIsIdle
+                        ? "Finish current ticket first"
+                        : depositPending
+                          ? "Take deposit first"
+                          : undefined
+                    }
                     className="h-[34px] px-3 rounded-lg text-[12px] font-semibold text-white transition-opacity"
                     style={{
                       fontFamily: "'Epilogue', sans-serif",
-                      backgroundColor: cartIsIdle ? "#E84A00" : "#D1D5DB",
-                      cursor: cartIsIdle ? "pointer" : "not-allowed",
+                      backgroundColor: canStart ? "#E84A00" : "#D1D5DB",
+                      cursor: canStart ? "pointer" : "not-allowed",
                     }}
                   >
                     Start Service
                   </button>
-                  <button
-                    onClick={() => setConfirmState({ id: appt.id, type: "no_show" })}
-                    className="h-[30px] px-3 rounded-lg text-[12px] font-medium transition-colors"
-                    style={{
-                      fontFamily: "'Epilogue', sans-serif",
-                      backgroundColor: "#FEF2F2",
-                      color: "#DC2626",
-                      border: "1px solid #FECACA",
-                    }}
-                  >
-                    No-Show
-                  </button>
+                  {depositPending && (
+                    <button
+                      onClick={() => setDepositApptId(appt.id)}
+                      className="h-[30px] px-3 rounded-lg text-[12px] font-medium transition-colors"
+                      style={{
+                        fontFamily: "'Epilogue', sans-serif",
+                        backgroundColor: "#FEF3C7",
+                        color: "#92400E",
+                        border: "1px solid #FDE68A",
+                      }}
+                    >
+                      Take Deposit
+                    </button>
+                  )}
+                  {!depositPending && (
+                    <button
+                      onClick={() => setConfirmState({ id: appt.id, type: "no_show" })}
+                      className="h-[30px] px-3 rounded-lg text-[12px] font-medium transition-colors"
+                      style={{
+                        fontFamily: "'Epilogue', sans-serif",
+                        backgroundColor: "#FEF2F2",
+                        color: "#DC2626",
+                        border: "1px solid #FECACA",
+                      }}
+                    >
+                      No-Show
+                    </button>
+                  )}
                 </>
               ) : (
                 <button
@@ -210,13 +274,25 @@ export function AppointmentsOverlay({
             style={{ backgroundColor: "#FFF5F5", border: "1px solid #FCA5A5" }}
           >
             <p
-              className="text-[13px] text-gray-700 mb-2"
+              className="text-[13px] text-gray-700 mb-1"
               style={{ fontFamily: "'Epilogue', sans-serif" }}
             >
               Mark{" "}
               <span className="font-semibold">{appt.customerName}</span> as
               no-show?
             </p>
+            {depositTaken && (
+              <div
+                className="text-[11px] mb-2 px-2 py-1 rounded"
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  color: "#92400E",
+                  backgroundColor: "#FEF3C7",
+                }}
+              >
+                Deposit was collected — review your refund policy before confirming.
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={() => handleNoShowConfirm(appt.id)}
@@ -273,102 +349,125 @@ export function AppointmentsOverlay({
 
   const displayList = activeTab === "upcoming" ? upcoming : history;
 
+  // Deposit modal target appointment
+  const depositAppt = depositApptId
+    ? appointments.find((a) => a.id === depositApptId) ?? null
+    : null;
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col"
-      style={{ backgroundColor: "rgba(15,15,16,0.85)" }}
-      onClick={onClose}
-    >
+    <>
+      {toastMsg && <Toast message={toastMsg} />}
+
       <div
-        className="relative m-auto w-full max-w-[680px] max-h-[88vh] rounded-2xl shadow-2xl flex flex-col"
-        style={{ backgroundColor: "white" }}
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-50 flex flex-col"
+        style={{ backgroundColor: "rgba(15,15,16,0.85)" }}
+        onClick={depositApptId ? undefined : onClose}
       >
-        {/* Top bar */}
         <div
-          className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0"
-          style={{ borderColor: "#E5E7EB" }}
+          className="relative m-auto w-full max-w-[680px] max-h-[88vh] rounded-2xl shadow-2xl flex flex-col"
+          style={{ backgroundColor: "white" }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <div>
-            <p
-              className="text-[20px] font-bold text-gray-900 leading-tight"
-              style={{ fontFamily: "'Fraunces', serif" }}
-            >
-              Appointments · {config.displayName}
-            </p>
-            <p
-              className="text-[13px] text-gray-400 mt-0.5"
-              style={{ fontFamily: "'Epilogue', sans-serif" }}
-            >
-              {scheduledCount} scheduled · {startedCount} started · {noShowCount} no-show
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-[20px] text-gray-400 hover:text-gray-700 transition-colors leading-none"
+          {/* Top bar */}
+          <div
+            className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0"
+            style={{ borderColor: "#E5E7EB" }}
           >
-            ✕
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div
-          className="flex gap-1.5 px-6 py-3 border-b flex-shrink-0"
-          style={{ borderColor: "#E5E7EB" }}
-        >
-          {(["upcoming", "history"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => {
-                setActiveTab(tab);
-                setConfirmState(null);
-              }}
-              className={tabBase}
-              style={{
-                fontFamily: "'Epilogue', sans-serif",
-                backgroundColor: activeTab === tab ? "#FFF0E8" : "#F3F4F6",
-                color: activeTab === tab ? "#E84A00" : "#6B7280",
-                border: activeTab === tab ? "1.5px solid #E84A00" : "1.5px solid transparent",
-                fontWeight: activeTab === tab ? 600 : 400,
-              }}
-            >
-              {tab === "upcoming"
-                ? `Upcoming (${upcoming.length})`
-                : `History (${history.length})`}
-            </button>
-          ))}
-        </div>
-
-        {/* List */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {displayList.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-2">
+            <div>
               <p
-                className="text-[18px] font-semibold text-gray-400"
+                className="text-[20px] font-bold text-gray-900 leading-tight"
                 style={{ fontFamily: "'Fraunces', serif" }}
               >
-                {activeTab === "upcoming"
-                  ? "No upcoming appointments"
-                  : "No appointment history yet"}
+                Appointments · {config.displayName}
               </p>
-              {activeTab === "upcoming" && (
+              <p
+                className="text-[13px] text-gray-400 mt-0.5"
+                style={{ fontFamily: "'Epilogue', sans-serif" }}
+              >
+                {scheduledCount} scheduled · {startedCount} started · {noShowCount} no-show
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-[20px] text-gray-400 hover:text-gray-700 transition-colors leading-none"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div
+            className="flex gap-1.5 px-6 py-3 border-b flex-shrink-0"
+            style={{ borderColor: "#E5E7EB" }}
+          >
+            {(["upcoming", "history"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => {
+                  setActiveTab(tab);
+                  setConfirmState(null);
+                }}
+                className={tabBase}
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  backgroundColor: activeTab === tab ? "#FFF0E8" : "#F3F4F6",
+                  color: activeTab === tab ? "#E84A00" : "#6B7280",
+                  border: activeTab === tab ? "1.5px solid #E84A00" : "1.5px solid transparent",
+                  fontWeight: activeTab === tab ? 600 : 400,
+                }}
+              >
+                {tab === "upcoming"
+                  ? `Upcoming (${upcoming.length})`
+                  : `History (${history.length})`}
+              </button>
+            ))}
+          </div>
+
+          {/* List */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {displayList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-2">
                 <p
-                  className="text-[13px] text-gray-300 text-center max-w-[280px]"
-                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                  className="text-[18px] font-semibold text-gray-400"
+                  style={{ fontFamily: "'Fraunces', serif" }}
                 >
-                  Appointments will appear here as they're scheduled
+                  {activeTab === "upcoming"
+                    ? "No upcoming appointments"
+                    : "No appointment history yet"}
                 </p>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {displayList.map((appt) => (
-                <AppointmentRow key={appt.id} appt={appt} tab={activeTab} />
-              ))}
-            </div>
-          )}
+                {activeTab === "upcoming" && (
+                  <p
+                    className="text-[13px] text-gray-300 text-center max-w-[280px]"
+                    style={{ fontFamily: "'Epilogue', sans-serif" }}
+                  >
+                    Appointments will appear here as they're scheduled
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {displayList.map((appt) => (
+                  <AppointmentRow key={appt.id} appt={appt} tab={activeTab} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Take Deposit Modal */}
+      {depositAppt && (
+        <TakeDepositModal
+          appointment={depositAppt}
+          verticalId={activeVerticalId}
+          onDepositCaptured={(txId) => {
+            onTakeDeposit(depositAppt.id, txId);
+            setDepositApptId(null);
+            showToast("Deposit accepted · receipt available in Today's Sales");
+          }}
+          onClose={() => setDepositApptId(null)}
+        />
+      )}
+    </>
   );
 }

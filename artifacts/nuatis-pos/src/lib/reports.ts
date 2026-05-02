@@ -13,7 +13,12 @@ export interface DailySummary {
 
 export function calcDailySummary(transactions: Transaction[]): DailySummary {
   const count = transactions.length;
-  const revenueCents = transactions.reduce((sum, tx) => sum + tx.totalCents, 0);
+  // Use totalPaid for revenue (handles deposit-applied service txs correctly).
+  // Legacy records without totalPaid fall back to totalCents transparently.
+  const revenueCents = transactions.reduce(
+    (sum, tx) => sum + (tx.totalPaid ?? tx.totalCents),
+    0,
+  );
   const tipCents = transactions.reduce((sum, tx) => sum + tx.tipCents, 0);
   const avgTicketCents = count === 0 ? 0 : Math.round(revenueCents / count);
   const discountCents = transactions.reduce(
@@ -48,16 +53,20 @@ export function calcPerStaffSummary(
   transactions: Transaction[],
   staffList: Staff[],
 ): StaffSummary[] {
+  // Exclude deposit transactions — their synthetic lines have staffId="" and
+  // are already excluded from per-staff matching, but we filter explicitly too.
+  const serviceTxs = transactions.filter(
+    (tx) => (tx.type ?? "service") === "service",
+  );
+
   return staffList.map((staff) => {
-    const txCount = transactions.filter((tx) =>
+    const txCount = serviceTxs.filter((tx) =>
       tx.lineItems.some((line) => line.staffId === staff.id),
     ).length;
 
-    const revenueCents = transactions.reduce((sum, tx) => {
-      // Comped transactions contribute $0 to per-staff revenue
+    const revenueCents = serviceTxs.reduce((sum, tx) => {
       if (tx.compApplied) return sum;
 
-      // Collect all refunded line IDs across all refund records
       const refundedLineIds = new Set(
         (tx.refunds ?? []).flatMap((r) => r.lineIds),
       );
@@ -67,7 +76,6 @@ export function calcPerStaffSummary(
         tx.lineItems
           .filter((line) => line.staffId === staff.id)
           .reduce((s, line) => {
-            // Refunded lines contribute $0
             if (refundedLineIds.has(line.lineId)) return s;
             return s + calcLineTotalCents(line);
           }, 0)
