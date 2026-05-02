@@ -1,0 +1,112 @@
+▶ PROMPT [Phase 3 · Batch 18 · Replit Agent]
+
+CONTEXT
+Nuatis POS prototype, prototype/replit-day-1 branch. 17 batches shipped clean, v0.0.3-prototype tagged at B15. Three verticals live (salon/spa/nail_bar) with full operator + owner loops. B16 added the walk-in queue (pre-cart customer state, FIFO, promote-to-ticket). B17 added cash payment + change calculator with right-to-left cents fill keypad and payment-mix reporting.
+
+This batch closes the booking↔POS gap with an appointment-aware register surface. Pre-cart customer state was validated in B16 (walk-in queue), so what's genuinely NEW here is: a chronological upcoming-appointments list as an operator surface, and the tap-to-hydrate flow that pre-fills a fresh ticket from a scheduled appointment record (customer + service line + active staff). New mental models being validated: (a) operator sees "what's coming" not just "what's here now", (b) appointment record as the source of truth that hydrates a cart on arrival, (c) appointment lifecycle states (scheduled → started → no-show) as a separate state machine from cart/transaction.
+
+GOAL
+Operator can open an Appointments overlay from the header, see today's and upcoming appointments per-vertical in a chronological list, and tap an appointment row to start a fresh ticket pre-filled with the customer, service line, and assigned staff — with the appointment marked as started.
+
+SCOPE — BUILD THIS
+1. New appointment seed data in the existing vertical config files (salon, spa, nail_bar). Each vertical gets ~6 hardcoded mock appointments distributed across today and the next 6 days. Each appointment shape: id (string), customerName, customerPhone (10 digits), serviceId (must reference a service in that vertical's catalog), staffId (must reference a staff in the seed staff list), scheduledAt (epoch ms — compute relative to "now" so seeds shift forward each session, e.g., today + 2h, today + 4h, tomorrow + 10am, etc.). Distribute realistically: 2 today, 1 tomorrow, 1 day-after, 2 spread across days 3-6.
+2. New lib/appointments.ts module:
+   - Appointment interface with the shape above plus status: 'scheduled' | 'started' | 'no_show' and (optional) startedAt / noShowAt epoch timestamps.
+   - localStorage key: nuatis-pos:{verticalId}:appointments. Per-vertical isolation, same pattern as waitlist/cart/transactions/heldTickets.
+   - On first read for a vertical (key missing in localStorage), seed from the vertical config and write back. Subsequent reads return persisted state. This means status changes survive reload but the seed shifts each session are only baked in on first ever read per vertical — that's acceptable for prototype.
+   - getAppointments(verticalId): returns Appointment[] sorted ascending by scheduledAt.
+   - markAppointmentStarted(verticalId, id): sets status='started', startedAt=Date.now(), writes back, returns updated array.
+   - markAppointmentNoShow(verticalId, id): sets status='no_show', noShowAt=Date.now(), writes back, returns updated array.
+   - resetAppointmentStatus(verticalId, id): sets status='scheduled', clears startedAt/noShowAt — used for the undo affordance.
+   - formatAppointmentTime(scheduledAt): returns "Today 2:00 PM", "Tomorrow 10:30 AM", "Wed 3:15 PM" (day-of-week for days 2-6) — pure function, called from render, no setInterval.
+3. New hooks/useAppointments.ts:
+   - On mount + on activeVerticalId change, loads via getAppointments.
+   - Exposes: appointments (sorted), startAppointment(id), markNoShow(id), resetStatus(id) — each calls the lib function and syncs state.
+   - Single instance owned by RegisterPage; passed as props into the overlay. Same anti-drift pattern as useWaitlist.
+4. Header gets an "Appointments" pill placed adjacent to the existing Waitlist pill, same visual language. Pill label: "Appointments: N" where N = count of appointments with status='scheduled' AND scheduledAt within the next 24 hours. Pill is always visible (operators need it as the entry point); accent-filled when N > 0, gray when N = 0. Clicking opens the AppointmentsOverlay.
+5. New components/AppointmentsOverlay.tsx (full-screen overlay matching WaitlistOverlay style and depth — z-50, same backdrop, same panel sizing, Fraunces 700 title):
+   - Top bar: title "Appointments · {VerticalDisplayName}", close button.
+   - Subtitle line: "X scheduled · Y started · Z no-show" (counts of current vertical's appointments by status).
+   - Two-tab segmented control below subtitle: [Upcoming] (default) / [History]. Upcoming = scheduled appointments only, sorted ascending by scheduledAt, capped at 14 days forward (filter out anything beyond — keeps the list focused). History = started + no_show appointments, sorted descending by startedAt or noShowAt.
+   - Empty states: Upcoming → "No upcoming appointments" + helper "Appointments will appear here as they're scheduled". History → "No appointment history yet".
+6. Each appointment row shows:
+   - Time badge (left, prominent): result of formatAppointmentTime(scheduledAt) — JetBrains Mono, large.
+   - Customer name (16px semibold) + phone (smaller, formatted (xxx) xxx-xxxx).
+   - Service name + price (snapshotted at seed time, NOT looked up live — mirrors waitlist snapshot pattern from B16 to insulate against config changes).
+   - Staff name (resolved from staffId at render time — small label "with [staff name]").
+   - Status pill on the right: SCHEDULED (accent), STARTED (green), NO-SHOW (gray/muted).
+   - Action buttons (right side, on Upcoming tab only):
+     - [Start Service] (primary) — gated identically to waitlist [Start Service]: disabled with tooltip "Finish current ticket first" when cart has items OR checkout state is non-idle.
+     - [No-Show] (secondary, destructive treatment) — inline confirm expand pattern matching waitlist Remove: "Mark [name] as no-show?" + [Confirm] / [Cancel].
+   - Action buttons on History tab: [Undo] (secondary) — sets status back to 'scheduled' so an accidental mark can be reversed. Same inline confirm pattern.
+7. [Start Service] handler in RegisterPage:
+   - Splits customerName on first space into firstName + lastName, calls existing attachCustomer (matches waitlist pattern).
+   - Looks up the service by serviceId in the active vertical's catalog. If still present, adds line at the snapshotted price. If service has been removed from catalog (defensive — possible with config changes), add line at the snapshotted price using the snapshotted name (don't fail).
+   - Sets the active staff to the appointment's staffId IF that staff still exists in the active staff list (Settings staff CRUD could have removed them) — if not, leave active staff unchanged. Add the line with that staff attribution regardless (the staff snapshot still attributes the work historically).
+   - Calls markAppointmentStarted(id), closes the overlay, lands operator on the register with cart populated.
+8. [No-Show] handler: calls markAppointmentNoShow(id). Appointment moves from Upcoming to History tab, status pill updates. No cart side effects, no toast.
+9. [Undo] (History tab): calls resetAppointmentStatus(id), appointment moves back to Upcoming tab. Clears startedAt/noShowAt so it appears as fresh-scheduled again.
+10. Per-vertical isolation verified end-to-end: salon appointments don't appear in spa overlay; status changes in one vertical don't affect another; each vertical's seed runs independently on first read.
+11. ESC closes overlay. Backdrop click closes overlay. Inline confirms (No-Show / Undo) ESC reverts to non-confirm state, doesn't close overlay.
+12. AppointmentsOverlay opens on top of waitlist count math (header still shows live waitlist count when appointments overlay is open) — but only one overlay visible at a time; opening Appointments from the header pill closes any other overlay first if needed (same pattern as Waitlist/Today's Sales/Settings being mutually exclusive).
+13. Defensive read in lib/appointments.ts: any malformed entry in localStorage (missing required field) is filtered out and the cleaned array written back. Same pattern as transactions defensive read from B17.
+
+SCOPE — DO NOT BUILD
+- Manual appointment creation/booking from the operator UI — Suite owns booking; POS consumes appointments. (Production: appointments arrive via Suite → POS sync.)
+- Calendar grid view (week/month grid) — chronological list is what operators actually use mid-shift; grid validates a known consumer-calendar pattern, not a POS-specific one
+- Drag-to-reschedule
+- Reminder/notification system (no SMS, no Telnyx, no toast on appointment proximity)
+- Recurring appointments / series
+- Appointment editing (change time, change service, change staff) — out of scope, Suite-side concern
+- Conflict detection (overlapping appointments for same staff)
+- Walk-in-to-appointment conversion (waitlist entry → schedule for later)
+- Showing the appointment list inline on the register grid (e.g., "next up: Sarah at 2pm" banner) — separate UX pattern, not in scope
+- Status filter/search on the History tab
+- Date-range filter on either tab
+- Any seeder UI or dev-panel — seeds are static in config files
+- Cross-vertical appointment view
+- Service-level free-text notes on appointments (previously declined, no new pattern)
+- Customer profile / purchase history view from the appointment row (previously declined)
+- Real backend, real auth, real anything — prototype is localStorage only
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4, no new dependencies
+- Match WaitlistOverlay's depth, sizing, panel style, Fraunces title, JetBrains Mono for time/numeric badges
+- AppointmentsOverlay z-50 (same as Waitlist/Settings/Today's Sales)
+- localStorage key: nuatis-pos:{verticalId}:appointments — strict isolation
+- Seed timestamps computed at first-read time relative to Date.now() — the seed function takes `now: number` parameter for testability and gets called with Date.now() in the lib, not hardcoded epoch values in config
+- Pure functions for status transitions — return new array, never mutate
+- formatAppointmentTime uses Intl.DateTimeFormat for locale-correct day labels; "Today" / "Tomorrow" computed from date math, not string match
+- Reuse existing customer-attach hook/state and existing addItem/setActiveStaff for the start flow; no parallel pathways
+- Status pill colors: SCHEDULED = existing accent (orange), STARTED = green (#10B981 or whatever the codebase uses for cash badge from B17), NO-SHOW = gray (#9CA3AF or matching muted token)
+- Tabs: segmented control pattern — pick whichever exists in the codebase (Today/All toggle in Today's Sales is the closest reference)
+
+ACCEPTANCE
+- Open salon for the first time → 6 appointments seeded across today + 6 days. Header pill reads "Appointments: N" where N = count scheduled within 24h. Clicking pill opens overlay, Upcoming tab default, list sorted ascending by time.
+- Each row shows: time badge (Today/Tomorrow/Wed format), customer name + phone, service name + price, "with [staff]", SCHEDULED pill, [Start Service] + [No-Show] buttons.
+- Tap [Start Service] on the next appointment → overlay closes, register has cart populated with: customer attached (name + phone), one line item (the appointment's service at snapshotted price), active staff set to appointment's staffId (visible in header). Header Appointments pill count decrements by 1 (assuming that one was within 24h).
+- Open overlay again → appointment is gone from Upcoming, appears in History tab with STARTED pill and [Undo] button.
+- Tap [Undo] in History → inline confirm → confirm → appointment returns to Upcoming with SCHEDULED pill, status reset.
+- Tap [No-Show] on an appointment → inline confirm → confirm → appointment moves to History with NO-SHOW pill. Cart unaffected.
+- Tap [Start Service] when cart has items → button disabled with tooltip "Finish current ticket first". Same gate during 2-sec card reader simulation.
+- Switch vertical to spa → spa-specific appointments load (different customers, different services), salon's status changes preserved on switch back.
+- Reload page → all status changes persist; seed doesn't re-fire.
+- Subtitle counts: add 1 no-show + start 1 → "X scheduled · 1 started · 1 no-show" updates live.
+- Empty Upcoming after starting/no-showing all → "No upcoming appointments" empty state.
+- Open Appointments overlay → Waitlist overlay can't be open simultaneously (one overlay at a time).
+- ESC closes overlay; ESC during inline confirm reverts to non-confirm state without closing.
+- Appointment with serviceId no longer in catalog (manually delete one from config to test) → row still renders with snapshotted name + price, [Start Service] still works using snapshot.
+- Appointment with staffId no longer in staff list (delete from Settings → Staff) → row renders with snapshotted staff name, [Start Service] keeps current active staff (doesn't break).
+
+DO NOT TOUCH GIT
+Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab after this batch lands.
+
+REPORT FORMAT — REQUIRED
+Agent's response must include four sections in this order:
+- WHAT WAS BUILT
+- ERRORS ENCOUNTERED
+- ITEMS SKIPPED
+- OPEN QUESTIONS
+
+HARD STOP
+Stop after the scope above. Do not begin a next batch. Wait for the next prompt.

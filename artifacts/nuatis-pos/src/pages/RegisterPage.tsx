@@ -11,6 +11,7 @@ import { HeldTicketsModal } from "@/components/HeldTicketsModal";
 import { VerticalSwitcher } from "@/components/VerticalSwitcher";
 import { SettingsOverlay } from "@/components/SettingsOverlay";
 import { WaitlistOverlay } from "@/components/WaitlistOverlay";
+import { AppointmentsOverlay } from "@/components/AppointmentsOverlay";
 import { CashTenderModal } from "@/components/CashTenderModal";
 import { Toast } from "@/components/Toast";
 import { useCart } from "@/hooks/useCart";
@@ -19,6 +20,7 @@ import { useActiveStaff } from "@/hooks/useActiveStaff";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
 import { useVerticalSettings } from "@/hooks/useVerticalSettings";
 import { useWaitlist } from "@/hooks/useWaitlist";
+import { useAppointments } from "@/hooks/useAppointments";
 import { calcSubtotal, calcTaxWithRate, calcTotal } from "@/lib/cartMath";
 import {
   getHeldTickets,
@@ -27,6 +29,7 @@ import {
   removeHeldTicket,
   type HeldTicket,
 } from "@/lib/heldTickets";
+import type { Appointment } from "@/lib/appointments";
 import type { WaitlistEntry } from "@/lib/waitlist";
 import type { VerticalId } from "@/lib/verticals";
 import type { AuthUser } from "@workspace/replit-auth-web";
@@ -63,6 +66,12 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const { activeStaff, setActiveStaff } = useActiveStaff();
   const checkout = useCheckout(clear);
   const { entries: waitlistEntries, addEntry, removeEntry } = useWaitlist();
+  const {
+    appointments,
+    startAppointment,
+    markNoShow,
+    resetStatus,
+  } = useAppointments();
 
   const [pulsingServiceId, setPulsingServiceId] = useState<string | null>(null);
   const [showStaffSwitcher, setShowStaffSwitcher] = useState(false);
@@ -72,6 +81,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [showVerticalSwitcher, setShowVerticalSwitcher] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showWaitlist, setShowWaitlist] = useState(false);
+  const [showAppointments, setShowAppointments] = useState(false);
   const [showCashModal, setShowCashModal] = useState(false);
   const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() =>
     getHeldTickets(activeVerticalId),
@@ -224,7 +234,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   );
 
   // Promote a waitlist entry to an active cart ticket
-  const handleStartService = useCallback(
+  const handleStartWalkIn = useCallback(
     (entry: WaitlistEntry) => {
       const nameParts = entry.name.trim().split(/\s+/);
       const firstName = nameParts[0] ?? entry.name.trim();
@@ -255,6 +265,47 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [attachCustomer, addItem, activeStaff.id, removeEntry],
   );
 
+  // Promote an appointment to an active cart ticket
+  const handleStartAppointment = useCallback(
+    (appt: Appointment) => {
+      // Split name into first + last
+      const nameParts = appt.customerName.trim().split(/\s+/);
+      const firstName = nameParts[0] ?? appt.customerName.trim();
+      const lastName = nameParts.slice(1).join(" ");
+      attachCustomer({
+        id: appt.id,
+        firstName,
+        lastName,
+        phone: appt.customerPhone,
+      });
+
+      // Add line using snapshotted price, always attributing to appointment's staffId
+      addItem(
+        appt.serviceId,
+        appt.serviceName,
+        appt.servicePriceCents,
+        appt.staffId,
+      );
+
+      // Switch active staff if they're still in the active list
+      const apptStaff = settings.staff.find(
+        (s) => s.active && s.id === appt.staffId,
+      );
+      if (apptStaff) {
+        setActiveStaff({
+          id: apptStaff.id,
+          firstName: apptStaff.firstName,
+          role: apptStaff.role,
+        });
+      }
+
+      // Mark appointment started, close overlay
+      startAppointment(appt.id);
+      setShowAppointments(false);
+    },
+    [attachCustomer, addItem, settings.staff, setActiveStaff, startAppointment],
+  );
+
   // Compute cash modal total (tip-inclusive, post-comp)
   const cashSubtotal = calcSubtotal(lines);
   const cashTax = compApplied
@@ -263,6 +314,11 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const cashTotalCents = compApplied
     ? 0
     : calcTotal(cashSubtotal, cashTax, checkout.tipCents);
+
+  // Appointments urgent count: scheduled within next 24h
+  const appointmentsUrgentCount = appointments.filter(
+    (a) => a.status === "scheduled" && a.scheduledAt <= Date.now() + 24 * 3600000,
+  ).length;
 
   const switcherDisabled = lines.length > 0 || checkout.state !== "idle";
   const cartIsIdle = lines.length === 0 && checkout.state === "idle";
@@ -286,7 +342,15 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         heldCount={heldTickets.length}
         onOpenHeldTickets={() => setShowHeldModal(true)}
         waitlistCount={waitlistEntries.length}
-        onOpenWaitlist={() => setShowWaitlist(true)}
+        onOpenWaitlist={() => {
+          setShowAppointments(false);
+          setShowWaitlist(true);
+        }}
+        appointmentsCount={appointmentsUrgentCount}
+        onOpenAppointments={() => {
+          setShowWaitlist(false);
+          setShowAppointments(true);
+        }}
         activeVerticalDisplayName={config.displayName}
         switcherDisabled={switcherDisabled}
         onOpenVerticalSwitcher={() => setShowVerticalSwitcher(true)}
@@ -406,9 +470,20 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           entries={waitlistEntries}
           onAdd={addEntry}
           onRemove={removeEntry}
-          onStartService={handleStartService}
+          onStartService={handleStartWalkIn}
           cartIsIdle={cartIsIdle}
           onClose={() => setShowWaitlist(false)}
+        />
+      )}
+
+      {showAppointments && (
+        <AppointmentsOverlay
+          appointments={appointments}
+          onStartService={handleStartAppointment}
+          onMarkNoShow={markNoShow}
+          onResetStatus={resetStatus}
+          cartIsIdle={cartIsIdle}
+          onClose={() => setShowAppointments(false)}
         />
       )}
     </div>
