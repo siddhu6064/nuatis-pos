@@ -3,7 +3,7 @@ import type { Modifier } from "@/lib/modifiers";
 import { SERVICES, CATEGORY_COLORS } from "@/lib/services";
 import { MODIFIERS_BY_SERVICE } from "@/lib/modifiers";
 
-export type VerticalId = "salon" | "spa";
+export type VerticalId = "salon" | "spa" | "nail_bar";
 
 export interface BusinessInfo {
   name: string;
@@ -62,6 +62,63 @@ const SPA_MODIFIERS_BY_SERVICE: Record<string, Modifier[]> = {
   ],
 };
 
+// ── Nail bar services ─────────────────────────────────────────────────────────
+
+const NAIL_BAR_SERVICES: Service[] = [
+  // Manicures
+  { id: "nail_basic_mani", name: "Basic Manicure", priceCents: 2500, durationMinutes: 30, category: "manicures" },
+  { id: "nail_gel_mani", name: "Gel Manicure", priceCents: 4500, durationMinutes: 45, category: "manicures" },
+  { id: "nail_french_mani", name: "French Manicure", priceCents: 3500, durationMinutes: 45, category: "manicures" },
+  { id: "nail_polish_change", name: "Polish Change", priceCents: 1500, durationMinutes: 15, category: "manicures" },
+  // Pedicures
+  { id: "nail_basic_pedi", name: "Basic Pedicure", priceCents: 4000, durationMinutes: 45, category: "pedicures" },
+  { id: "nail_gel_pedi", name: "Gel Pedicure", priceCents: 6000, durationMinutes: 60, category: "pedicures" },
+  { id: "nail_spa_pedi", name: "Spa Pedicure", priceCents: 5500, durationMinutes: 60, category: "pedicures" },
+  // Enhancements
+  { id: "nail_acrylic_full", name: "Acrylic Full Set", priceCents: 6500, durationMinutes: 75, category: "enhancements" },
+  { id: "nail_acrylic_fill", name: "Acrylic Fill", priceCents: 4000, durationMinutes: 45, category: "enhancements" },
+  { id: "nail_dip_powder", name: "Dip Powder", priceCents: 5000, durationMinutes: 60, category: "enhancements" },
+  // Art & Add-Ons
+  { id: "nail_art_simple", name: "Nail Art (Simple)", priceCents: 1000, durationMinutes: 15, category: "art_addons" },
+  { id: "nail_paraffin", name: "Paraffin Wax Treatment", priceCents: 1500, durationMinutes: 15, category: "art_addons" },
+];
+
+const NAIL_BAR_MODIFIERS_BY_SERVICE: Record<string, Modifier[]> = {
+  nail_basic_mani: [
+    { id: "nail_addon_paraffin", name: "Paraffin Add-on", priceCents: 1000 },
+    { id: "nail_addon_french", name: "French Tip Add-on", priceCents: 800 },
+  ],
+  nail_gel_mani: [
+    { id: "nail_addon_french_gel", name: "French Tip Add-on", priceCents: 1000 },
+    { id: "nail_addon_chrome", name: "Chrome Finish", priceCents: 1500 },
+  ],
+  nail_basic_pedi: [
+    { id: "nail_addon_callus", name: "Callus Treatment", priceCents: 1000 },
+    { id: "nail_addon_paraffin_pedi", name: "Paraffin Add-on", priceCents: 1500 },
+  ],
+  nail_gel_pedi: [
+    { id: "nail_addon_callus_gel", name: "Callus Treatment", priceCents: 1000 },
+  ],
+  nail_acrylic_full: [
+    { id: "nail_addon_length", name: "Extra Length", priceCents: 1500 },
+    { id: "nail_addon_design", name: "Design Per Nail", priceCents: 500 },
+  ],
+  nail_dip_powder: [
+    { id: "nail_addon_ombre", name: "Ombre Effect", priceCents: 1500 },
+  ],
+};
+
+// Nail bar category colors — visually distinct from all 8 salon + spa colors:
+// Salon:   cuts #FBCFE8, color #FEF3C7, treatments #E9D5FF, styling #FED7AA
+// Spa:     massages #A7F3D0, facials #FECDD3, body #FDE68A, wellness #BAE6FD
+// Nail bar uses softer pink, soft violet, light rose, pale lemon — no hex reuse
+const NAIL_BAR_CATEGORY_COLORS: Record<string, string> = {
+  manicures: "#FCE7F3",   // softer pink   (≠ salon cuts #FBCFE8)
+  pedicures: "#DDD6FE",   // soft violet   (≠ salon treatments #E9D5FF)
+  enhancements: "#FFE4E6", // light rose    (≠ spa facials #FECDD3)
+  art_addons: "#FEF9C3",  // pale lemon    (≠ spa body #FDE68A)
+};
+
 // ── Vertical registry ─────────────────────────────────────────────────────────
 
 export const VERTICALS: Record<VerticalId, VerticalConfig> = {
@@ -95,6 +152,19 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
       body: "#FDE68A",
       wellness: "#BAE6FD",
     },
+  },
+  nail_bar: {
+    id: "nail_bar",
+    displayName: "Nail Bar",
+    tagline: "Manicures, pedicures, and nail enhancements",
+    business: {
+      name: "Nuatis POS Demo Nail Bar",
+      address: "789 Polish Lane, Austin, TX 78702",
+      phone: "(512) 555-0300",
+    },
+    services: NAIL_BAR_SERVICES,
+    modifiersByService: NAIL_BAR_MODIFIERS_BY_SERVICE,
+    categoryColors: NAIL_BAR_CATEGORY_COLORS,
   },
 };
 

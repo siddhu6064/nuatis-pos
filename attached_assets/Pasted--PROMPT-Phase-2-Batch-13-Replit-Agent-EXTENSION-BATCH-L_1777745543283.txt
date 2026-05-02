@@ -1,0 +1,125 @@
+▶ PROMPT [Phase 2 · Batch 13 · Replit Agent — EXTENSION BATCH · LAUNCH TRIO COMPLETION]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-12 complete: full operator loop with discounts, comp, refunds, manager PIN, multi-vertical engine (salon + spa), full documentation. Repo on prototype/replit-day-1 branch, tagged v0.0.2-prototype. Multi-vertical engine architecture proven — salon ↔ spa switch works clean via config alone.
+
+This batch adds the THIRD launch trio vertical: Nail Bar. Same config-driven engine. 12 nail bar services with realistic price spread ($15-$85) and nail-bar-typical modifiers. Validates that the engine handles a service catalog with very different rhythm than salon/spa: lower per-ticket revenue, higher transaction count per shift, different category mix. Adds a third entry to the vertical switcher.
+
+GOAL
+Operator can switch to Nail Bar vertical via the existing switcher. Register grid renders 12 nail bar services in distinct color palette. Cart, transactions, held tickets all isolated under nuatis-pos:nail_bar:* namespace. All existing patterns (modifiers, discount, comp, refund, manager PIN, customer attach, staff attribution, Today's Sales) work in Nail Bar without code changes — only config additions.
+
+SCOPE — BUILD THIS
+
+1. lib/verticals.ts — extend the existing VERTICALS object with a third entry. Update VerticalId type to: 'salon' | 'spa' | 'nail_bar'.
+
+2. Nail bar services — 12 services, 4 categories with realistic price spread:
+
+   Manicures (4):
+   - nail_basic_mani: Basic Manicure, $25, 30 min, category 'manicures'
+   - nail_gel_mani: Gel Manicure, $45, 45 min, 'manicures'
+   - nail_french_mani: French Manicure, $35, 45 min, 'manicures'
+   - nail_polish_change: Polish Change, $15, 15 min, 'manicures'
+
+   Pedicures (3):
+   - nail_basic_pedi: Basic Pedicure, $40, 45 min, 'pedicures'
+   - nail_gel_pedi: Gel Pedicure, $60, 60 min, 'pedicures'
+   - nail_spa_pedi: Spa Pedicure, $55, 60 min, 'pedicures'
+
+   Enhancements (3):
+   - nail_acrylic_full: Acrylic Full Set, $65, 75 min, 'enhancements'
+   - nail_acrylic_fill: Acrylic Fill, $40, 45 min, 'enhancements'
+   - nail_dip_powder: Dip Powder, $50, 60 min, 'enhancements'
+
+   Art & Add-Ons (2):
+   - nail_art_simple: Nail Art (Simple), $10, 15 min, 'art_addons'
+   - nail_paraffin: Paraffin Wax Treatment, $15, 15 min, 'art_addons'
+
+3. Nail bar modifiers — fixed-price chips, same pattern. Apply only where realistic:
+   - nail_basic_mani: [{ id: 'nail_addon_paraffin', name: 'Paraffin Add-on', priceCents: 1000 }, { id: 'nail_addon_french', name: 'French Tip Add-on', priceCents: 800 }]
+   - nail_gel_mani: [{ id: 'nail_addon_french_gel', name: 'French Tip Add-on', priceCents: 1000 }, { id: 'nail_addon_chrome', name: 'Chrome Finish', priceCents: 1500 }]
+   - nail_basic_pedi: [{ id: 'nail_addon_callus', name: 'Callus Treatment', priceCents: 1000 }, { id: 'nail_addon_paraffin_pedi', name: 'Paraffin Add-on', priceCents: 1500 }]
+   - nail_gel_pedi: [{ id: 'nail_addon_callus_gel', name: 'Callus Treatment', priceCents: 1000 }]
+   - nail_acrylic_full: [{ id: 'nail_addon_length', name: 'Extra Length', priceCents: 1500 }, { id: 'nail_addon_design', name: 'Design Per Nail', priceCents: 500 }]
+   - nail_dip_powder: [{ id: 'nail_addon_ombre', name: 'Ombre Effect', priceCents: 1500 }]
+   - All other 6 services: empty arrays.
+
+4. Nail bar category colors — distinct palette so visual difference is obvious:
+   - manicures: '#FBCFE8' (already used for salon cuts — pick a different one) → use '#FCE7F3' (light pink, distinct from salon's #FBCFE8)
+   - pedicures: '#DDD6FE' (lavender, distinct from salon treatments)
+   - enhancements: '#FED7AA' (peach — already used for salon styling) → use '#FBA74D' background tone... actually pick fresh: '#FECACA' (light coral)
+   - art_addons: '#FDE68A' (already used for spa body) → use '#FEF08A' (light yellow, slightly different)
+
+   IMPORTANT: review the salon and spa color palettes already in lib/verticals.ts and choose 4 colors that are distinguishable from BOTH existing vertical palettes. Don't reuse exact hex values across verticals. The 4 nail bar colors must each be visually distinct from the 8 colors already used (4 salon + 4 spa).
+
+5. Nail bar business identity:
+   - name: "Nuatis POS Demo Nail Bar"
+   - address: "789 Polish Lane, Austin, TX 78702"
+   - phone: "(512) 555-0300"
+
+6. Update lib/storage.ts — no code changes needed. The cartKey/transactionsKey/heldTicketsKey helpers already accept any verticalId string. Verify by visual inspection that nail_bar will namespace correctly.
+
+7. components/VerticalSwitcher.tsx — list now shows 3 verticals instead of 2. Add Nail Bar row with tagline "Manicures, pedicures, and nail enhancements". Modal grows naturally to accommodate 3 rows. Active vertical row still gets accent border + bold.
+
+8. NO migration needed for nail bar — it's a fresh vertical with no legacy keys to migrate. nail_bar:cart, nail_bar:transactions, nail_bar:heldTickets all start empty on first switch-in.
+
+9. Verify all existing flows work in Nail Bar:
+   - Tile tap → cart line with active staff stamped
+   - Modifiers (where applicable)
+   - Discount picker (including >20% manager gate)
+   - Comp ticket with reason
+   - Customer attach (pre + post-sale)
+   - Hold/Resume tickets
+   - Today's Sales overlay shows nail_bar transactions only when active vertical is nail_bar
+   - Refund flow with manager PIN
+   - Receipt shows "Nuatis POS Demo Nail Bar" identity
+
+SCOPE — DO NOT BUILD
+- No nail-bar-specific UX patterns (no photo capture, no nail design library, no pre-service consultation flow). Stay within the existing engine — that IS the test.
+- No 4th vertical.
+- No cross-vertical reporting.
+- No new components.
+- No new hooks.
+- No new lib modules.
+- No new npm dependencies.
+- No animations beyond existing patterns.
+- No README updates yet — that's a follow-up wrap if needed.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- All currency in integer cents
+- ONLY files modified: lib/verticals.ts (add nail_bar config), components/VerticalSwitcher.tsx (third row in modal)
+- VerticalId type extended to include 'nail_bar' — TypeScript may surface usage points needing the new type. Update those minimally without refactoring.
+- No other file should require changes. If the agent finds itself needing to change cart/checkout/reports/receipt logic, STOP and report — that means the engine doesn't actually generalize and we have a real architectural finding.
+
+ACCEPTANCE
+1. lib/verticals.ts contains 3 entries: salon, spa, nail_bar. Each has 12 services, modifiers map, business identity, category colors.
+2. VerticalId type is 'salon' | 'spa' | 'nail_bar'. TypeScript strict pass clean.
+3. Nail bar category colors are visually distinct from BOTH salon and spa palettes (no exact hex reuse across the 12 colors total — 4 per vertical × 3 verticals).
+4. VerticalSwitcher modal shows 3 rows. Tapping Nail Bar switches active vertical.
+5. After switching to Nail Bar: register grid shows 12 nail bar services in 4 distinct color groups.
+6. Cart is empty (fresh nail_bar:cart key).
+7. Add Basic Manicure ($25) + Paraffin Add-on modifier ($10) → line total $35 → tax 8.25% → total $37.89.
+8. Apply 25% discount via Custom → manager PIN modal triggers (gate on >20% works in nail bar identical to salon/spa).
+9. Comp ticket with reason "Loyalty Reward" → COMPED stamp on receipt + "$0.00" total.
+10. Customer attach (Sarah Chen by phone) → name on receipt → transaction record includes customer.
+11. Hold a nail bar ticket → switch to Salon → Held: N pill shows salon held count only (nail bar held isolated). Switch back to Nail Bar → held ticket reappears.
+12. Today's Sales while in Nail Bar shows ONLY nail bar transactions. Switch to Spa → only spa transactions. Switch to Salon → only salon transactions.
+13. Receipt shows "Nuatis POS Demo Nail Bar · 789 Polish Lane, Austin, TX 78702 · (512) 555-0300".
+14. localStorage after exercising all 3 verticals contains: activeVerticalId, activeStaffId, salon:cart, salon:transactions, salon:heldTickets, spa:cart, spa:transactions, spa:heldTickets, nail_bar:cart, nail_bar:transactions, nail_bar:heldTickets. (11 keys total.)
+15. Refund flow works in Nail Bar: ring up a sale, open Today's Sales, select transaction, tap Refund, enter PIN, select lines, confirm. Receipt shows REFUNDED stamp.
+16. NO files outside lib/verticals.ts and components/VerticalSwitcher.tsx were modified (other than minimal type-driven touches if TypeScript surfaces them — report any such touches).
+17. No console errors, no React key warnings, no Tailwind compile errors.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Sid runs git himself in the Shell tab.
+
+REPORT FORMAT — REQUIRED
+After scope is built and acceptance passes, your report MUST include these four sections in this order:
+
+1. WHAT WAS BUILT — bulleted list of every file modified + brief description of changes per file
+2. ERRORS ENCOUNTERED — any errors found during work, how each was resolved (or "None" if zero)
+3. ITEMS SKIPPED — anything in scope that was deferred, with reason (or "None")
+4. OPEN QUESTIONS — anything Sid needs to decide before any future work (or "None")
+
+Then wait for next prompt.
