@@ -1,0 +1,79 @@
+▶ PROMPT [Phase 2 · Batch 2 · Replit Agent]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Batch 1 shipped: Replit Auth, register screen with 12 hardcoded salon services in a 4×3 color-coded grid, header with clock + user + logout, paper background. Stack ended up as React 18 + Vite (not Next.js 14 — Next.js wasn't available in the workspace). That's fine for prototype — keep using React + Vite.
+
+This batch adds the cart. The register grid shifts to a flexible left column, the cart becomes a fixed right column. Tapping a tile now adds the service to the cart instead of just console.logging.
+
+GOAL
+Render a right-side fixed cart panel that accumulates tapped services with quantity controls, live subtotal/tax/total math (8.25% flat tax), and localStorage persistence. Tap on tile adds to cart with immediate UI update.
+
+SCOPE — BUILD THIS
+1. Layout: split the page into grid (left, ~640px) and cart (right, ~384px) at iPad portrait 1024×768. No horizontal scroll.
+2. Tiles re-flow into the new 640px grid width — still 4 columns × 3 rows, tile minimums maintained (~140px tall). Color-coding unchanged.
+3. Cart state via React useState or small CartContext — NO Zustand, NO Redux, NO external state library.
+4. Cart line item shape: { serviceId: string, name: string, priceCents: number, quantity: number }.
+5. Tile tap behavior: if service is in cart, increment quantity. Else, append new line with quantity 1. Replace the existing console.log with this behavior.
+6. Cart panel UI top to bottom:
+   - Header row: "Cart" left (Fraunces 700, 22px), trash-icon-style "Clear" button right (text "Clear" is fine — no icon library)
+   - Empty state when no items: "Tap a service to start." (Epilogue 400, 16px, muted color #6B7280)
+   - Line item rows — each row: service name (Epilogue 500, 16px) + line total (Fraunces 600, 16px) right-aligned on row 1, then qty controls (− qty + as three small buttons) and remove (X) right-aligned on row 2
+   - Divider
+   - Subtotal row: "Subtotal" left (Epilogue 400, 14px), formatted cents right (JetBrains Mono 500, 14px)
+   - Tax row: "Tax (8.25%)" left, formatted cents right (same fonts as subtotal)
+   - Total row: "Total" left (Epilogue 600, 18px), formatted cents right (Fraunces 700, 22px)
+   - "Charge" button bottom — full-width, primary accent color #E84A00, white text, Epilogue 600, 18px, 56px tall, rounded-lg. Disabled state when cart is empty: muted gray, cursor-not-allowed.
+7. Quantity controls: − decrements, + increments, decrement at qty 1 removes the line. Buttons are 32px tap targets, rounded.
+8. Remove (X): instant remove, no confirmation dialog. POS speed > safety in this UX.
+9. Math (all in integer cents, never floats):
+   - subtotalCents = sum of (priceCents × quantity) per line
+   - taxCents = Math.round(subtotalCents × 0.0825)
+   - totalCents = subtotalCents + taxCents
+   - Format only at render via Intl.NumberFormat
+10. localStorage: write cart to key `nuatis-pos:cart` on every change. Read + hydrate on mount. If parse fails, default to empty cart silently.
+11. Currency formatter in lib/currency.ts: `formatCurrency(cents: number): string` returns "$1,234.56" style using Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).
+12. Cart math in lib/cartMath.ts: pure functions `calcSubtotal`, `calcTax`, `calcTotal` taking line items. TAX_RATE constant exported as 0.0825.
+13. Tap Charge → for now just `console.log("checkout:", { lineItems, subtotalCents, taxCents, totalCents })`. Actual checkout flow is Batch 3.
+14. Subtle visual confirmation on add: when a tile is tapped, briefly pulse the corresponding cart line (or the cart panel border) so the operator sees the add without looking at the cart. 200ms pulse is enough.
+
+SCOPE — DO NOT BUILD
+- No tip selection — Batch 3.
+- No checkout flow, no Charge confirmation screen, no payment buttons — Batch 3.
+- No receipt — Batch 4.
+- No customer attach, no staff attribution, no modifiers, no discounts, no comp, no price override.
+- No hold/resume ticket. No recent sales view.
+- No keyboard shortcuts. No customer-facing display.
+- No state library (Zustand/Redux/Jotai). useState or simple Context only.
+- No icon libraries — text labels are fine.
+- No tests, no Storybook, no Sentry.
+
+TECH CONSTRAINTS
+- React 18 + Vite (matching Batch 1)
+- Tailwind v3.4.x — verify still v3, NOT v4
+- TypeScript strict: true, noUncheckedIndexedAccess: true
+- All currency as integer cents — never floats, never parseFloat on user-typed values
+- File additions: components/Cart.tsx, components/CartLine.tsx, lib/currency.ts, lib/cartMath.ts. App component reorganized to host grid + cart side-by-side.
+- No new npm dependencies beyond what's already installed.
+- localStorage writes must be synchronous within the state update — no setTimeout debounce that risks losing state on rapid taps.
+
+ACCEPTANCE
+1. Tapping any tile adds it to cart, or increments quantity if already present.
+2. Subtotal, tax, total update IMMEDIATELY on every tap — no perceived lag.
+3. Page refresh restores cart from localStorage with all items intact.
+4. Quantity − at qty 1 removes the line entirely.
+5. Remove X clears the line instantly with no confirm dialog.
+6. "Charge" button is disabled when cart is empty, enabled otherwise.
+7. "Charge" tap logs full payload `{ lineItems, subtotalCents, taxCents, totalCents }` to console.
+8. Cart panel never makes the page horizontally scroll at 1024px width.
+9. Long carts (10+ line items) scroll within the cart panel, not the page.
+10. Currency formatting is correct — $0.00 minimum, $1,234.56 style for high amounts, no floating-point rounding bugs (e.g., 8.25% of $33.00 = $2.7225 → $2.72).
+11. No console errors, no React key warnings, no hydration warnings.
+12. Tile tap shows brief visual confirmation in the cart (pulse, flash, or similar 200ms feedback).
+
+HARD STOP
+After scope is built, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions before next batch
+Then wait for the next prompt. Do NOT begin Batch 3 (Charge confirmation + tip selection + mock payment) on your own.
