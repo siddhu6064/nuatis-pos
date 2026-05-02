@@ -1,0 +1,128 @@
+▶ PROMPT [Phase 2 · Batch 15 · Replit Agent — FINAL WRAP, NO NEW FEATURES]
+
+CONTEXT
+This is the FINAL batch of the Replit Prototype Day. Batches 1-14 complete: full operator loop including discounts, comp, manager PIN override, refunds, multi-vertical engine across 3 verticals (salon + spa + nail bar — full launch trio), and owner Settings UX (business identity + tax + tips + staff CRUD, per-vertical scoped). Repo on prototype/replit-day-1 branch, currently tagged v0.0.2-prototype.
+
+This batch updates README + replit.md to reflect Batches 13 and 14, bumps the tag to v0.0.3-prototype, and prepares the repo for mothballing.
+
+NO NEW FEATURES. Documentation only. Same shape as Batch 8 and Batch 12.
+
+GOAL
+Repo accurately documents all 15 batches. README reflects 3-vertical state and Settings UX. replit.md architecture doc captures useVerticalSettings + SettingsOverlay components. Ready for screenshot capture and final mothball.
+
+SCOPE — BUILD THIS
+
+1. Update README.md at repo root:
+
+   "What This Is" section — update to mention 3 verticals (salon + spa + nail bar) and owner Settings.
+
+   "What Was Validated" section — add bullets:
+   - Nail bar vertical (3rd launch trio member) — engine generalised with 2-file change
+   - Owner Settings overlay — business identity edit, tax rate edit, tip preset CRUD, staff CRUD
+   - Per-vertical settings scoping — edits in one vertical don't affect others
+   - Settings layer overrides config defaults dynamically (Receipt, tax math, tip presets, staff list all read from settings hook, not constants)
+   - Engine generalisation pattern — adding a 4th vertical requires only adding to VERTICALS registry + extending VerticalId type
+
+   "Stack Deviations from Master Plan" table — add row:
+   - Settings | Database-backed settings table per tenant | localStorage per-vertical override layer
+
+   "What Is NOT In This Prototype" section — add bullets:
+   - Service / modifier editing from Settings (services are config-locked for prototype)
+   - Receipt logo upload
+   - Multi-currency, locale, language picker
+   - Business hours / holidays config
+   - PIN gate on Settings (production gates with role check)
+   - Settings backend / API persistence
+
+   "localStorage Keys" table — add 3 new keys:
+   - nuatis-pos:salon:settings | Salon settings overrides
+   - nuatis-pos:spa:settings | Spa settings overrides
+   - nuatis-pos:nail_bar:settings | Nail bar settings overrides
+   - And expand the salon: / spa: rows to include nail_bar:cart, nail_bar:transactions, nail_bar:heldTickets
+
+   "Hardcoded Mock Data" section — update:
+   - 3 verticals total (salon + spa + nail_bar), each with 12 services + service-specific modifiers
+   - 3 business identities (Salon, Spa, Nail Bar) with full address/phone — but flag that all are now editable via Settings
+   - 3 staff (Maria, James, Lisa) shared across verticals BUT — flag that staff list is now editable per-vertical via Settings
+
+   "Batch History" section — add 3 rows:
+   - Batch 13 — Nail Bar vertical (launch trio complete; 2-file change)
+   - Batch 14 — Owner Settings overlay (business + tax + tips + staff, per-vertical)
+   - Batch 15 — Final wrap (README + replit.md + tag v0.0.3-prototype)
+
+2. Update replit.md at repo root:
+
+   "Component Tree" section — regenerate to include SettingsOverlay, VerticalSettingsProvider in App.tsx, useVerticalSettings hook references in Cart, TipPicker, Receipt, StaffSwitcher, CartLine, RegisterPage.
+
+   "Hooks Table" — add row for useVerticalSettings (per-vertical settings state with override layer).
+
+   "State Architecture" — add bullet:
+   - useVerticalSettings (hooks/useVerticalSettings.ts) — per-vertical settings overrides via Context, falls back to lib/verticals.ts defaults, persists per-vertical to localStorage
+
+   "Money Math" section — add bullet:
+   - Tax rate is now per-vertical via useVerticalSettings; calcTaxWithRate(subtotalCents, ratePercent) is the canonical helper. TAX_RATE constant is fallback default only.
+
+   "Storage Architecture" section — extend:
+   - Add nuatis-pos:{verticalId}:settings to the per-vertical key list
+   - Note that settings layer is OVERRIDE on top of lib/verticals.ts defaults — defaults read from config at runtime via getDefaults(verticalId), then merged with localStorage value if present
+
+   "Things to Carry Forward" — add bullets:
+   - Settings overlay structure (3 tabs: Business, Tax & Tips, Staff)
+   - Per-vertical settings scoping pattern (one tenant = one vertical in production, but the override layer model still applies to "vertical defaults vs tenant edits")
+   - Settings defaults read from config at runtime (not baked at build time)
+   - Unsaved-edits-confirm pattern on overlay close
+   - Account dropdown as the gateway to non-operator surfaces
+   - Engine generalisation pattern: VERTICALS registry + getActiveVerticalConfig — 4th vertical requires only registry addition + type extension
+
+   "Things to Discard" — add bullets:
+   - localStorage as the settings backend (production uses Supabase tenant_settings table)
+   - No-PIN-on-Settings (production gates via role check)
+   - String-literal type guards on VerticalId (production should use Object.keys with cast pattern flagged in Batch 13)
+
+3. Verify console.log statements — same scan as Batch 8 / Batch 12. Any debug logs added in Batches 13-14 that aren't intentional should be removed. Document any removals in the report.
+
+4. Verify no unused imports introduced in Batches 13-14. Light TODO if any found, no refactor.
+
+SCOPE — DO NOT BUILD
+- No new features.
+- No refactors. Even if you see something that "could be cleaner" — leave it.
+- No tests.
+- No CI files, no GitHub Actions, no Husky, no lint config changes.
+- No package.json changes.
+- No new npm dependencies.
+- No screenshot generation, no demo data seeding scripts.
+- No deployment configuration.
+- Do not move files, rename files, or restructure folders.
+- Do NOT add cross-vertical aggregated reporting (declined twice already).
+- Do NOT add the "service-level notes" feature suggested at end of Batch 14.
+
+TECH CONSTRAINTS
+- Only files modified: README.md, replit.md, plus any file containing a stray debug console.log
+- Do NOT touch lib/, components/, pages/, or hooks for anything beyond stray log removals
+
+ACCEPTANCE
+1. README.md "What Was Validated" reflects all 15 batches.
+2. README.md "Stack Deviations" table includes the Settings row.
+3. README.md "What Is NOT In This Prototype" includes the 6 new exclusions.
+4. README.md "localStorage Keys" lists all 11 keys (1 active vertical + 1 active staff + 3 verticals × 3 keys + 3 settings keys = 14? Verify count and list every key explicitly).
+5. README.md "Hardcoded Mock Data" reflects 3 verticals AND flags that mock data is now editable via Settings.
+6. README.md "Batch History" lists all 15 batches.
+7. replit.md "Component Tree" includes SettingsOverlay + VerticalSettingsProvider + useVerticalSettings consumers.
+8. replit.md "Hooks Table" includes useVerticalSettings.
+9. replit.md "Money Math" mentions calcTaxWithRate as canonical helper.
+10. replit.md "Storage Architecture" documents settings keys.
+11. App still runs without errors after any debug log removals.
+12. No new files created beyond README.md / replit.md updates.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Sid runs git himself in the Shell tab.
+
+REPORT FORMAT — REQUIRED
+After scope is built and acceptance passes, your report MUST include these four sections in this order:
+
+1. WHAT WAS BUILT — bulleted list of every file modified + brief description of changes per file
+2. ERRORS ENCOUNTERED — any errors found during work, how each was resolved (or "None" if zero)
+3. ITEMS SKIPPED — anything in scope that was deferred, with reason (or "None")
+4. OPEN QUESTIONS — anything Sid needs to decide before any future work (or "None — final batch of the day")
+
+Then wait for the next prompt. This is the final batch — do NOT begin any further work.

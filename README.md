@@ -8,8 +8,9 @@
 
 ## What This Is
 
-- A tablet-portrait multi-vertical point-of-sale UX prototype (salon + spa).
+- A tablet-portrait multi-vertical point-of-sale UX prototype (salon + spa + nail bar — full launch trio).
 - Single-page React app simulating the operator flow from tile-tap to mock checkout to mock receipt.
+- Includes a first-pass owner Settings UX: business identity, tax rate, tip presets, and staff CRUD — all per-vertical.
 - State lives in localStorage. No backend, no real payments, no real auth beyond Replit's session.
 
 ---
@@ -34,6 +35,11 @@
 - Multi-vertical engine (salon + spa) via config alone
 - Header vertical switcher with cart-empty gating
 - Per-vertical namespaced localStorage
+- Nail bar vertical (3rd launch trio member) — engine generalised with 2-file change only
+- Owner Settings overlay — business identity edit, tax rate edit, tip preset CRUD, staff CRUD
+- Per-vertical settings scoping — edits in one vertical don't affect others
+- Settings layer overrides config defaults dynamically (Receipt, tax math, tip presets, staff list all read from settings hook, not constants)
+- Engine generalisation pattern — adding a 4th vertical requires only adding to VERTICALS registry + extending VerticalId type
 
 ---
 
@@ -51,6 +57,7 @@
 | State | Server-authoritative | In-memory + localStorage |
 | Manager Auth | bcrypt PIN hash + audit log | Mock — any 4 digits accepted |
 | Refund | Stripe Refund API | Mock 1500ms simulated |
+| Settings | Database-backed settings table per tenant | localStorage per-vertical override layer |
 
 These deviations are intentional. The prototype was built to answer UX questions, not architecture questions. Production answers all the architecture questions and ignores this code entirely.
 
@@ -63,7 +70,7 @@ These deviations are intentional. The prototype was built to answer UX questions
 - Offline mode + sync queue
 - Real authentication beyond Replit's
 - Real receipt delivery (no Resend, no Telnyx, no printer driver)
-- TaxJar (8.25% flat tax hardcoded)
+- TaxJar location-based tax (rate is user-configurable in Settings but still a flat manual entry, not location-computed)
 - PIN auth for staff
 - Multi-station support, real-time sync
 - Customer profiles / purchase history
@@ -76,7 +83,12 @@ These deviations are intentional. The prototype was built to answer UX questions
 - Audit log viewer
 - Discount limits per staff role
 - Z report with cash drawer reconciliation
-- Nail bar vertical (3rd launch trio member, not validated)
+- Service / modifier editing from Settings (services are config-locked for prototype)
+- Receipt logo upload
+- Multi-currency, locale, language picker
+- Business hours / holidays config
+- PIN gate on Settings (production gates with role check)
+- Settings backend / API persistence
 
 ---
 
@@ -89,9 +101,19 @@ These deviations are intentional. The prototype was built to answer UX questions
 | `nuatis-pos:salon:cart` | Salon active cart |
 | `nuatis-pos:salon:transactions` | Salon transaction log (last 10) |
 | `nuatis-pos:salon:heldTickets` | Salon held tickets (cap 5) |
+| `nuatis-pos:salon:settings` | Salon settings overrides |
 | `nuatis-pos:spa:cart` | Spa active cart |
 | `nuatis-pos:spa:transactions` | Spa transaction log (last 10) |
 | `nuatis-pos:spa:heldTickets` | Spa held tickets (cap 5) |
+| `nuatis-pos:spa:settings` | Spa settings overrides |
+| `nuatis-pos:nail_bar:cart` | Nail Bar active cart |
+| `nuatis-pos:nail_bar:transactions` | Nail Bar transaction log (last 10) |
+| `nuatis-pos:nail_bar:heldTickets` | Nail Bar held tickets (cap 5) |
+| `nuatis-pos:nail_bar:settings` | Nail Bar settings overrides |
+
+**Total: 14 keys** (2 shared + 4 per vertical × 3 verticals).
+
+Settings keys are write-on-edit only — if a vertical's settings have never been changed, the key does not exist and `getVerticalSettings()` returns defaults from `lib/verticals.ts` at runtime.
 
 Legacy unprefixed keys (`nuatis-pos:cart`, `nuatis-pos:transactions`, `nuatis-pos:heldTickets`) are migrated to `nuatis-pos:salon:*` on first boot and then deleted.
 
@@ -99,14 +121,18 @@ Legacy unprefixed keys (`nuatis-pos:cart`, `nuatis-pos:transactions`, `nuatis-po
 
 ## Hardcoded Mock Data
 
-- **2 verticals** — Salon and Spa, each with 12 services and service-specific modifiers (`lib/verticals.ts`)
-- **Salon business** — "Nuatis POS Demo Salon · 123 Main St, Austin, TX 78701 · (512) 555-0100"
-- **Spa business** — "Nuatis POS Demo Spa · 456 Wellness Ave, Austin, TX 78704 · (512) 555-0200"
+- **3 verticals** — Salon, Spa, and Nail Bar (full launch trio), each with 12 services and service-specific modifiers (`lib/verticals.ts`)
+- **Salon business** — "Nuatis POS Demo Salon · 123 Main St, Austin, TX 78701 · (512) 555-0100" — **editable via Settings**
+- **Spa business** — "Nuatis POS Demo Spa · 456 Wellness Ave, Austin, TX 78704 · (512) 555-0200" — **editable via Settings**
+- **Nail Bar business** — "Nuatis POS Demo Nail Bar · 789 Polish Lane, Austin, TX 78702 · (512) 555-0300" — **editable via Settings**
 - **Salon services** (`lib/services.ts`) — Women's Cut, Men's Cut, Beard Trim, Kids Cut, Highlights Full, Color Root, Gloss, Olaplex Treatment, Deep Conditioning, Wax, Blowout, Polish Change
 - **Spa services** (`lib/verticals.ts`) — Swedish Massage, Deep Tissue Massage, Hot Stone Massage, Prenatal Massage, Classic Facial, Anti-Aging Facial, Hydrating Facial, Body Scrub, Detox Body Wrap, Aromatherapy Wrap, Foot Reflexology, Sauna Session
-- **3 staff shared across verticals** (`lib/staff.ts`) — Maria / Stylist, James / Colorist, Lisa / Stylist
+- **Nail Bar services** (`lib/verticals.ts`) — Basic Manicure, Gel Manicure, French Manicure, Polish Change, Basic Pedicure, Gel Pedicure, Spa Pedicure, Acrylic Full Set, Acrylic Fill, Dip Powder, Nail Art (Simple), Paraffin Wax Treatment
+- **3 staff shared across verticals** (`lib/staff.ts`) — Maria / Stylist, James / Colorist, Lisa / Stylist — **staff list is now editable per-vertical via Settings** (add / deactivate / delete)
 - **6 customers shared across verticals** (`lib/customers.ts`) — Sarah Chen, Marcus Rodriguez, Priya Patel, David Kim, Emma Thompson, Jordan Williams
-- **Service-specific modifiers** — Salon: Women's Cut, Men's Cut, Highlights Full, Color Root, Gloss. Spa: Swedish Massage, Deep Tissue, Hot Stone, Classic Facial, Anti-Aging Facial
+- **Service-specific modifiers** — Salon: Women's Cut, Men's Cut, Highlights Full, Color Root, Gloss. Spa: Swedish Massage, Deep Tissue, Hot Stone, Classic Facial, Anti-Aging Facial. Nail Bar: Basic Mani, Gel Mani, Basic Pedi, Gel Pedi, Acrylic Full Set, Dip Powder
+- **Default tax rate** — 8.25% flat (configurable per-vertical via Settings; TaxJar not integrated)
+- **Default tip presets** — 15%, 18%, 20%, 25% (configurable per-vertical via Settings)
 - **Mock card** — "Card • Visa •••• 4242" on every receipt
 - **Manager PIN** — ANY 4 digits accepted (mock validation — no real PIN check)
 
@@ -139,6 +165,9 @@ Open the Replit-provided URL. Replit Auth gates the app — log in with any Repl
 | Batch 10 | Manager PIN + refund |
 | Batch 11 | Spa vertical + multi-vertical engine |
 | Batch 12 | Final docs + tag v0.0.2-prototype |
+| Batch 13 | Nail Bar vertical (launch trio complete; 2-file change) |
+| Batch 14 | Owner Settings overlay (business + tax + tips + staff, per-vertical) |
+| Batch 15 | Final wrap (README + replit.md + tag v0.0.3-prototype) |
 
 ---
 
