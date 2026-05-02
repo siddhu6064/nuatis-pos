@@ -6,6 +6,7 @@ import { Cart } from "@/components/Cart";
 import { CheckoutOverlay } from "@/components/CheckoutOverlay";
 import { StaffSwitcher } from "@/components/StaffSwitcher";
 import { CustomerSearch } from "@/components/CustomerSearch";
+import { ReportsOverlay } from "@/components/ReportsOverlay";
 import { useCart } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
 import { useActiveStaff } from "@/hooks/useActiveStaff";
@@ -37,6 +38,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [pulsingServiceId, setPulsingServiceId] = useState<string | null>(null);
   const [showStaffSwitcher, setShowStaffSwitcher] = useState(false);
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(false);
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTileTap = useCallback(
@@ -76,6 +78,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         onLogout={onLogout}
         activeStaff={activeStaff}
         onSwitchStaff={() => setShowStaffSwitcher(true)}
+        checkoutState={checkout.state}
+        onOpenReports={() => setReportsOpen(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -140,6 +144,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           }}
           onClose={() => setShowCustomerSearch(false)}
         />
+      )}
+
+      {reportsOpen && (
+        <ReportsOverlay onClose={() => setReportsOpen(false)} />
       )}
     </div>
   );

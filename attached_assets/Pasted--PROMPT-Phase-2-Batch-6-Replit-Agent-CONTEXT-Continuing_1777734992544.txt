@@ -1,0 +1,88 @@
+▶ PROMPT [Phase 2 · Batch 6 · Replit Agent]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-5 shipped: Replit Auth, register grid (12 salon services), right-side cart with quantity + tax + tip, simulated card reader, receipt panel + mock delivery, transaction log at `nuatis-pos:transactions`, customer attach (pre/post-sale, phone-first), per-line staff attribution. Header has "Switch Staff" + Account dropdown.
+
+This batch adds the operator's mid-shift / end-of-day visibility — a "Today's Sales" overlay accessed from the header. Shows summary metrics (revenue, tips, count, avg ticket, per-staff breakdown) and a list of recent transactions. Tapping a transaction row swaps the overlay content into receipt-view mode with re-delivery options.
+
+GOAL
+Operator taps "Today's Sales" in the header → modal overlay shows daily summary on top + transaction list below (default: today, toggle to All). Tapping a row swaps the same overlay to a receipt detail view with [Print / Email / SMS / Close] re-delivery options. Close ✕ or ESC dismisses entirely.
+
+SCOPE — BUILD THIS
+1. Header addition — to the LEFT of the clock (or wherever fits cleanly), add a "Today's Sales" text link (Epilogue 500, 14px, accent #E84A00). Tappable. Disabled / hidden when checkout state !== 'idle' — operator must complete or cancel the current ticket before opening reports.
+2. Reports overlay — components/ReportsOverlay.tsx — fixed inset-0 z-50, #0F0F10 background. Centered white panel, max-width 640px, max-height 88vh, rounded-lg, internal scroll. Two internal "view modes" managed by overlay-local state: 'summary' (default) and 'receipt' (when a transaction row is tapped).
+3. Top bar of overlay (always visible):
+   - In 'summary' mode: "Today's Sales" title (Fraunces 700, 22px) left + close ✕ right.
+   - In 'receipt' mode: "← Back" link left + "Receipt #ABCD1234" title (Fraunces 600, 18px) center + close ✕ right.
+4. Summary section (top of summary view, white card or just inline):
+   - Today's date — Intl.DateTimeFormat 'medium' style (Epilogue 400, 14px muted)
+   - Big revenue number — sum of totalCents across today's transactions (Fraunces 700, 48px). Format with formatCurrency.
+   - 3-stat row: Transactions (count), Tips (sum tipCents), Avg Ticket (revenue / count, or "$0.00" if 0). Each: small label (Epilogue 400, 12px muted) + value (Fraunces 600, 20px).
+   - Divider.
+   - "By Staff" section header (Epilogue 600, 14px). For each of the 3 staff:
+     - Row: name + role (Epilogue 500, 14px) left, transaction count + revenue right (JetBrains Mono 500, 14px).
+     - Per-staff revenue: sum of (line.priceCents × line.quantity) across all today's transactions where line.staffId === staff.id. NO tax, NO tip allocation. Just service revenue.
+     - Per-staff transaction count: count of transactions where at least one line has line.staffId === staff.id.
+     - Show all 3 staff even if 0 — ($0.00 / 0 txn) is fine.
+5. Transaction list section (below summary):
+   - Header row: "Recent Transactions" (Fraunces 600, 18px) left + Today/All toggle right (two small pill buttons, active gets accent border + bold).
+   - Default toggle: "Today". "Today" filter: tx where new Date(completedAt).toDateString() === new Date().toDateString(). "All" filter: all transactions in localStorage (capped 10 from Batch 3).
+   - Each transaction row: time (HH:MM AM/PM via Intl, JetBrains Mono 500 14px) — customer name or "Walk-in" (Epilogue 500 14px) — total formatted (Fraunces 600 16px right-aligned). Below row: small muted line with "Txn #<8chars>" + delivery icon (text "P" / "E" / "S" / "—" for print/email/sms/none) + staff (first staff name, or "Multiple" if >1 distinct staffId in line items).
+   - Empty state when no transactions: "No sales yet today" (Epilogue 400, 16px muted, centered).
+   - Rows tappable — tap → switch overlay to 'receipt' mode with that transaction loaded.
+6. Receipt detail mode (overlay 'receipt' state):
+   - Renders the existing Receipt component from Batch 4 with the selected transaction's data (line items, math, customer, staff per line, payment method, etc.).
+   - Below the receipt: 4 delivery buttons in a single row (smaller height ~48px, equal width): [Print] [Email] [SMS] [Close]. Print fires "Sent to printer (mock)" toast. Email/SMS reveal their inline input + Send (same validation as Batch 4) → toast on Send. Close returns to summary view.
+   - Re-delivery DOES NOT update the transaction record — fire-and-forget toasts only.
+   - The four delivery buttons can be tapped repeatedly (no disable after first tap, unlike the live-sale receipt). Operator might re-print AND re-email same receipt.
+7. ReportsOverlay opens via: a small useState in App / RegisterPage `reportsOpen`. Header link tap sets true. Close ✕ / ESC sets false. Backdrop click closes. Disable header link when checkout state !== 'idle'.
+8. Reports overlay does NOT block the existing Checkout overlay if both somehow opened simultaneously — but UX-wise the header link is gated, so this shouldn't happen.
+
+SCOPE — DO NOT BUILD
+- No date range picker, no custom date filtering — Today / All toggle only.
+- No CSV export, no printable Z report, no email-the-Z-report-to-owner.
+- No per-service breakdown, no per-payment-method breakdown.
+- No tip allocation logic per staff — service revenue only.
+- No editing or voiding past transactions.
+- No re-delivery logging to the transaction record — toasts only, no record mutation.
+- No new npm dependencies, no chart libraries (no recharts, no chart.js).
+- No animations beyond the existing toast-slide and check-appear; reports overlay can use a simple fade-in or instant render.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- Read transactions from localStorage `nuatis-pos:transactions` directly — no new state hook needed unless cleaner. Re-read on overlay open (don't memoize across opens).
+- Date comparison: new Date(tx.completedAt).toDateString() === new Date().toDateString()
+- Time format: Intl.DateTimeFormat('en-US', { timeStyle: 'short' })
+- File additions: components/ReportsOverlay.tsx, lib/reports.ts (pure functions: calcDailySummary(transactions), calcPerStaffSummary(transactions, staffList))
+- Reuse Receipt.tsx as-is for receipt detail mode (passing the selected transaction's data)
+- Reuse Toast component from Batch 4
+
+ACCEPTANCE
+1. Header shows "Today's Sales" link in accent color; tappable when cart is empty or in idle state.
+2. Header link is disabled / not tappable when checkout state is 'tip', 'processing', 'receipt', or 'completed'.
+3. Tapping the link opens the overlay with summary view.
+4. Summary shows correct revenue total — matches sum of totalCents in today's transactions.
+5. Avg Ticket computes correctly; shows $0.00 with 0 transactions (no NaN).
+6. Per-staff breakdown shows all 3 staff. Revenue per staff matches sum of line totals where line.staffId matches. Transaction count matches.
+7. Transaction list defaults to "Today" — only today's transactions visible.
+8. "All" toggle reveals all transactions in localStorage (up to 10).
+9. Empty state renders cleanly when no transactions (or no today transactions on Today filter).
+10. Tapping a transaction row swaps overlay to receipt mode showing that transaction's full receipt.
+11. ← Back returns to summary view; summary state preserved (toggle still on Today/All as left).
+12. Re-delivery buttons in receipt mode fire toasts on tap; can be tapped repeatedly without disabling.
+13. Re-delivery does NOT mutate the saved transaction record (verify via localStorage inspection).
+14. Close ✕ / ESC dismisses overlay entirely from either mode.
+15. Ring up a sale → close → reopen reports → new transaction visible in list, summary updated.
+16. No console errors, no React key warnings, no Tailwind compile errors.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Do not attempt checkout, add, commit, or push. Sid runs git himself in the Shell tab after this batch is verified.
+
+HARD STOP
+After scope is built and acceptance passes, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions before next batch
+Then wait for the next prompt. Do NOT begin Batch 7 (modifier add-ons / hold-and-resume tickets) on your own.
