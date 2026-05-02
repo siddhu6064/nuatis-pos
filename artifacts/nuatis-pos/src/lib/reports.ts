@@ -1,11 +1,13 @@
 import type { Transaction } from "@/hooks/useCheckout";
 import type { Staff } from "@/lib/staff";
+import { calcLineTotalCents, calcLineDiscountCents } from "@/lib/cartMath";
 
 export interface DailySummary {
   revenueCents: number;
   tipCents: number;
   count: number;
   avgTicketCents: number;
+  discountCents: number;
 }
 
 export function calcDailySummary(transactions: Transaction[]): DailySummary {
@@ -13,7 +15,16 @@ export function calcDailySummary(transactions: Transaction[]): DailySummary {
   const revenueCents = transactions.reduce((sum, tx) => sum + tx.totalCents, 0);
   const tipCents = transactions.reduce((sum, tx) => sum + tx.tipCents, 0);
   const avgTicketCents = count === 0 ? 0 : Math.round(revenueCents / count);
-  return { revenueCents, tipCents, count, avgTicketCents };
+  const discountCents = transactions.reduce(
+    (sum, tx) =>
+      sum +
+      tx.lineItems.reduce(
+        (s, line) => s + calcLineDiscountCents(line),
+        0,
+      ),
+    0,
+  );
+  return { revenueCents, tipCents, count, avgTicketCents, discountCents };
 }
 
 export interface StaffSummary {
@@ -33,17 +44,13 @@ export function calcPerStaffSummary(
       tx.lineItems.some((line) => line.staffId === staff.id),
     ).length;
     const revenueCents = transactions.reduce((sum, tx) => {
+      // Comped transactions contribute $0 to per-staff revenue
+      if (tx.compApplied) return sum;
       return (
         sum +
         tx.lineItems
           .filter((line) => line.staffId === staff.id)
-          .reduce((s, line) => {
-            const modifierTotal = (line.modifiers ?? []).reduce(
-              (ms, m) => ms + m.priceCents,
-              0,
-            );
-            return s + (line.priceCents + modifierTotal) * line.quantity;
-          }, 0)
+          .reduce((s, line) => s + calcLineTotalCents(line), 0)
       );
     }, 0);
     return {

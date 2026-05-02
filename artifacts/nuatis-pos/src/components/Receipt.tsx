@@ -1,6 +1,7 @@
 import type { Transaction } from "@/hooks/useCheckout";
 import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
+import { calcLineDiscountCents } from "@/lib/cartMath";
 
 interface ReceiptProps {
   transaction: Transaction;
@@ -27,12 +28,34 @@ function Divider() {
 
 export function Receipt({ transaction }: ReceiptProps) {
   const txShort = transaction.id.slice(-8).toUpperCase();
+  const isComped = transaction.compApplied ?? false;
 
   return (
     <div
-      className="text-gray-900 text-[13px] w-full"
+      className="text-gray-900 text-[13px] w-full relative"
       style={{ fontFamily: "'Epilogue', sans-serif" }}
     >
+      {/* COMPED stamp */}
+      {isComped && (
+        <div
+          style={{
+            position: "absolute",
+            top: "8px",
+            right: "4px",
+            fontFamily: "'Fraunces', serif",
+            fontSize: "14px",
+            fontWeight: 700,
+            color: "#DC2626",
+            transform: "rotate(-8deg)",
+            userSelect: "none",
+            pointerEvents: "none",
+            letterSpacing: "0.05em",
+          }}
+        >
+          COMPED
+        </div>
+      )}
+
       {/* Business header */}
       <div className="text-center mb-3">
         <p
@@ -66,6 +89,14 @@ export function Receipt({ transaction }: ReceiptProps) {
             {transaction.customer.lastName}
           </p>
         )}
+        {isComped && (
+          <p
+            className="text-[12px] font-semibold"
+            style={{ color: "#DC2626" }}
+          >
+            COMPED · {transaction.compReason ?? "No reason given"}
+          </p>
+        )}
       </div>
 
       <Divider />
@@ -77,7 +108,13 @@ export function Receipt({ transaction }: ReceiptProps) {
             (s, m) => s + m.priceCents,
             0,
           );
-          const lineTotal = (line.priceCents + modifierTotal) * line.quantity;
+          const lineTotal =
+            Math.round(
+              (line.priceCents + modifierTotal) *
+                line.quantity *
+                (1 - (line.discountPercent ?? 0) / 100),
+            );
+          const discountCents = calcLineDiscountCents(line);
           const staffMember = STAFF.find((s) => s.id === line.staffId);
           return (
             <div key={line.lineId}>
@@ -126,6 +163,26 @@ export function Receipt({ transaction }: ReceiptProps) {
                   </span>
                 </div>
               ))}
+              {/* Discount sub-row */}
+              {discountCents > 0 && (
+                <div className="flex justify-between items-baseline pl-4 mt-0.5">
+                  <span
+                    className="text-[12px]"
+                    style={{ color: "#DC2626", fontFamily: "'Epilogue', sans-serif" }}
+                  >
+                    Discount −{line.discountPercent}%
+                  </span>
+                  <span
+                    className="text-[12px] tabular-nums"
+                    style={{
+                      color: "#DC2626",
+                      fontFamily: "'JetBrains Mono', monospace",
+                    }}
+                  >
+                    −{formatCurrency(discountCents)}
+                  </span>
+                </div>
+              )}
             </div>
           );
         })}
@@ -168,7 +225,10 @@ export function Receipt({ transaction }: ReceiptProps) {
           <span style={{ fontFamily: "'Epilogue', sans-serif" }}>Total</span>
           <span
             className="tabular-nums"
-            style={{ fontFamily: "'Fraunces', serif" }}
+            style={{
+              fontFamily: "'Fraunces', serif",
+              color: isComped ? "#DC2626" : "inherit",
+            }}
           >
             {formatCurrency(transaction.totalCents)}
           </span>
@@ -177,7 +237,9 @@ export function Receipt({ transaction }: ReceiptProps) {
 
       <Divider />
 
-      <p className="text-[12px] text-gray-600">Card • Visa •••• 4242</p>
+      <p className="text-[12px] text-gray-600">
+        {isComped ? "No charge — comped" : "Card • Visa •••• 4242"}
+      </p>
 
       <Divider />
 

@@ -1,8 +1,10 @@
+import { useState } from "react";
 import type { CartLine as CartLineType, CartCustomer } from "@/hooks/useCart";
 import type { CheckoutState } from "@/hooks/useCheckout";
 import type { Modifier } from "@/lib/modifiers";
 import { CartLine } from "./CartLine";
 import { TipPicker } from "./TipPicker";
+import { CompModal } from "./CompModal";
 import { formatCurrency } from "@/lib/currency";
 import { calcSubtotal, calcTax, calcTotal } from "@/lib/cartMath";
 
@@ -16,6 +18,12 @@ interface CartProps {
   onHold: () => void;
   onStaffChange: (lineId: string, staffId: string) => void;
   onToggleModifier: (lineId: string, modifier: Modifier) => void;
+  onSetDiscount: (lineId: string, percent: number) => void;
+  // comp
+  compApplied: boolean;
+  compReason: string | null;
+  onApplyComp: (reason: string) => void;
+  onRemoveComp: () => void;
   // customer
   customer: CartCustomer | null;
   onOpenCustomerSearch: () => void;
@@ -41,6 +49,11 @@ export function Cart({
   onHold,
   onStaffChange,
   onToggleModifier,
+  onSetDiscount,
+  compApplied,
+  compReason,
+  onApplyComp,
+  onRemoveComp,
   customer,
   onOpenCustomerSearch,
   onDetachCustomer,
@@ -53,9 +66,16 @@ export function Cart({
   onTipPresetSelect,
   onCustomTipApply,
 }: CartProps) {
+  const [showCompModal, setShowCompModal] = useState(false);
+
   const subtotalCents = calcSubtotal(lines);
-  const taxCents = calcTax(subtotalCents);
-  const totalCents = calcTotal(subtotalCents, taxCents, tipCents);
+  const rawTaxCents = calcTax(subtotalCents);
+  const rawTotalCents = calcTotal(subtotalCents, rawTaxCents, tipCents);
+
+  // Override math when comp applied
+  const displayTaxCents = compApplied ? 0 : rawTaxCents;
+  const displayTotalCents = compApplied ? 0 : rawTotalCents;
+
   const isEmpty = lines.length === 0;
   const isIdle = checkoutState === "idle";
   const inTipState = checkoutState === "tip";
@@ -66,6 +86,16 @@ export function Cart({
       className="h-full flex flex-col border-l border-black/8"
       style={{ backgroundColor: "#F8F7F4" }}
     >
+      {showCompModal && (
+        <CompModal
+          onConfirm={(reason) => {
+            onApplyComp(reason);
+            setShowCompModal(false);
+          }}
+          onClose={() => setShowCompModal(false)}
+        />
+      )}
+
       {/* Customer pill */}
       <div
         className="px-4 py-2 border-b border-black/8 flex-shrink-0"
@@ -82,7 +112,6 @@ export function Cart({
             <button
               onClick={onDetachCustomer}
               className="text-[12px] text-gray-400 hover:text-red-500 transition-colors px-1"
-              style={{ fontFamily: "'Epilogue', sans-serif" }}
               aria-label="Detach customer"
             >
               ✕
@@ -151,6 +180,7 @@ export function Cart({
                   onRemove={onRemove}
                   onStaffChange={onStaffChange}
                   onToggleModifier={onToggleModifier}
+                  onSetDiscount={onSetDiscount}
                 />
                 {idx < lines.length - 1 && (
                   <div className="mx-4 h-px bg-black/6" />
@@ -161,16 +191,25 @@ export function Cart({
         )}
       </div>
 
-      {/* Tip picker */}
+      {/* Tip picker (hidden when comped) */}
       {inTipState && (
         <>
           <div className="mx-4 h-px bg-black/8" />
-          <TipPicker
-            subtotalCents={subtotalCents}
-            selectedPreset={selectedPreset}
-            onPresetSelect={onTipPresetSelect}
-            onCustomApply={onCustomTipApply}
-          />
+          {compApplied ? (
+            <div
+              className="px-4 py-4 text-[14px] text-gray-500 italic text-center"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Comped — no tip applicable
+            </div>
+          ) : (
+            <TipPicker
+              subtotalCents={subtotalCents}
+              selectedPreset={selectedPreset}
+              onPresetSelect={onTipPresetSelect}
+              onCustomApply={onCustomTipApply}
+            />
+          )}
         </>
       )}
 
@@ -199,14 +238,17 @@ export function Cart({
             Tax (8.25%)
           </span>
           <span
-            className="text-[14px] font-medium text-gray-800 tabular-nums"
-            style={{ fontFamily: "'JetBrains Mono', monospace" }}
+            className="text-[14px] font-medium tabular-nums"
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              color: compApplied ? "#DC2626" : "#1F2937",
+            }}
           >
-            {formatCurrency(taxCents)}
+            {formatCurrency(displayTaxCents)}
           </span>
         </div>
 
-        {inTipState && tipCents > 0 && (
+        {inTipState && !compApplied && tipCents > 0 && (
           <div className="flex items-center justify-between mb-1.5">
             <span
               className="text-[14px] text-gray-500"
@@ -223,6 +265,44 @@ export function Cart({
           </div>
         )}
 
+        {/* Comp Ticket link / comped indicator */}
+        {isIdle && !isEmpty && (
+          <div className="flex items-center justify-between mb-2">
+            {compApplied ? (
+              <div className="flex items-center gap-1.5 w-full">
+                <span
+                  className="text-[12px] font-semibold flex-1"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    color: "#DC2626",
+                  }}
+                >
+                  COMPED · {compReason}
+                </span>
+                <button
+                  onClick={onRemoveComp}
+                  className="text-[12px] text-gray-400 hover:text-red-500 transition-colors"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                  aria-label="Undo comp"
+                >
+                  ✕ undo
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowCompModal(true)}
+                className="text-[12px] font-medium transition-colors duration-100"
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  color: "#9CA3AF",
+                }}
+              >
+                Comp Ticket
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between mb-3 pt-2 border-t border-black/8">
           <span
             className="text-[18px] font-semibold text-gray-900"
@@ -231,10 +311,13 @@ export function Cart({
             Total
           </span>
           <span
-            className="text-[22px] font-bold text-gray-900 tabular-nums"
-            style={{ fontFamily: "'Fraunces', serif" }}
+            className="text-[22px] font-bold tabular-nums"
+            style={{
+              fontFamily: "'Fraunces', serif",
+              color: compApplied ? "#DC2626" : "#111827",
+            }}
           >
-            {formatCurrency(totalCents)}
+            {formatCurrency(displayTotalCents)}
           </span>
         </div>
 
@@ -264,7 +347,11 @@ export function Cart({
             cursor: isEmpty ? "not-allowed" : "pointer",
           }}
         >
-          {inTipState ? `Confirm ${formatCurrency(totalCents)}` : "Charge"}
+          {inTipState
+            ? compApplied
+              ? "Confirm Comp ($0.00)"
+              : `Confirm ${formatCurrency(displayTotalCents)}`
+            : "Charge"}
         </button>
       </div>
     </div>

@@ -11,6 +11,7 @@ export interface CartLine {
   quantity: number;
   staffId: string;
   modifiers: Modifier[];
+  discountPercent: number;
 }
 
 export type { CartCustomer };
@@ -38,6 +39,7 @@ function loadCart(): CartLine[] {
         quantity: l.quantity!,
         staffId: l.staffId ?? STAFF[0].id,
         modifiers: l.modifiers ?? [],
+        discountPercent: l.discountPercent ?? 0,
       }));
   } catch {
     return [];
@@ -51,16 +53,18 @@ function saveCart(lines: CartLine[]): void {
 export function useCart() {
   const [lines, setLines] = useState<CartLine[]>(() => loadCart());
   const [customer, setCustomer] = useState<CartCustomer | null>(null);
+  const [compApplied, setCompApplied] = useState(false);
+  const [compReason, setCompReason] = useState<string | null>(null);
 
   const addItem = useCallback(
     (serviceId: string, name: string, priceCents: number, staffId: string) => {
       setLines((prev) => {
-        // Increment only if same serviceId + same staffId + no modifiers on existing line
         const existing = prev.find(
           (l) =>
             l.serviceId === serviceId &&
             l.staffId === staffId &&
-            l.modifiers.length === 0,
+            l.modifiers.length === 0 &&
+            l.discountPercent === 0,
         );
         let next: CartLine[];
         if (existing) {
@@ -80,6 +84,7 @@ export function useCart() {
               quantity: 1,
               staffId,
               modifiers: [],
+              discountPercent: 0,
             },
           ];
         }
@@ -130,23 +135,42 @@ export function useCart() {
     });
   }, []);
 
-  const toggleModifier = useCallback(
-    (lineId: string, modifier: Modifier) => {
-      setLines((prev) => {
-        const next = prev.map((l) => {
-          if (l.lineId !== lineId) return l;
-          const hasIt = l.modifiers.some((m) => m.id === modifier.id);
-          const modifiers = hasIt
-            ? l.modifiers.filter((m) => m.id !== modifier.id)
-            : [...l.modifiers, modifier];
-          return { ...l, modifiers };
-        });
-        saveCart(next);
-        return next;
+  const toggleModifier = useCallback((lineId: string, modifier: Modifier) => {
+    setLines((prev) => {
+      const next = prev.map((l) => {
+        if (l.lineId !== lineId) return l;
+        const hasIt = l.modifiers.some((m) => m.id === modifier.id);
+        const modifiers = hasIt
+          ? l.modifiers.filter((m) => m.id !== modifier.id)
+          : [...l.modifiers, modifier];
+        return { ...l, modifiers };
       });
-    },
-    [],
-  );
+      saveCart(next);
+      return next;
+    });
+  }, []);
+
+  const setDiscount = useCallback((lineId: string, percent: number) => {
+    setLines((prev) => {
+      const next = prev.map((l) =>
+        l.lineId === lineId
+          ? { ...l, discountPercent: Math.max(0, Math.min(99, percent)) }
+          : l,
+      );
+      saveCart(next);
+      return next;
+    });
+  }, []);
+
+  const applyComp = useCallback((reason: string) => {
+    setCompApplied(true);
+    setCompReason(reason);
+  }, []);
+
+  const removeComp = useCallback(() => {
+    setCompApplied(false);
+    setCompReason(null);
+  }, []);
 
   const attachCustomer = useCallback((c: CartCustomer) => {
     setCustomer(c);
@@ -157,10 +181,17 @@ export function useCart() {
   }, []);
 
   const loadHeld = useCallback(
-    (lineItems: CartLine[], heldCustomer: CartCustomer | null) => {
+    (
+      lineItems: CartLine[],
+      heldCustomer: CartCustomer | null,
+      heldCompApplied = false,
+      heldCompReason: string | null = null,
+    ) => {
       saveCart(lineItems);
       setLines(lineItems);
       setCustomer(heldCustomer);
+      setCompApplied(heldCompApplied);
+      setCompReason(heldCompReason);
     },
     [],
   );
@@ -170,17 +201,24 @@ export function useCart() {
     saveCart(next);
     setLines(next);
     setCustomer(null);
+    setCompApplied(false);
+    setCompReason(null);
   }, []);
 
   return {
     lines,
     customer,
+    compApplied,
+    compReason,
     addItem,
     increment,
     decrement,
     remove,
     changeStaff,
     toggleModifier,
+    setDiscount,
+    applyComp,
+    removeComp,
     attachCustomer,
     detachCustomer,
     loadHeld,

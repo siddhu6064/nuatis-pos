@@ -1,0 +1,118 @@
+▶ PROMPT [Phase 2 · Batch 9 · Replit Agent — EXTENSION BATCH]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-8 complete: auth + register + cart + tip + mock checkout + receipt + delivery + customer + staff + reports + modifiers + hold/resume + cleanup. Repo on prototype/replit-day-1 branch, tagged v0.0.1-prototype.
+
+This is an EXTENSION batch beyond the original prototype day scope. Adds discount + comp flow — universal POS pattern that didn't fit the original 8-batch plan. Per-line percentage discount AND whole-ticket comp with reason picker. All still throwaway, all still on prototype branch.
+
+GOAL
+Operator can apply percentage discount per cart line (5/10/15/20/Custom%) AND comp the entire ticket with a reason picker. Discounts apply to subtotal BEFORE tax. Comp reduces ticket to $0 but still creates a transaction record with comp metadata.
+
+SCOPE — BUILD THIS — LINE-LEVEL DISCOUNT
+
+1. CartLine shape extended — add `discountPercent: number` field (0-100, default 0). Migrate persisted carts on load: missing field → default 0.
+
+2. Line discount UI in components/CartLine.tsx — below the existing modifier row (or modifier picker), add a small "+ Discount" text link (Epilogue 400, 12px muted) — visible always, even when no discount applied.
+
+3. Tapping "+ Discount" reveals an inline picker replacing the link:
+   - 5 preset chips: [5%] [10%] [15%] [20%] [Custom]
+   - Selected preset gets accent #E84A00 border + bold (same pattern as TipPicker chips)
+   - [Custom] reveals a small numeric input (1-99 only, integer, no decimals for prototype) + Apply button
+   - Small "Done" / ✕ collapses the picker
+   - Setting a discount > 0 changes the "+ Discount" link to "−<N>% ▾" (tappable to reopen) and shows the discount line in cart math
+   - Setting back to 0 removes the discount
+
+4. Math update — line total now = ((priceCents + sum modifier prices) × quantity) × (1 - discountPercent/100). Round with Math.round to integer cents. Update lib/cartMath.ts:
+   - Update calcLineTotalCents(line) to apply line.discountPercent
+   - Add calcLineDiscountCents(line) — returns the discount amount (pre-discount line total minus post-discount line total) for receipt rendering
+   - calcSubtotal still sums calcLineTotalCents (now reflects discounted amounts)
+   - Tax computed on discounted subtotal (subtotalCents already reflects discounts)
+   - Tip computed on discounted subtotal — same
+
+5. Cart line visual — when discount applied, show the discount inline beneath the line total: small muted line "−<N>% (−$X.XX)" right-aligned (Epilogue 400, 12px, color #DC2626 for visual signal).
+
+SCOPE — BUILD THIS — TICKET-LEVEL COMP
+
+6. Comp button in cart math summary — add a small "Comp Ticket" text link in the cart math area, between Tax row and Total row (or below Total row). Visible only when checkoutState === 'idle' AND cart has items.
+
+7. Tapping "Comp Ticket" opens a centered modal — components/CompModal.tsx — with a reason picker:
+   - Title: "Comp this ticket?" (Fraunces 700, 22px)
+   - 6 reason buttons stacked, full-width, each ~52px tall:
+     [Loyalty Reward] [Manager Discount] [Promo / Voucher] [Service Issue] [Quality Issue] [Other]
+   - Selected reason gets accent border + bold
+   - When [Other] is selected, a small text input reveals below for free-text reason (max 60 chars)
+   - Bottom: [Cancel] (white bg, accent border, accent text) and [Confirm Comp] (accent bg, white text) buttons
+   - Confirm Comp is disabled until a reason is selected (and Other has non-empty text)
+   - ESC + backdrop click dismiss without comping
+
+8. Comp state lives on cart context — `compReason: string | null`. When set:
+   - All cart math zeros out: subtotal stays unchanged for display BUT total becomes $0
+   - More precisely: introduce `compApplied: boolean` flag. When true, taxCents = 0, tipCents = 0, totalCents = 0 in checkout flow, but original subtotalCents still computable for receipt display.
+   - The Comp Ticket link in cart math is replaced with "COMPED · <reason> · ✕ undo" — tapping ✕ removes the comp.
+
+9. Tip selection while comped — in 'tip' state, if compApplied, hide the tip picker entirely and show a simple "Comped — no tip applicable" message above the math summary. Confirm button shows "Confirm Comp ($0.00)".
+
+10. Processing + receipt while comped — overlay still shows "Present card to reader" but for prototype we skip the simulated read entirely if compApplied. Go directly: confirm tap → 800ms (faster) → receipt screen. Receipt shows "COMPED" stamp at top-right (Fraunces 700, 14px, color #DC2626, rotated -8deg) and the comp reason on a row below the customer line.
+
+11. Transaction record extended — add `compApplied: boolean` and `compReason: string | null` fields. Saved to nuatis-pos:transactions on completeDelivery as usual. Per-line discountPercent also saved on each line.
+
+SCOPE — BUILD THIS — RECEIPT + REPORTS
+
+12. Receipt rendering — for each line item with a discount, render a sub-row below the line total: "  Discount −<N>%" left + "−$X.XX" right (muted, 12px, color #DC2626). For comped tickets, "COMPED" stamp overlay top-right + reason row below customer line.
+
+13. Today's Sales summary — extend lib/reports.ts:
+    - Add `discountCents` to calcDailySummary output: total discount amount across all transactions today
+    - Add 4th stat to summary stat row: "Discounts: $X.XX" (red text color #DC2626 to flag)
+    - Per-staff revenue calculation: line revenue is now the DISCOUNTED line total. Modifier revenue still attributed to the line's staff. Comped lines contribute $0 to per-staff revenue. (Owner/manager pays the cost of comps, not the staff.)
+    - Comped transactions listed in transaction list with red "COMPED" badge inline next to the time/customer row.
+
+14. Held tickets preserve discounts and comp state on hold/resume — extend HeldTicket shape if needed. Verify after this batch: hold a discounted ticket, refresh page, resume — discounts intact.
+
+SCOPE — DO NOT BUILD
+- No $ off line discount (% only for prototype).
+- No discount on whole ticket without comp (skip — line-level discounts handle the partial case).
+- No "manager approval required for discount > 20%" gate — that's the Batch 10 manager override pattern.
+- No discount audit log viewer.
+- No discount limits per staff role.
+- No changing comp reason after applied (just undo + re-apply).
+- No new npm dependencies.
+- No animation beyond existing patterns.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- All currency in integer cents
+- Math.round for discount calculations
+- File additions: components/CompModal.tsx, components/DiscountPicker.tsx (or inline in CartLine.tsx)
+- Existing files updated: hooks/useCart.ts (discountPercent + compApplied + compReason), lib/cartMath.ts (line total accounts for discount), lib/reports.ts (discount stat + per-staff math), components/CartLine.tsx (discount UI), components/Cart.tsx (Comp link + comped state visualization), components/Receipt.tsx (discount sub-rows + COMPED stamp), hooks/useCheckout.ts (compApplied path skips card-read simulation)
+
+ACCEPTANCE
+1. Tap a Women's Cut tile ($55) → cart line shows "+ Discount" link.
+2. Tap "+ Discount" → 5 chips visible. Tap [10%] → line total reduces from $55.00 to $49.50, discount sub-row shows "−10% (−$5.50)". Math summary subtotal reflects the reduction.
+3. Tap [Custom] → input appears → enter "15" → Apply → line discount = 15%. Line total = $46.75. Tax recomputes on $46.75.
+4. Toggle discount back to 0% (or set to 0) → line returns to $55.00, sub-row hidden.
+5. Add a $185 Highlights with $25 Olaplex modifier → line total $210. Apply 20% line discount → line total = $168 (20% off the modified amount).
+6. Cart with 3 items mixed discounts → subtotal correctly sums discounted amounts. Tax = 8.25% × discounted subtotal.
+7. Tap "Comp Ticket" link in math summary → modal opens with 6 reasons.
+8. Tap [Service Issue] → confirm enabled. Tap Confirm → modal closes. Cart math now shows total $0.00. "COMPED · Service Issue · ✕ undo" replaces the Comp link. Line items still visible at original pricing.
+9. Tap ✕ undo → comp removed, cart returns to normal pricing.
+10. Re-comp with [Other] → text input appears → typing required to enable Confirm.
+11. Comp + Charge → tip step shows "Comped — no tip applicable" message → Confirm $0.00 → processing skipped to ~800ms → receipt shows "COMPED" stamp + reason.
+12. Receipt for comped transaction shows total $0.00, line items still listed, "COMPED · <reason>" row below customer.
+13. Today's Sales overlay → 4th stat "Discounts: $X.XX" reflects total discount amount across today's transactions.
+14. Per-staff revenue in reports: ring up two sales attributed to Maria — one $100 with no discount (Maria's revenue $100), one $100 with 25% discount (Maria's revenue $75). Total Maria today: $175.
+15. Comped transaction contributes $0 to per-staff revenue. Comped count visible in transaction list with red COMPED badge.
+16. Hold a discounted + comped ticket → refresh → resume → discount and comp state intact.
+17. Discount picker AND Comp link frozen during checkout (tip / processing / receipt) — same pattern as qty/staff/modifier freeze.
+18. No console errors, no React key warnings.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Sid runs git himself in the Shell tab.
+
+HARD STOP
+After scope is built and acceptance passes, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions before next batch
+Then wait for the next prompt. Do NOT begin Batch 10 (Refund + Manager Override) on your own.

@@ -20,6 +20,8 @@ export interface Transaction {
   customer: CartCustomer | null;
   receiptDelivery?: "print" | "email" | "sms" | "none";
   receiptDestination?: string;
+  compApplied: boolean;
+  compReason: string | null;
 }
 
 export interface ConfirmData {
@@ -29,6 +31,8 @@ export interface ConfirmData {
   tipCents: number;
   totalCents: number;
   customer: CartCustomer | null;
+  compApplied: boolean;
+  compReason: string | null;
 }
 
 const TRANSACTIONS_KEY = "nuatis-pos:transactions";
@@ -87,6 +91,8 @@ export function useCheckout(onComplete: () => void) {
   const confirmCheckout = useCallback((data: ConfirmData) => {
     setProcessingTotalCents(data.totalCents);
     setState("processing");
+    // Comped tickets skip the full card-read simulation — 800ms instead of 2000ms
+    const delay = data.compApplied ? 800 : 2000;
     setTimeout(() => {
       const tx: Transaction = {
         id: crypto.randomUUID(),
@@ -98,10 +104,12 @@ export function useCheckout(onComplete: () => void) {
         paymentMethod: "card",
         completedAt: new Date().toISOString(),
         customer: data.customer,
+        compApplied: data.compApplied,
+        compReason: data.compReason,
       };
       setCompletedTx(tx);
       setState("receipt");
-    }, 2000);
+    }, delay);
   }, []);
 
   const attachCustomerPostSale = useCallback((c: CartCustomer) => {

@@ -5,6 +5,8 @@ export interface HeldTicket {
   heldAt: string;
   customer: CartCustomer | null;
   lineItems: CartLine[];
+  compApplied?: boolean;
+  compReason?: string | null;
 }
 
 const HELD_KEY = "nuatis-pos:heldTickets";
@@ -26,7 +28,6 @@ function saveHeldTickets(tickets: HeldTicket[]): void {
 export function holdTicket(ticket: HeldTicket): void {
   const current = getHeldTickets();
   const updated = [...current, ticket];
-  // Cap at MAX_HELD — drop oldest (front of array) on overflow
   const capped = updated.length > MAX_HELD ? updated.slice(-MAX_HELD) : updated;
   saveHeldTickets(capped);
 }

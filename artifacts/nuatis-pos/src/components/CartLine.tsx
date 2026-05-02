@@ -4,7 +4,7 @@ import type { Modifier } from "@/lib/modifiers";
 import { STAFF } from "@/lib/staff";
 import { getModifiersForService } from "@/lib/modifiers";
 import { formatCurrency } from "@/lib/currency";
-import { calcLineTotalCents } from "@/lib/cartMath";
+import { calcLineTotalCents, calcLineDiscountCents } from "@/lib/cartMath";
 
 interface CartLineProps {
   line: CartLineType;
@@ -15,7 +15,10 @@ interface CartLineProps {
   onRemove: (lineId: string) => void;
   onStaffChange: (lineId: string, staffId: string) => void;
   onToggleModifier: (lineId: string, modifier: Modifier) => void;
+  onSetDiscount: (lineId: string, percent: number) => void;
 }
+
+const DISCOUNT_PRESETS = [5, 10, 15, 20] as const;
 
 export function CartLine({
   line,
@@ -26,14 +29,30 @@ export function CartLine({
   onRemove,
   onStaffChange,
   onToggleModifier,
+  onSetDiscount,
 }: CartLineProps) {
   const [staffPickerOpen, setStaffPickerOpen] = useState(false);
   const [modPickerOpen, setModPickerOpen] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [customMode, setCustomMode] = useState(false);
+  const [customRaw, setCustomRaw] = useState("");
 
   const lineTotal = calcLineTotalCents(line);
+  const discountCents = calcLineDiscountCents(line);
   const assignedStaff = STAFF.find((s) => s.id === line.staffId);
   const applicableMods = getModifiersForService(line.serviceId);
   const hasApplicableMods = applicableMods.length > 0;
+  const hasDiscount = line.discountPercent > 0;
+
+  function applyCustomDiscount() {
+    const val = parseInt(customRaw, 10);
+    if (!isNaN(val) && val >= 1 && val <= 99) {
+      onSetDiscount(line.lineId, val);
+      setDiscountOpen(false);
+      setCustomMode(false);
+      setCustomRaw("");
+    }
+  }
 
   return (
     <div
@@ -41,22 +60,37 @@ export function CartLine({
       style={{ backgroundColor: isPulsing ? "#FFF0E8" : "transparent" }}
     >
       {/* Service name + total */}
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="flex items-start justify-between mb-0.5">
         <span
-          className="text-[16px] font-medium text-gray-800 leading-tight"
+          className="text-[16px] font-medium text-gray-800 leading-tight flex-1 mr-2"
           style={{ fontFamily: "'Epilogue', sans-serif" }}
         >
           {line.name}
         </span>
         <span
-          className="text-[16px] font-semibold text-gray-900 ml-2 tabular-nums"
+          className="text-[16px] font-semibold text-gray-900 tabular-nums flex-shrink-0"
           style={{ fontFamily: "'Fraunces', serif" }}
         >
           {formatCurrency(lineTotal)}
         </span>
       </div>
 
-      {/* Active modifier chips (summary view when picker closed) */}
+      {/* Discount amount sub-row */}
+      {hasDiscount && (
+        <div className="flex justify-end mb-1">
+          <span
+            className="text-[12px] tabular-nums"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              color: "#DC2626",
+            }}
+          >
+            −{line.discountPercent}% (−{formatCurrency(discountCents)})
+          </span>
+        </div>
+      )}
+
+      {/* Active modifier chips (when picker closed) */}
       {line.modifiers.length > 0 && !modPickerOpen && (
         <div className="flex flex-wrap gap-1 mb-1.5">
           {line.modifiers.map((m) => (
@@ -77,7 +111,7 @@ export function CartLine({
       )}
 
       {/* Qty controls + remove */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1">
           <button
             onClick={() => !frozen && onDecrement(line.lineId)}
@@ -111,7 +145,7 @@ export function CartLine({
       </div>
 
       {/* Staff attribution */}
-      <div className="mt-1.5">
+      <div className="mb-1">
         {!staffPickerOpen ? (
           <button
             onClick={() => !frozen && setStaffPickerOpen(true)}
@@ -153,7 +187,7 @@ export function CartLine({
 
       {/* Modifier picker */}
       {hasApplicableMods && (
-        <div className="mt-1">
+        <div className="mb-1">
           {!modPickerOpen ? (
             <button
               onClick={() => !frozen && setModPickerOpen(true)}
@@ -163,7 +197,7 @@ export function CartLine({
               + Add-ons
             </button>
           ) : (
-            <div className="flex flex-wrap gap-1 items-center mt-0.5">
+            <div className="flex flex-wrap gap-1 items-center">
               {applicableMods.map((mod) => {
                 const active = line.modifiers.some((m) => m.id === mod.id);
                 return (
@@ -196,6 +230,122 @@ export function CartLine({
           )}
         </div>
       )}
+
+      {/* Discount picker */}
+      <div>
+        {!discountOpen ? (
+          <button
+            onClick={() => !frozen && setDiscountOpen(true)}
+            className="text-[12px] transition-colors duration-100"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              color: hasDiscount ? "#DC2626" : "#9CA3AF",
+            }}
+          >
+            {hasDiscount ? `−${line.discountPercent}% ▾` : "+ Discount"}
+          </button>
+        ) : (
+          <div className="flex flex-wrap gap-1 items-center mt-0.5">
+            {DISCOUNT_PRESETS.map((pct) => {
+              const active = line.discountPercent === pct && !customMode;
+              return (
+                <button
+                  key={pct}
+                  onClick={() => {
+                    if (!frozen) {
+                      setCustomMode(false);
+                      setCustomRaw("");
+                      onSetDiscount(line.lineId, active ? 0 : pct);
+                    }
+                  }}
+                  className="h-[26px] px-2.5 rounded-md text-[11px] transition-all duration-100"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    fontWeight: active ? 700 : 500,
+                    backgroundColor: active ? "#FEE2E2" : "#F9FAFB",
+                    color: active ? "#DC2626" : "#6B7280",
+                    border: active
+                      ? "1.5px solid #DC2626"
+                      : "1.5px solid #D1D5DB",
+                  }}
+                >
+                  {pct}%
+                </button>
+              );
+            })}
+            <button
+              onClick={() => {
+                if (!frozen) {
+                  setCustomMode((v) => !v);
+                  setCustomRaw("");
+                }
+              }}
+              className="h-[26px] px-2.5 rounded-md text-[11px] transition-all duration-100"
+              style={{
+                fontFamily: "'Epilogue', sans-serif",
+                fontWeight: customMode ? 700 : 500,
+                backgroundColor: customMode ? "#FEE2E2" : "#F9FAFB",
+                color: customMode ? "#DC2626" : "#6B7280",
+                border: customMode
+                  ? "1.5px solid #DC2626"
+                  : "1.5px solid #D1D5DB",
+              }}
+            >
+              Custom
+            </button>
+
+            {customMode && (
+              <div className="flex gap-1 items-center w-full mt-1">
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={customRaw}
+                  onChange={(e) => setCustomRaw(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") applyCustomDiscount();
+                  }}
+                  placeholder="1–99"
+                  className="w-16 h-[26px] px-2 text-[12px] rounded-md border outline-none tabular-nums"
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    borderColor: "#DC2626",
+                  }}
+                  autoFocus
+                />
+                <span
+                  className="text-[12px] text-gray-500"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                >
+                  %
+                </span>
+                <button
+                  onClick={applyCustomDiscount}
+                  className="h-[26px] px-2 rounded-md text-[11px] font-semibold text-white"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    backgroundColor: "#DC2626",
+                  }}
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setDiscountOpen(false);
+                setCustomMode(false);
+                setCustomRaw("");
+              }}
+              className="h-[26px] px-2 rounded-md text-[11px] text-gray-400 hover:text-gray-600"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

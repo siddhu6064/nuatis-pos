@@ -7,7 +7,22 @@ export function calcLineTotalCents(line: CartLine): number {
     (s, m) => s + m.priceCents,
     0,
   );
-  return (line.priceCents + modifierTotal) * line.quantity;
+  const preDiscount = (line.priceCents + modifierTotal) * line.quantity;
+  const discount = line.discountPercent ?? 0;
+  if (discount === 0) return preDiscount;
+  return Math.round(preDiscount * (1 - discount / 100));
+}
+
+export function calcLineDiscountCents(line: CartLine): number {
+  const modifierTotal = (line.modifiers ?? []).reduce(
+    (s, m) => s + m.priceCents,
+    0,
+  );
+  const preDiscount = (line.priceCents + modifierTotal) * line.quantity;
+  const discount = line.discountPercent ?? 0;
+  if (discount === 0) return 0;
+  const postDiscount = Math.round(preDiscount * (1 - discount / 100));
+  return preDiscount - postDiscount;
 }
 
 export function calcSubtotal(lines: CartLine[]): number {

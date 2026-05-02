@@ -31,12 +31,17 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const {
     lines,
     customer,
+    compApplied,
+    compReason,
     addItem,
     increment,
     decrement,
     remove,
     changeStaff,
     toggleModifier,
+    setDiscount,
+    applyComp,
+    removeComp,
     attachCustomer,
     detachCustomer,
     loadHeld,
@@ -65,29 +70,31 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const handleTileTap = useCallback(
     (service: Service) => {
       addItem(service.id, service.name, service.priceCents, activeStaff.id);
-
       if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
       setPulsingServiceId(service.id);
-      pulseTimerRef.current = setTimeout(() => {
-        setPulsingServiceId(null);
-      }, 200);
+      pulseTimerRef.current = setTimeout(() => setPulsingServiceId(null), 200);
     },
     [addItem, activeStaff.id],
   );
 
   const handleConfirmCharge = useCallback(() => {
     const subtotalCents = calcSubtotal(lines);
-    const taxCents = calcTax(subtotalCents);
-    const totalCents = calcTotal(subtotalCents, taxCents, checkout.tipCents);
+    const taxCents = compApplied ? 0 : calcTax(subtotalCents);
+    const tipCents = compApplied ? 0 : checkout.tipCents;
+    const totalCents = compApplied
+      ? 0
+      : calcTotal(subtotalCents, taxCents, checkout.tipCents);
     checkout.confirmCheckout({
       lineItems: lines,
       subtotalCents,
       taxCents,
-      tipCents: checkout.tipCents,
+      tipCents,
       totalCents,
       customer,
+      compApplied,
+      compReason,
     });
-  }, [lines, checkout, customer]);
+  }, [lines, checkout, customer, compApplied, compReason]);
 
   const handleHold = useCallback(() => {
     if (lines.length === 0) return;
@@ -96,20 +103,26 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       heldAt: new Date().toISOString(),
       customer,
       lineItems: lines,
+      compApplied,
+      compReason,
     };
     holdTicket(ticket);
     refreshHeld();
     clear();
-    // Show toast
     if (holdToastTimerRef.current) clearTimeout(holdToastTimerRef.current);
     setHoldToast(true);
     holdToastTimerRef.current = setTimeout(() => setHoldToast(false), 1500);
-  }, [lines, customer, clear, refreshHeld]);
+  }, [lines, customer, compApplied, compReason, clear, refreshHeld]);
 
   const handleResume = useCallback(
     (ticket: HeldTicket) => {
       resumeTicket(ticket.id);
-      loadHeld(ticket.lineItems, ticket.customer);
+      loadHeld(
+        ticket.lineItems,
+        ticket.customer,
+        ticket.compApplied ?? false,
+        ticket.compReason ?? null,
+      );
       refreshHeld();
       setShowHeldModal(false);
     },
@@ -120,7 +133,6 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     (id: string) => {
       removeHeldTicket(id);
       refreshHeld();
-      // Auto-close modal if no more tickets
       if (heldTickets.length <= 1) setShowHeldModal(false);
     },
     [heldTickets.length, refreshHeld],
@@ -168,6 +180,11 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             onHold={handleHold}
             onStaffChange={changeStaff}
             onToggleModifier={toggleModifier}
+            onSetDiscount={setDiscount}
+            compApplied={compApplied}
+            compReason={compReason}
+            onApplyComp={applyComp}
+            onRemoveComp={removeComp}
             customer={customer}
             onOpenCustomerSearch={() => setShowCustomerSearch(true)}
             onDetachCustomer={detachCustomer}

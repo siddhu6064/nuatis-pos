@@ -29,6 +29,7 @@ function ticketStaffLabel(ticket: HeldTicket): string {
 }
 
 function ticketTotal(ticket: HeldTicket): number {
+  if (ticket.compApplied) return 0;
   const subtotal = calcSubtotal(ticket.lineItems);
   const tax = calcTax(subtotal);
   return calcTotal(subtotal, tax, 0);
@@ -61,7 +62,7 @@ export function HeldTicketsModal({
     }
   }
 
-  const sorted = [...tickets].reverse(); // newest first
+  const sorted = [...tickets].reverse();
 
   return (
     <div
@@ -74,7 +75,6 @@ export function HeldTicketsModal({
         style={{ backgroundColor: "white" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div
           className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0"
           style={{ borderColor: "#E5E7EB" }}
@@ -93,7 +93,6 @@ export function HeldTicketsModal({
           </button>
         </div>
 
-        {/* Ticket list */}
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
           {sorted.map((ticket) => {
             const isConfirmingResume = confirmResumeTicket?.id === ticket.id;
@@ -107,6 +106,7 @@ export function HeldTicketsModal({
             );
             const total = ticketTotal(ticket);
             const staffLabel = ticketStaffLabel(ticket);
+            const isComped = ticket.compApplied ?? false;
 
             return (
               <div
@@ -114,15 +114,26 @@ export function HeldTicketsModal({
                 className="rounded-xl border px-4 py-3"
                 style={{ borderColor: "#E5E7EB", backgroundColor: "#FAFAFA" }}
               >
-                {/* Main row */}
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span
                       className="text-[14px] font-medium text-gray-500 tabular-nums flex-shrink-0"
                       style={{ fontFamily: "'JetBrains Mono', monospace" }}
                     >
                       {formatHeldTime(ticket.heldAt)}
                     </span>
+                    {isComped && (
+                      <span
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+                        style={{
+                          fontFamily: "'Epilogue', sans-serif",
+                          color: "#DC2626",
+                          backgroundColor: "#FEE2E2",
+                        }}
+                      >
+                        COMPED
+                      </span>
+                    )}
                     <span
                       className="text-[14px] font-medium text-gray-900 truncate"
                       style={{ fontFamily: "'Epilogue', sans-serif" }}
@@ -131,57 +142,48 @@ export function HeldTicketsModal({
                     </span>
                   </div>
                   <span
-                    className="text-[16px] font-semibold text-gray-900 tabular-nums ml-3 flex-shrink-0"
-                    style={{ fontFamily: "'Fraunces', serif" }}
+                    className="text-[16px] font-semibold tabular-nums ml-3 flex-shrink-0"
+                    style={{
+                      fontFamily: "'Fraunces', serif",
+                      color: isComped ? "#DC2626" : "#111827",
+                    }}
                   >
                     {formatCurrency(total)}
                   </span>
                 </div>
 
-                {/* Sub-row */}
                 <p
                   className="text-[12px] text-gray-400 mt-0.5"
                   style={{ fontFamily: "'Epilogue', sans-serif" }}
                 >
                   {itemCount} item{itemCount !== 1 ? "s" : ""} · {staffLabel}
+                  {isComped && ticket.compReason && (
+                    <span style={{ color: "#DC2626" }}>
+                      {" "}· {ticket.compReason}
+                    </span>
+                  )}
                 </p>
 
-                {/* Confirm resume */}
                 {isConfirmingResume && (
                   <div
                     className="mt-2 p-2 rounded-lg text-[13px]"
-                    style={{
-                      backgroundColor: "#FFF7ED",
-                      border: "1px solid #FED7AA",
-                    }}
+                    style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA" }}
                   >
-                    <p
-                      className="text-gray-700 mb-2"
-                      style={{ fontFamily: "'Epilogue', sans-serif" }}
-                    >
+                    <p className="text-gray-700 mb-2" style={{ fontFamily: "'Epilogue', sans-serif" }}>
                       Replace current cart?
                     </p>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => {
-                          setConfirmResumeTicket(null);
-                          onResume(ticket);
-                        }}
+                        onClick={() => { setConfirmResumeTicket(null); onResume(ticket); }}
                         className="flex-1 h-[32px] rounded-lg text-[13px] font-semibold text-white"
-                        style={{
-                          fontFamily: "'Epilogue', sans-serif",
-                          backgroundColor: "#E84A00",
-                        }}
+                        style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "#E84A00" }}
                       >
                         Replace
                       </button>
                       <button
                         onClick={() => setConfirmResumeTicket(null)}
                         className="flex-1 h-[32px] rounded-lg text-[13px] font-medium text-gray-700"
-                        style={{
-                          fontFamily: "'Epilogue', sans-serif",
-                          backgroundColor: "#F3F4F6",
-                        }}
+                        style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "#F3F4F6" }}
                       >
                         Cancel
                       </button>
@@ -189,42 +191,26 @@ export function HeldTicketsModal({
                   </div>
                 )}
 
-                {/* Confirm discard */}
                 {isConfirmingDiscard && (
                   <div
                     className="mt-2 p-2 rounded-lg text-[13px]"
-                    style={{
-                      backgroundColor: "#FFF5F5",
-                      border: "1px solid #FCA5A5",
-                    }}
+                    style={{ backgroundColor: "#FFF5F5", border: "1px solid #FCA5A5" }}
                   >
-                    <p
-                      className="text-gray-700 mb-2"
-                      style={{ fontFamily: "'Epilogue', sans-serif" }}
-                    >
+                    <p className="text-gray-700 mb-2" style={{ fontFamily: "'Epilogue', sans-serif" }}>
                       Discard this ticket?
                     </p>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => {
-                          setConfirmDiscardId(null);
-                          onDiscard(ticket.id);
-                        }}
+                        onClick={() => { setConfirmDiscardId(null); onDiscard(ticket.id); }}
                         className="flex-1 h-[32px] rounded-lg text-[13px] font-semibold text-white"
-                        style={{
-                          fontFamily: "'Epilogue', sans-serif",
-                          backgroundColor: "#DC2626",
-                        }}
+                        style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "#DC2626" }}
                       >
                         Discard
                       </button>
                       <button
                         onClick={() => setConfirmDiscardId(null)}
                         className="flex-1 h-[32px] rounded-lg text-[13px] font-medium text-gray-700"
-                        style={{
-                          fontFamily: "'Epilogue', sans-serif",
-                          backgroundColor: "#F3F4F6",
-                        }}
+                        style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "#F3F4F6" }}
                       >
                         Cancel
                       </button>
@@ -232,16 +218,12 @@ export function HeldTicketsModal({
                   </div>
                 )}
 
-                {/* Actions (hidden during confirmations for this row) */}
                 {!isConfirmingResume && !isConfirmingDiscard && (
                   <div className="flex items-center gap-2 mt-2">
                     <button
                       onClick={() => handleResumeTap(ticket)}
                       className="h-[36px] px-4 rounded-lg text-[13px] font-semibold text-white"
-                      style={{
-                        fontFamily: "'Epilogue', sans-serif",
-                        backgroundColor: "#E84A00",
-                      }}
+                      style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "#E84A00" }}
                     >
                       Resume
                     </button>
