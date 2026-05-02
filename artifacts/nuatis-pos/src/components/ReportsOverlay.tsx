@@ -394,6 +394,23 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
     },
   ];
 
+  // Payment mix — today's non-comped transactions only
+  const cardTxsToday = todayTxs.filter(
+    (tx) => !tx.compApplied && (tx.paymentMethod ?? "card") === "card",
+  );
+  const cashTxsToday = todayTxs.filter(
+    (tx) => !tx.compApplied && (tx.paymentMethod ?? "card") === "cash",
+  );
+  const showPaymentMix = cardTxsToday.length > 0 && cashTxsToday.length > 0;
+  const cardNetRevenue = cardTxsToday.reduce(
+    (s, tx) => s + tx.totalCents - (tx.refundedTotalCents ?? 0),
+    0,
+  );
+  const cashNetRevenue = cashTxsToday.reduce(
+    (s, tx) => s + tx.totalCents - (tx.refundedTotalCents ?? 0),
+    0,
+  );
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -459,7 +476,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                   )}
                 </div>
 
-                <div className="flex gap-1.5 mb-4">
+                <div className="flex gap-1.5 mb-3">
                   {stats.map(({ label, value, valueColor }) => (
                     <div
                       key={label}
@@ -484,6 +501,33 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                     </div>
                   ))}
                 </div>
+
+                {showPaymentMix && (
+                  <div
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl mb-4"
+                    style={{ backgroundColor: "#F3F4F6" }}
+                  >
+                    <span
+                      className="text-[11px] text-gray-500 flex-shrink-0"
+                      style={{ fontFamily: "'Epilogue', sans-serif" }}
+                    >
+                      Payment mix
+                    </span>
+                    <span
+                      className="text-[12px] font-medium text-gray-700 tabular-nums"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    >
+                      Card: {formatCurrency(cardNetRevenue)} ({cardTxsToday.length})
+                    </span>
+                    <span className="text-gray-300 text-[10px]">·</span>
+                    <span
+                      className="text-[12px] font-medium text-gray-700 tabular-nums"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    >
+                      Cash: {formatCurrency(cashNetRevenue)} ({cashTxsToday.length})
+                    </span>
+                  </div>
+                )}
 
                 <div
                   className="border-t pt-4"
@@ -608,6 +652,18 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                                   }}
                                 >
                                   COMPED
+                                </span>
+                              )}
+                              {(tx.paymentMethod ?? "card") === "cash" && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#15803D",
+                                    backgroundColor: "#DCFCE7",
+                                  }}
+                                >
+                                  CASH
                                 </span>
                               )}
                               {refundStatus === "full" && (

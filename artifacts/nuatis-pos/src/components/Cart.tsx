@@ -32,7 +32,8 @@ interface CartProps {
   selectedPreset: string | null;
   onStartCheckout: () => void;
   onCancelCheckout: () => void;
-  onConfirmCharge: () => void;
+  onConfirmCard: () => void;
+  onOpenCash: () => void;
   onTipPresetSelect: (preset: string, subtotalCents: number) => void;
   onCustomTipApply: (cents: number) => void;
 }
@@ -60,7 +61,8 @@ export function Cart({
   selectedPreset,
   onStartCheckout,
   onCancelCheckout,
-  onConfirmCharge,
+  onConfirmCard,
+  onOpenCash,
   onTipPresetSelect,
   onCustomTipApply,
 }: CartProps) {
@@ -331,28 +333,60 @@ export function Cart({
           </button>
         )}
 
-        <button
-          onClick={
-            isEmpty
-              ? undefined
-              : inTipState
-                ? onConfirmCharge
-                : onStartCheckout
-          }
-          disabled={isEmpty}
-          className="w-full h-[56px] rounded-lg text-[18px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
-          style={{
-            fontFamily: "'Epilogue', sans-serif",
-            backgroundColor: isEmpty ? "#D1D5DB" : "#E84A00",
-            cursor: isEmpty ? "not-allowed" : "pointer",
-          }}
-        >
-          {inTipState
-            ? compApplied
-              ? "Confirm Comp ($0.00)"
-              : `Confirm ${formatCurrency(displayTotalCents)}`
-            : "Charge"}
-        </button>
+        {/* Action buttons */}
+        {inTipState ? (
+          compApplied ? (
+            // Comped: single confirm button (card path, $0.00 total)
+            <button
+              onClick={onConfirmCard}
+              className="w-full h-[56px] rounded-lg text-[17px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+              style={{
+                fontFamily: "'Epilogue', sans-serif",
+                backgroundColor: "#E84A00",
+              }}
+            >
+              Confirm Comp ($0.00)
+            </button>
+          ) : (
+            // Non-comped: Card + Cash side by side
+            <div className="flex gap-2">
+              <button
+                onClick={onConfirmCard}
+                className="flex-1 h-[56px] rounded-lg text-[16px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  backgroundColor: "#E84A00",
+                }}
+              >
+                Card {formatCurrency(displayTotalCents)}
+              </button>
+              <button
+                onClick={onOpenCash}
+                className="flex-1 h-[56px] rounded-lg text-[16px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  backgroundColor: "#E84A00",
+                }}
+              >
+                Cash {formatCurrency(displayTotalCents)}
+              </button>
+            </div>
+          )
+        ) : (
+          // Idle: single Charge button
+          <button
+            onClick={isEmpty ? undefined : onStartCheckout}
+            disabled={isEmpty}
+            className="w-full h-[56px] rounded-lg text-[18px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              backgroundColor: isEmpty ? "#D1D5DB" : "#E84A00",
+              cursor: isEmpty ? "not-allowed" : "pointer",
+            }}
+          >
+            Charge
+          </button>
+        )}
       </div>
     </div>
   );

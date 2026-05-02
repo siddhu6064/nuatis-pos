@@ -1,0 +1,78 @@
+▶ PROMPT [Phase 3 · Batch 17 · Replit Agent]
+
+CONTEXT
+Nuatis POS prototype, prototype/replit-day-1 branch. 16 batches shipped clean, v0.0.3-prototype tagged at B15. Three verticals live (salon/spa/nail_bar) with full operator + owner loops. B16 added the walk-in queue (per-vertical FIFO, cap 10, promote-to-ticket).
+
+This batch closes the payment-method story. Currently every checkout funnels through one path: tip selection → "Charge $X.XX" button → 2-sec simulated card reader → success. We're splitting that single button into Card vs Cash, adding a tendered-amount keypad with change-due display, and surfacing the cash/card mix in Today's Sales. New mental model: amount-tendered entry rhythm is materially different from the card terminal flow — operator drives the math, not the reader.
+
+GOAL
+Operator can complete a sale with cash, enter the amount tendered on a numeric keypad, see change due computed live, and confirm — with the transaction recording payment method and Today's Sales showing the cash/card revenue mix.
+
+SCOPE — BUILD THIS
+1. Cart footer: replace the single "Charge $X.XX" button with two side-by-side equal-width accent-filled buttons — "Card $X.XX" (left) and "Cash $X.XX" (right). Both same visual weight, no primary/secondary hierarchy. Both gated identically when cart is empty or comp is applied.
+2. Card path stays exactly as it is today — 2-sec simulated reader, success overlay, receipt panel, mock delivery channels. No changes to that flow.
+3. Cash button opens a new CashTenderModal (full-screen overlay, same depth/style as existing modals). Top of modal shows "Total: $X.XX" reading the cart total (post-tip, post-tax). Cancel (✕ top-right or Cancel button) returns to cart with tip selection preserved, no transaction created.
+4. CashTenderModal display panel: large "Amount tendered: $X.XX" (JetBrains Mono, prominent), and below it either "Change due: $X.XX" (when tendered ≥ total, green/positive treatment) or "Need $X.XX more" (when tendered < total, muted/warning treatment) or "No change due" when tendered exactly equals total.
+5. Quick-tender row above the keypad: horizontal row of buttons rendered from a computed list — [Exact] always shown first, then the next round-up amounts above the total deduped (next $5, next $10, next $20, next $50, next $100). Skip any rounder amount that would equal a smaller one already in the list (so a $42.30 total renders [Exact $42.30, $45, $50, $60, $100] — skip $40 because it's below total). Tapping any quick-tender button sets the tendered amount instantly, replacing whatever's in the display.
+6. Numeric keypad below quick-tender: 3-column × 4-row grid. Rows: 1 2 3 / 4 5 6 / 7 8 9 / 00 0 ⌫. Pure right-to-left cents fill — typing "5000" produces $50.00, typing "4230" produces $42.30, no decimal point needed. ⌫ removes the rightmost digit. 00 appends two zeros (cap at a sane max like $9,999.99 to avoid integer overflow, silently ignore further input past cap).
+7. Confirm button (full-width, accent-filled, bottom of modal): label "Complete Cash Sale". Disabled when tendered < total (greyed, non-tappable). Enabled at tendered ≥ total. On confirm: store transaction with paymentMethod: 'cash', amountTendered (cents), changeGiven (cents = tendered - total). Modal closes, success overlay appears with the existing receipt panel, plus a fire-and-forget toast "💵 Cash drawer opened" (mock — same toast pattern as receipt delivery, no driver).
+8. Transaction record shape extension: add paymentMethod ('card' | 'cash'), amountTendered (cents, optional, cash only), changeGiven (cents, optional, cash only). On read of legacy transactions (no paymentMethod field), default to 'card'. Defensive read in the transactions lib/hook, one-line fallback.
+9. Receipt panel: add "Payment: Card" or "Payment: Cash" line in the totals section. For cash transactions, render two additional rows below: "Tendered: $X.XX" and "Change: $X.XX". Receipt re-delivery from Today's Sales detail view shows the same payment info.
+10. Today's Sales overlay: add a "Payment mix" summary line below the existing total. Renders "Card: $X.XX (N) · Cash: $X.XX (M)" using the same refund-aware revenue math as the existing total — group transactions by paymentMethod, sum each group's net revenue and count. Only show the line when at least one transaction of each method exists in the current Today/All view (otherwise hide; no need to show "Cash: $0.00 (0)" clutter).
+11. Receipt detail view in Today's Sales transaction list: payment method visible (Card/Cash badge or text line near the top of the detail panel). Cash transactions show tendered + change in the same place they appear on the live receipt.
+12. Cash transaction can still be refunded via the existing line-level partial refund flow — same 1500ms simulated processing, same per-staff math. No cash-specific refund UX this batch.
+
+SCOPE — DO NOT BUILD
+- Cash drawer hardware integration (production: RJ-11 from Star TSP100III; here: mock toast only, locked decision)
+- Cash-specific refund flow (e.g., manager opens drawer to hand back cash) — refund flow stays uniform across payment methods for prototype
+- Split tender (one transaction with both card + cash) — separate UX pattern, not in scope
+- Settings toggle to disable cash payment (no new UX pattern, just a toggle on a known surface)
+- Tip handling differences between card and cash (tip selection unchanged regardless of payment method — cash transactions still show tip line on receipt; this matches real POS where cash-tip-in-jar is off-system)
+- Quick-tender presets configurable in Settings (computed list above is sufficient for validation; config-locked for prototype)
+- Decimal point on keypad (right-to-left cents fill is the standard modern POS pattern; we want to validate that, not hedge)
+- Counterfeit bill check / large-bill warning prompts
+- Manager PIN gate on cash payments above any threshold (incremental policy, not a new UX pattern; PIN flow already validated)
+- Appointment-aware register / scheduled-time tab on waitlist (declined previously — those are separate UX patterns deserving their own batch if pursued)
+- Cross-vertical payment-mix reporting (each vertical's Today's Sales is isolated; production locks one tenant to one vertical)
+- Receipt format changes beyond the two new rows above
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4, no new dependencies
+- Integer cents math throughout — never use floats for currency. Tendered, total, change all stored and computed in cents.
+- Right-to-left fill: maintain tendered as a single integer in cents, append digits by tendered = tendered * 10 + digit (with the $9,999.99 cap = 999999 cents). Backspace = Math.floor(tendered / 10). 00 = tendered = tendered * 100 (still capped).
+- Quick-tender computation is a pure function: given totalCents, return [exactCents, ...roundupCents] deduped and sorted, capped at 6 entries.
+- formatCents → "$X.XX" already exists in the codebase; reuse, don't duplicate.
+- Modal keyboard support: Enter on enabled Confirm button submits; ESC cancels. Numeric keys 0-9 also drive the keypad (operator may have a USB keypad attached on the iPad).
+- CashTenderModal z-index above the cart but below toast layer — match the depth pattern used by ManagerPINModal.
+- No setInterval, no timers other than the existing 2-sec card reader and 1500ms refund — cash flow is fully synchronous from operator action to confirm.
+
+ACCEPTANCE
+- Add 3 items totaling $42.30 (post-tax, no tip). Cart footer shows "Card $42.30" and "Cash $42.30" buttons side-by-side, equal width, both accent-filled.
+- Tap Card button → existing 2-sec reader runs unchanged → receipt shows "Payment: Card", no tendered/change rows.
+- Tap Cash button → CashTenderModal opens. Display reads "Amount tendered: $0.00" and "Need $42.30 more". Confirm disabled.
+- Quick-tender row shows [Exact $42.30, $45, $50, $60, $100] (next $20 = $60, next $50 = both $50 — but wait: $50 < $60 so the order should be $45, $50, $60, $80, $100 — actually recompute: from $42.30, next $5 = $45, next $10 = $50, next $20 = $60, next $50 = $50 (collides, drop), next $100 = $100; final list = [Exact $42.30, $45, $50, $60, $100], 5 entries).
+- Tap [$50] → display reads "Amount tendered: $50.00" and "Change due: $7.70". Confirm enabled.
+- Tap ⌫ to clear, then keypad: "5" "0" "0" "0" → display reads "$50.00", same change due.
+- Type "00" then "5" → display reads "$0.05" (testing right-to-left fill).
+- Tendered $30: display "Need $12.30 more", confirm disabled.
+- Tap [Exact] → "$42.30", "No change due", confirm enabled.
+- Confirm with $50 tendered → modal closes, success overlay appears, "💵 Cash drawer opened" toast fires, receipt panel shows "Payment: Cash", "Tendered: $50.00", "Change: $7.70".
+- Cancel mid-tender (with $20 typed) → modal closes, cart restored with tip still selected, no transaction in Today's Sales.
+- Open Today's Sales → transaction appears with method visible. With both a card and a cash sale present, "Payment mix" line shows "Card: $X.XX (1) · Cash: $X.XX (1)".
+- Today's Sales with only card sales → "Payment mix" line hidden.
+- Refund a cash transaction via existing line-level refund flow → 1500ms processing, REFUNDED/PARTIAL badge appears, per-staff math deducts, payment mix line reflects the net (refund-aware).
+- Reload page → all transactions persist with paymentMethod intact. Pre-existing localStorage transactions from before this batch (if any) read as 'card' default and render correctly.
+- Switch verticals → cash sales in salon don't leak into spa Today's Sales (per-vertical isolation preserved).
+
+DO NOT TOUCH GIT
+Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab after this batch lands.
+
+REPORT FORMAT — REQUIRED
+Agent's response must include four sections in this order:
+- WHAT WAS BUILT
+- ERRORS ENCOUNTERED
+- ITEMS SKIPPED
+- OPEN QUESTIONS
+
+HARD STOP
+Stop after the scope above. Do not begin a next batch. Wait for the next prompt.

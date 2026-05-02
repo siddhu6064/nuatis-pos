@@ -44,6 +44,8 @@ export function Receipt({ transaction }: ReceiptProps) {
 
   const txShort = transaction.id.slice(-8).toUpperCase();
   const isComped = transaction.compApplied ?? false;
+  const paymentMethod = transaction.paymentMethod ?? "card";
+  const isCash = paymentMethod === "cash";
 
   const allRefundedLineIds = new Set(
     (transaction.refunds ?? []).flatMap((r) => r.lineIds),
@@ -285,6 +287,37 @@ export function Receipt({ transaction }: ReceiptProps) {
           </span>
         </div>
 
+        {/* Payment info */}
+        <div className="flex justify-between text-[12px] text-gray-600 pt-0.5">
+          <span>Payment</span>
+          <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
+            {isCash ? "Cash" : "Card"}
+          </span>
+        </div>
+
+        {isCash && transaction.amountTendered !== undefined && (
+          <>
+            <div className="flex justify-between text-[12px] text-gray-600">
+              <span>Tendered</span>
+              <span
+                className="tabular-nums"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {formatCurrency(transaction.amountTendered)}
+              </span>
+            </div>
+            <div className="flex justify-between text-[12px] text-gray-600">
+              <span>Change</span>
+              <span
+                className="tabular-nums"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {formatCurrency(transaction.changeGiven ?? 0)}
+              </span>
+            </div>
+          </>
+        )}
+
         {(transaction.refunds ?? []).map((refund, i) => (
           <div
             key={refund.id}
@@ -323,7 +356,11 @@ export function Receipt({ transaction }: ReceiptProps) {
       <Divider />
 
       <p className="text-[12px] text-gray-600">
-        {isComped ? "No charge — comped" : "Card • Visa •••• 4242"}
+        {isComped
+          ? "No charge — comped"
+          : isCash
+            ? "Cash payment"
+            : "Card • Visa •••• 4242"}
       </p>
 
       <Divider />

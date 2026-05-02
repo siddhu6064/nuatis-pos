@@ -27,7 +27,9 @@ export interface Transaction {
   taxCents: number;
   tipCents: number;
   totalCents: number;
-  paymentMethod: "card";
+  paymentMethod: "card" | "cash";
+  amountTendered?: number;
+  changeGiven?: number;
   completedAt: string;
   customer: CartCustomer | null;
   receiptDelivery?: "print" | "email" | "sms" | "none";
@@ -47,6 +49,9 @@ export interface ConfirmData {
   customer: CartCustomer | null;
   compApplied: boolean;
   compReason: string | null;
+  paymentMethod?: "card" | "cash";
+  amountTendered?: number;
+  changeGiven?: number;
 }
 
 function appendTransaction(tx: Transaction, verticalId: string): void {
@@ -108,6 +113,31 @@ export function useCheckout(onComplete: () => void) {
   }, []);
 
   const confirmCheckout = useCallback((data: ConfirmData) => {
+    const method = data.paymentMethod ?? "card";
+
+    if (method === "cash") {
+      // Cash: skip card reader simulation, go directly to receipt
+      const tx: Transaction = {
+        id: crypto.randomUUID(),
+        lineItems: data.lineItems,
+        subtotalCents: data.subtotalCents,
+        taxCents: data.taxCents,
+        tipCents: data.tipCents,
+        totalCents: data.totalCents,
+        paymentMethod: "cash",
+        amountTendered: data.amountTendered,
+        changeGiven: data.changeGiven,
+        completedAt: new Date().toISOString(),
+        customer: data.customer,
+        compApplied: data.compApplied,
+        compReason: data.compReason,
+      };
+      setCompletedTx(tx);
+      setState("receipt");
+      return;
+    }
+
+    // Card: existing 2-sec reader simulation
     setProcessingTotalCents(data.totalCents);
     setState("processing");
     const delay = data.compApplied ? 800 : 2000;

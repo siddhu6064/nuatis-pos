@@ -11,6 +11,7 @@ import { HeldTicketsModal } from "@/components/HeldTicketsModal";
 import { VerticalSwitcher } from "@/components/VerticalSwitcher";
 import { SettingsOverlay } from "@/components/SettingsOverlay";
 import { WaitlistOverlay } from "@/components/WaitlistOverlay";
+import { CashTenderModal } from "@/components/CashTenderModal";
 import { Toast } from "@/components/Toast";
 import { useCart } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
@@ -71,12 +72,15 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [showVerticalSwitcher, setShowVerticalSwitcher] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showWaitlist, setShowWaitlist] = useState(false);
+  const [showCashModal, setShowCashModal] = useState(false);
   const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() =>
     getHeldTickets(activeVerticalId),
   );
   const [holdToast, setHoldToast] = useState(false);
+  const [cashDrawerToast, setCashDrawerToast] = useState(false);
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cashToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reload held tickets when vertical changes
   useEffect(() => {
@@ -112,7 +116,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [addItem, activeStaff.id],
   );
 
-  const handleConfirmCharge = useCallback(() => {
+  // Shared helper to compute current cart totals
+  const buildCartTotals = useCallback(() => {
     const subtotalCents = calcSubtotal(lines);
     const taxCents = compApplied
       ? 0
@@ -121,6 +126,11 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     const totalCents = compApplied
       ? 0
       : calcTotal(subtotalCents, taxCents, checkout.tipCents);
+    return { subtotalCents, taxCents, tipCents, totalCents };
+  }, [lines, compApplied, checkout.tipCents, settings.taxRatePercent]);
+
+  const handleConfirmCard = useCallback(() => {
+    const { subtotalCents, taxCents, tipCents, totalCents } = buildCartTotals();
     checkout.confirmCheckout({
       lineItems: lines,
       subtotalCents,
@@ -130,8 +140,38 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       customer,
       compApplied,
       compReason,
+      paymentMethod: "card",
     });
-  }, [lines, checkout, customer, compApplied, compReason, settings.taxRatePercent]);
+  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals]);
+
+  const handleOpenCash = useCallback(() => {
+    setShowCashModal(true);
+  }, []);
+
+  const handleConfirmCash = useCallback(
+    (tenderedCents: number) => {
+      const { subtotalCents, taxCents, tipCents, totalCents } = buildCartTotals();
+      const changeGiven = Math.max(0, tenderedCents - totalCents);
+      setShowCashModal(false);
+      checkout.confirmCheckout({
+        lineItems: lines,
+        subtotalCents,
+        taxCents,
+        tipCents,
+        totalCents,
+        customer,
+        compApplied,
+        compReason,
+        paymentMethod: "cash",
+        amountTendered: tenderedCents,
+        changeGiven,
+      });
+      if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
+      setCashDrawerToast(true);
+      cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
+    },
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals],
+  );
 
   const handleHold = useCallback(() => {
     if (lines.length === 0) return;
@@ -186,7 +226,6 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   // Promote a waitlist entry to an active cart ticket
   const handleStartService = useCallback(
     (entry: WaitlistEntry) => {
-      // Build CartCustomer from the entry's name
       const nameParts = entry.name.trim().split(/\s+/);
       const firstName = nameParts[0] ?? entry.name.trim();
       const lastName = nameParts.slice(1).join(" ");
@@ -197,7 +236,6 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         phone: entry.phone,
       });
 
-      // Add the pre-selected service as a cart line if present
       if (
         entry.serviceId !== null &&
         entry.serviceName !== null &&
@@ -217,6 +255,15 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [attachCustomer, addItem, activeStaff.id, removeEntry],
   );
 
+  // Compute cash modal total (tip-inclusive, post-comp)
+  const cashSubtotal = calcSubtotal(lines);
+  const cashTax = compApplied
+    ? 0
+    : calcTaxWithRate(cashSubtotal, settings.taxRatePercent);
+  const cashTotalCents = compApplied
+    ? 0
+    : calcTotal(cashSubtotal, cashTax, checkout.tipCents);
+
   const switcherDisabled = lines.length > 0 || checkout.state !== "idle";
   const cartIsIdle = lines.length === 0 && checkout.state === "idle";
   const activeStaffList = settings.staff.filter((s) => s.active);
@@ -227,6 +274,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       style={{ backgroundColor: "#F8F7F4" }}
     >
       {holdToast && <Toast message="Ticket held" />}
+      {cashDrawerToast && <Toast message="💵 Cash drawer opened" />}
 
       <Header
         user={user}
@@ -283,7 +331,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             selectedPreset={checkout.selectedPreset}
             onStartCheckout={checkout.startCheckout}
             onCancelCheckout={checkout.cancelCheckout}
-            onConfirmCharge={handleConfirmCharge}
+            onConfirmCard={handleConfirmCard}
+            onOpenCash={handleOpenCash}
             onTipPresetSelect={checkout.selectPreset}
             onCustomTipApply={checkout.applyCustomTip}
           />
@@ -298,6 +347,14 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         onAttachCustomerPostSale={checkout.attachCustomerPostSale}
         onNewSale={checkout.completeSale}
       />
+
+      {showCashModal && checkout.state === "tip" && (
+        <CashTenderModal
+          totalCents={cashTotalCents}
+          onConfirm={handleConfirmCash}
+          onCancel={() => setShowCashModal(false)}
+        />
+      )}
 
       {showStaffSwitcher && (
         <StaffSwitcher
