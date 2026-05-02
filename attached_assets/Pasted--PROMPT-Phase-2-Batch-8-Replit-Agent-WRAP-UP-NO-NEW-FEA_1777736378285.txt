@@ -1,0 +1,178 @@
+▶ PROMPT [Phase 2 · Batch 8 · Replit Agent — WRAP-UP, NO NEW FEATURES]
+
+CONTEXT
+Last batch of the day. Batches 1-7 complete: auth, register, cart, tip, mock checkout, receipt + delivery, customer attach, staff attribution, Today's Sales overlay, modifiers, hold/resume. App is feature-complete for the prototype's scope. No more features after this. This batch is housekeeping: code hygiene + comprehensive README + architecture doc, so future-Sid (or future engineers) can read the repo cold and understand what this is, what it isn't, and why.
+
+GOAL
+Repo presents itself clearly as a throwaway prototype with: cleaned debug code, comprehensive README, replit.md architecture overview, and a list of stack deviations from the production master plan. No new features. No refactors.
+
+SCOPE — BUILD THIS
+
+1. Code hygiene — remove debug-only logs:
+   - hooks/useCheckout.ts — remove leftover console.log(updated) from Batch 3
+   - Scan all files in src/ for any other debug console.log statements (NOT structural ones — leave any in lib/heldTickets.ts catch blocks if they're legitimate error logs). Remove development-time taps like console.log("checkout:", ...), console.log("tapped:", ...), etc.
+   - KEEP intentional logs that fire on transaction success — those are validation hooks, useful during demos.
+   - Do NOT refactor anything else. No code style sweeps. No "while we're at it" cleanups.
+
+2. README.md at repo root — full overwrite, replacing the Batch 1 stub. Use this exact content (fill in TODOs based on what's actually in the repo). Use markdown headings, tables, and code fences as appropriate:
+
+   Title: Nuatis POS — Replit Agent Prototype
+   Blockquote disclaimer: THROWAWAY UX PROTOTYPE — DO NOT USE AS BASIS FOR PRODUCTION
+   Subtext: Built in one day on Replit Agent (May 2, 2026) for UX validation only. Code quality is exploratory. Architecture is intentionally wrong. Production POS build follows the separate Master Plan documents (PRD / MVP / Build Checklist) and starts post-Suite-ship (Aug 2026+).
+
+   Section: What This Is
+   - A tablet-portrait single-vertical (salon) point-of-sale UX prototype.
+   - Single-page React app simulating the operator flow from tile-tap to mock checkout to mock receipt.
+   - State lives in localStorage. No backend, no real payments, no real auth beyond Replit's session.
+
+   Section: What Was Validated (bullet list)
+   - Quick-tile register layout at iPad portrait (1024×768)
+   - Right-side cart vs slide-in (fixed-right won)
+   - In-place tip selection (no modal interruption)
+   - Simulated card reader timing (~2 sec)
+   - Receipt panel + 4-channel mock delivery
+   - Customer attach pre-sale AND post-sale (phone-first)
+   - Per-line staff attribution with active-staff default
+   - Today's Sales overlay with per-staff breakdown
+   - Service-specific modifiers (fixed price)
+   - Hold/Resume tickets (cap 5, persisted)
+
+   Section: Stack — Deviations From Master Plan (markdown table with columns: Layer | Production (locked) | This Prototype). Rows:
+   - Framework | Next.js 14 App Router | React 18 + Vite
+   - CSS | Tailwind v3 | Tailwind v4
+   - Fonts | next/font/google | @import url() in CSS
+   - Auth | Supabase Auth + RLS | Replit OIDC
+   - Payments | Stripe Terminal SDK (BBPOS) | 2-second setTimeout simulation
+   - Persistence | Supabase Postgres + RLS | localStorage
+   - Receipts | Star TSP100III ESC/POS + Resend + Telnyx | Mock toasts only
+   - State | Server-authoritative | In-memory + localStorage
+   Then a paragraph: These deviations are intentional. The prototype was built to answer UX questions, not architecture questions. Production answers all the architecture questions and ignores this code entirely.
+
+   Section: What Is NOT In This Prototype (By Design) — bullet list:
+   - Stripe Terminal hardware integration
+   - Multi-tenant isolation
+   - Offline mode + sync queue
+   - Multi-vertical engine (only salon — 12 hardcoded services)
+   - Real authentication beyond Replit's
+   - Real receipt delivery (no Resend, no Telnyx, no printer driver)
+   - TaxJar (8.25% flat tax hardcoded)
+   - Manager override flows
+   - PIN auth for staff
+   - Audit log
+   - Discounts, comps, voids, refunds
+   - Multi-station support, real-time sync
+   - Customer profiles / purchase history
+   - Tip allocation across staff
+   - Date range reporting (Today / All toggle only)
+   - Configurable business identity (hardcoded to "Nuatis POS Demo Salon")
+
+   Section: localStorage Keys (markdown table, columns: Key | Purpose):
+   - nuatis-pos:cart | Active cart (lineItems + customer)
+   - nuatis-pos:transactions | Last 10 completed transactions
+   - nuatis-pos:heldTickets | Up to 5 held tickets
+   - nuatis-pos:activeStaffId | Current operator's staff id
+
+   Section: Hardcoded Mock Data — bullet list:
+   - 12 salon services (lib/services.ts)
+   - 3 staff: Maria/Stylist, James/Colorist, Lisa/Stylist (lib/staff.ts)
+   - 6 customers — Sarah Chen, Marcus Rodriguez, Priya Patel, David Kim, Emma Thompson, Jordan Williams (lib/customers.ts)
+   - Service-specific modifiers (lib/modifiers.ts) — only 5 of 12 services have modifiers
+   - Mock card "Card • Visa •••• 4242" on every receipt
+   - Business identity "Nuatis POS Demo Salon · 123 Main St, Austin, TX 78701 · (512) 555-0100"
+
+   Section: Running Locally — fenced bash code block with: npm install / npm run dev — followed by a line: Open the Replit-provided URL. Replit Auth gates the app — log in with any Replit account.
+
+   Section: When Production Build Starts — bullet list:
+   - Read the three Master Plan documents (PRD, MVP, Build Checklist).
+   - Ignore this code.
+   - Take only the visual decisions and flow patterns documented in screenshots/notes from prototype day.
+
+3. replit.md at repo root — architecture overview keyed to the actual file layout. Sections to include:
+
+   Section: Component Tree — generate from the actual src/ layout, listing components and their primary props/responsibilities.
+
+   Section: State Architecture — bullet list:
+   - useCart (hooks/useCart.ts) — line items, customer, cart-level mutations, localStorage write-through
+   - useCheckout (hooks/useCheckout.ts) — state machine: idle → tip → processing → receipt → completed → idle
+   - useActiveStaff (hooks/useActiveStaff.ts) — current operator, persisted
+
+   Section: State Machines — ASCII diagram of the checkout state machine, with transitions and triggers (use a fenced code block).
+
+   Section: Data Flow — bullet list:
+   - Tile tap → useCart.addItem(service, activeStaffId) → state update → localStorage write → render
+   - Charge tap → useCheckout transition idle→tip
+   - Confirm Charge → useCheckout transition tip→processing → 2000ms setTimeout → processing→receipt
+   - Delivery choice → useCheckout.completeDelivery → write to nuatis-pos:transactions → transition receipt→completed
+   - New Sale → useCart.clear + useCheckout reset → idle
+
+   Section: Money Math — paragraph + bullets:
+   - All amounts are integer cents throughout. No floating-point arithmetic ever.
+   - TAX_RATE = 0.0825
+   - taxCents = Math.round(subtotalCents × TAX_RATE)
+   - tipCents calculated on subtotal only (NOT subtotal + tax)
+   - totalCents = subtotal + tax + tip
+   - Per-staff revenue = sum of line totals (base + modifier sum) × qty, NO tax/tip allocation
+
+   Section: Why React + Vite Instead of Next.js — short paragraph: Replit Agent workspace did not have Next.js 14 available; switched to Vite without losing UX fidelity. Production migrates to Next.js 14 App Router per locked stack — this prototype is throwaway anyway.
+
+   Section: Why Tailwind v4 Instead of v3 — short paragraph: Replit's default project template installed v4. All utility classes used are v3-compatible; production runs v3.
+
+   Section: Things to Carry Forward (Visual Decisions) — bullet list:
+   - 4×3 tile grid with category color coding (cuts pink, color cream, treatments lavender, styling peach)
+   - Right-side fixed cart at 384px width
+   - In-place tip selection (no modal)
+   - 2-second simulated card reader timing
+   - Receipt as left panel + delivery buttons as right column on success overlay
+   - "+ Customer" pill above cart header (pre and post-sale attach)
+   - Active staff in header (operator), Replit user in Account dropdown (device)
+   - Held: N pill in header for queue visibility
+
+   Section: Things to Discard (Architecture Decisions) — bullet list:
+   - localStorage for everything
+   - Single-file mutation patterns
+   - No tenant isolation
+   - Hardcoded business identity
+   - Hardcoded customer/staff lists
+   - 2-second setTimeout for "payment"
+   - Mock toasts for receipt delivery
+
+4. Verify the existing services / staff / customers / modifiers modules export consistent shapes — if any types are inconsistent, leave a TODO comment but do NOT refactor. Document in the "Items found" section of the report.
+
+SCOPE — DO NOT BUILD
+- No new features.
+- No refactors. Even if you see something that "could be cleaner" — leave it.
+- No tests added now.
+- No CI files, no GitHub Actions, no Husky, no lint config changes.
+- No package.json changes beyond what's already installed.
+- No new npm dependencies.
+- No screenshot generation, no demo data seeding scripts.
+- No deployment configuration.
+- Do not move files, rename files, or restructure folders.
+
+TECH CONSTRAINTS
+- Only files modified: hooks/useCheckout.ts (debug log removal), README.md (overwrite), replit.md (create new at repo root)
+- Plus one targeted scan of src for stray debug console.logs to remove — list each removal in the report
+- Do NOT touch lib/, components/, pages/, or hooks for anything beyond the targeted log removals
+
+ACCEPTANCE
+1. README.md at repo root contains the full content described above (with TODOs filled in based on actual repo state).
+2. replit.md at repo root contains the architecture overview with the component tree generated from the actual src structure.
+3. console.log(updated) in useCheckout.ts is removed.
+4. Any other dev-only console.logs (tile tap logs, "checkout:" payload log, etc.) are removed; intentional success-confirmation logs may remain.
+5. Stack deviations table in README accurately reflects production (Next.js 14, Tailwind v3, Supabase Auth, Stripe Terminal, etc.) vs prototype (React + Vite, Tailwind v4, Replit Auth, setTimeout simulation, etc.).
+6. localStorage keys table in README lists all 4 keys used in the codebase.
+7. Hardcoded mock data section lists actual contents of lib/services.ts, lib/staff.ts, lib/customers.ts, lib/modifiers.ts.
+8. App still runs without errors after debug log removal — verify npm run dev boots clean.
+9. No new errors, no console warnings introduced.
+10. No code outside the targeted files (useCheckout.ts, README.md, replit.md, plus any file with a stray debug log) is modified.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Do not attempt checkout, add, commit, or push. Sid runs git himself in the Shell tab.
+
+HARD STOP
+After scope is built and acceptance passes, report:
+- Summary of what was changed (debug logs removed by file, README + replit.md created/overwritten)
+- Any items found but intentionally not refactored (with TODO note location)
+- Confirmation that npm run dev still boots clean
+- Open items, if any (none expected)
+This is the final batch of the day. After this: screenshot capture + git tag + final push, all done by Sid in the Shell tab.

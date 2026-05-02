@@ -118,7 +118,6 @@ export function useCheckout(onComplete: () => void) {
           receiptDestination: destination,
         };
         appendTransaction(updated);
-        console.log(updated);
         return updated;
       });
       setState("completed");
