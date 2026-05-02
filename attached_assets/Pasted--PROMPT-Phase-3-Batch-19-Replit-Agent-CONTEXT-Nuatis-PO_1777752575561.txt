@@ -1,0 +1,141 @@
+▶ PROMPT [Phase 3 · Batch 19 · Replit Agent]
+
+CONTEXT
+Nuatis POS prototype, prototype/replit-day-1 branch. 18 batches shipped clean, v0.0.3-prototype tagged at B15. Three verticals live (salon/spa/nail_bar) with full operator + owner loops. B16 added walk-in queue. B17 added cash payment + change calculator. B18 added appointment-aware register with chronological list, status state machine, tap-to-hydrate.
+
+This batch validates the most architecturally significant remaining UX pattern: vertical-specific wrinkles. The first three verticals (launch trio) all share the same uniform-service-catalog shape — that's why the 3rd vertical was a 2-file change. Tattoo is different. It introduces a DEPOSIT pattern: pre-payment captured at booking, credited at service. New transaction state machine: deposit-taken → service-rendered-with-deposit-applied. The point of this batch is to validate (a) the engine graceful-extension story past uniform service catalogs, (b) two-phase transaction patterns that map to multiple Tier 1+ verticals later (piercing, larger spa packages, custom services), and (c) the deposit data model and corresponding Today's Sales math.
+
+GOAL
+Operator can take a deposit on a tattoo appointment, then later hydrate a ticket from that appointment with the deposit pre-credited, charge the balance, and see both the deposit transaction and the service transaction reflected correctly in Today's Sales with proper per-staff and payment-mix math.
+
+SCOPE — BUILD THIS
+
+1. New tattoo vertical config in the verticals config directory, following the same shape as salon/spa/nail_bar. Includes: vertical id "tattoo", display name "Tattoo", business identity defaults (shop name, address, phone, tax rate 8.25%), tip presets matching the global default, color theme distinct from the other three (deeper accent — black/red palette is appropriate, but match the existing token system), 12 services in the catalog with prices ranging from $50 (consultation) to $1500+ (full session). At least 4 services must have depositRequired: true with a fixed depositAmountCents value (e.g., $100, $200, $300 deposits on the larger services). Tattoo-specific modifiers on at least 2 services (e.g., "Color complexity +$50", "Rush schedule +$75") — same modifier mechanism as existing verticals. 3 seed staff (artists with realistic names), 4 seed customers. Wire tattoo into the vertical switcher so it appears as the 4th option.
+
+2. Extend the Appointment interface in lib/appointments.ts with three new optional fields: depositRequired (boolean, defaults false), depositAmountCents (number, defaults 0), depositStatus ('pending' | 'taken', defaults 'pending' when depositRequired is true), depositTakenAt (epoch ms, optional). Also add a new field appointmentRef and depositTransactionId for cross-record linking. Defensive read: legacy appointments without these fields default to depositRequired: false. Status transitions: takeDeposit(verticalId, id, transactionId) sets depositStatus='taken' and depositTakenAt=Date.now() and depositTransactionId=transactionId.
+
+3. Tattoo appointment seed: 6 appointments distributed today + next 6 days. At least 3 with depositRequired (varying amounts $100-$300), at least 2 without. All start in depositStatus='pending'.
+
+4. Extend the Transaction record with three new optional fields: type ('service' | 'deposit', defaults 'service' on read of legacy records), depositApplied (cents, optional, only on type='service'), appointmentRef (string id, optional, only on transactions tied to an appointment), totalPaid (cents — REQUIRED going forward, the actual cash that moved for this transaction; defaults to existing total math on legacy read). Defensive read: any transaction missing these fields gets defaults filled in.
+
+5. Extend the transactions hook with addTransactionDirect(verticalId, transaction) — appends a transaction without going through the checkout state machine. Used only for deposit transactions. The existing checkout-driven path is unchanged.
+
+6. New components/TakeDepositModal.tsx (z-50, full-screen overlay, matches AppointmentsOverlay panel style):
+   - Top: "Take Deposit · {customerName}" title, close ✕.
+   - Summary panel: appointment service name, scheduled time (formatAppointmentTime), staff name, deposit amount (large, JetBrains Mono).
+   - Two equal-width buttons at the bottom: "Card $X.XX" / "Cash $X.XX" — same visual treatment as cart footer Card/Cash buttons.
+   - Card path: tap → 2-sec simulated reader (reuse the existing simulation) → on success, create a deposit transaction via addTransactionDirect, call takeDeposit on the appointment, fire-and-forget toast "Deposit accepted · receipt to follow" (production: real receipt; here: toast only — no separate receipt panel for deposits in this batch), close modal.
+   - Cash path: tap → open the existing CashTenderModal as a sub-modal (z-60), passing totalCents=depositAmountCents and confirmLabel="Take Deposit". CashTenderModal must be extended with these props (defaults preserve current cart-driven behavior). On cash confirm: create deposit transaction via addTransactionDirect, fire "💵 Cash drawer opened" toast (existing pattern), close both modals.
+   - The created deposit transaction shape: type='deposit', appointmentRef=appointment.id, lines=[ one synthetic line: { id, name: "Deposit · {service name}", priceCents: depositAmountCents, qty: 1, staffId: null, depositLine: true } ], paymentMethod, amountTendered + changeGiven (cash only), totalPaid=depositAmountCents, no tax, no tip, no discount. The synthetic line carries staffId: null specifically — deposits are front-desk holdings, not service revenue, and are excluded from per-staff math.
+
+7. Appointments overlay row updates for tattoo (and any vertical's appointment with depositRequired):
+   - When depositRequired && depositStatus==='pending': row shows a "Deposit required: $X.XX" badge (amber/warning treatment) and a [Take Deposit] button (primary). [Start Service] button is disabled with tooltip "Take deposit first".
+   - When depositRequired && depositStatus==='taken': row shows "Deposit: $X.XX taken" badge (green) with a small timestamp ("today 2:14 PM" via formatAppointmentTime-style). [Take Deposit] button is gone; [Start Service] becomes enabled (subject to existing cart-idle gate).
+   - When !depositRequired: row behavior matches B18 unchanged.
+
+8. Hydrate-from-appointment flow extends to deposit-taken appointments:
+   - When [Start Service] is tapped on a deposit-taken appointment, the existing hydrate flow runs (customer + service line + staff), AND the cart state gets two new fields set: appointmentRef (appointment id) and depositApplied (deposit amount in cents). These flow through cart state until the cart is cleared or checkout completes.
+
+9. Cart visualization when cart has depositApplied > 0:
+   - A persistent banner above the cart line list: "Deposit on file: $X.XX" with a small ↩ icon — deposit credit will apply at checkout. Subtle visual treatment, not a CTA.
+   - Cart footer math additions: Subtotal → Discounts → Tax → Tip → Deposit credit (-$X.XX) → Balance due ($X.XX).
+   - Card / Cash buttons read "Card $[balance]" and "Cash $[balance]" — NOT the full subtotal. Both must be enabled as long as balance > 0.
+   - If balance computes to negative or zero (deposit + comps exceed total), Card/Cash buttons disable with tooltip "No balance due — close ticket via Comp" — handle defensively, this should be rare.
+   - Comp + deposit interaction: comp goes to $0, deposit credit is "lost" at the ticket level but the deposit transaction record itself is unchanged (deposit money already moved). The receipt shows COMPED + deposit info. (Edge case; just needs to not crash.)
+
+10. Service transaction record extensions at checkout (existing confirmCheckout path):
+    - When cart has appointmentRef + depositApplied set, the resulting service transaction stores both fields, and totalPaid = (existing total math) - depositApplied. The lines themselves remain at full service price (work-delivered semantics for per-staff math).
+    - Card/Cash payment flows unchanged otherwise. Cash flow's amountTendered comparison uses balance, not full total.
+
+11. Receipt rendering for service transactions with depositApplied:
+    - In the totals section, between Tip and Total: a "Deposit applied · -$X.XX" line (matching existing total-row visual language).
+    - Total line label changes to "Balance paid" instead of "Total" when depositApplied > 0.
+    - At the bottom: a small footnote "Deposit of $X.XX collected on [date]" rendered once, sourced from the deposit transaction lookup via appointmentRef. (If deposit transaction can't be found defensively, omit the footnote — don't crash.)
+    - Receipts for deposit-only transactions (type='deposit'): full receipt rendering with "DEPOSIT · {service name}" header, payment method, no tax/tip section, single line at the deposit amount, footer note "Balance due at service: $X.XX" computed from service price - deposit. Re-delivery from Today's Sales works the same as service transactions.
+
+12. Today's Sales overlay updates:
+    - Transaction list rows for type='deposit' show a DEPOSIT badge (purple or distinct from CASH/REFUNDED/PARTIAL/COMPED — pick a token that doesn't collide).
+    - Existing total math iterates all transactions and sums totalPaid (NOT line totals). This is the critical change: total revenue = sum(transaction.totalPaid). Verify against legacy: a service transaction with no deposit has totalPaid === existing-total-math, so the migration is transparent.
+    - Per-staff revenue calculation iterates ONLY type='service' transactions and sums line revenue per staffId (refund-aware as today). Deposit transactions are entirely excluded — their synthetic line has staffId: null which the existing per-line iteration should naturally skip; verify this.
+    - Payment mix line includes deposit transactions in their respective Card/Cash buckets (deposits are real cash flow even if not service revenue).
+    - Receipt detail view for a service transaction with depositApplied: shows a small linked panel "Linked deposit · $X.XX · taken [date]" with a tap-to-view that surfaces the deposit transaction's receipt.
+    - Receipt detail view for a deposit transaction: shows "Linked service · [pending if appointment not yet started, else service transaction id and amount]".
+
+13. No-show on a deposit-taken appointment:
+    - Existing No-Show inline confirm gets extended for these appointments only: confirm message reads "Mark [name] as no-show? Deposit of $X.XX will remain on file (refund separately if needed)."
+    - On confirm: appointment moves to History with NO-SHOW status. Deposit transaction stays in Today's Sales unchanged. No automatic refund. No deposit-forfeit special workflow this batch.
+
+14. Per-vertical isolation verification: tattoo appointments, deposits, transactions are isolated to nuatis-pos:tattoo:* keys. Switching to salon shows zero tattoo data. The 4th vertical addition is verified to NOT regress the existing 3 verticals — open salon/spa/nail_bar after building tattoo and confirm cart, register, appointments, today's sales all behave identically to before this batch.
+
+15. README + replit.md NOT updated this batch — wrap batch comes later. Just code.
+
+SCOPE — DO NOT BUILD
+- Deposit refunds (separate flow, out of scope; no-show with deposit just leaves money on file)
+- Variable deposit amounts at take-time (operator changes the amount before charging) — fixed per-service in config
+- Partial deposits (full or none)
+- Deposit transferable between appointments (e.g., reschedule preserves deposit) — out of scope
+- Multiple deposits on one appointment
+- Manual deposit creation outside of an appointment (no "ad-hoc deposit" flow)
+- Touch-up flag, hourly rate billing, custom design fee workflows — tattoo vertical's wrinkle for this batch is DEPOSITS only, not every tattoo-specific UX pattern at once
+- Service catalog editing from Settings (config-locked, same as existing verticals)
+- Forfeit-explicit UX (no-show confirm note is sufficient signaling)
+- Comp on deposit transactions
+- Deposit-only refund (refund a deposit without rendering service)
+- Audit log of deposit events
+- Deposit reminder notifications
+- Cross-vertical deposit reporting
+- Service-level free-text notes on appointments (previously declined, no new pattern)
+- "Next appointment" banner with countdown (previously declined)
+- Operator-attention nudge UI in any form (previously declined — no toasts on appointment proximity, no banners, no badges-when-X)
+- Real backend, real Stripe, real anything
+
+OPEN QUESTIONS section in your report is for clarifying questions about THIS batch's scope only. Do NOT use it to suggest follow-on features — those are reserved for Sid to scope.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4, no new dependencies
+- Reuse existing components: CashTenderModal (extended with totalCents + confirmLabel props, defaults preserve current behavior), 2-sec card simulation pattern, toast system, formatCents, formatAppointmentTime
+- TakeDepositModal z-50 (same depth as AppointmentsOverlay), CashTenderModal stacked z-60 when invoked from TakeDepositModal
+- Integer cents math throughout — deposit amounts, balance computation, totalPaid all in cents
+- Pure functions for transaction shape construction (no in-place mutation)
+- Defensive reads for all extended types (Appointment, Transaction) — legacy records work without migration
+- localStorage keys for tattoo follow the existing namespacing convention exactly: nuatis-pos:tattoo:cart, :transactions, :heldTickets, :settings, :waitlist, :appointments
+- Deposit transaction's synthetic line MUST have staffId: null (or undefined that the per-staff iteration treats as null) — this is what keeps it out of per-staff revenue automatically
+- totalPaid field on Transaction is REQUIRED going forward; legacy reads compute it from existing total math as a one-time defensive default
+
+ACCEPTANCE
+- Vertical switcher shows 4 options. Switch to tattoo → register grid loads with 12 services + tattoo theming. Existing 3 verticals unchanged.
+- Open Tattoo Appointments overlay → 6 appointments, mix of deposit-required (with amber "Deposit required: $X.XX" badge + [Take Deposit] button + disabled [Start Service] with tooltip) and no-deposit (B18 behavior unchanged).
+- Tap [Take Deposit] on a $200 deposit appointment → TakeDepositModal opens, shows customer + service + scheduled time + staff + "$200.00" prominent, Card $200.00 and Cash $200.00 buttons.
+- Card path: tap Card → 2-sec sim → success → "Deposit accepted" toast → modal closes. Appointment row updates to "Deposit: $200.00 taken · today H:MM AM/PM" green badge, [Take Deposit] gone, [Start Service] enabled.
+- Open Today's Sales → DEPOSIT badge on the new transaction. Total revenue includes the $200. Per-staff revenue does NOT include the deposit (verify by checking artist's row stays at $0 if no service rendered yet). Payment mix: Card includes the $200.
+- Cash path: tap [Take Deposit] on another appointment → tap Cash → CashTenderModal opens with deposit amount as total, "Take Deposit" confirm label. Tender, confirm → cash drawer toast → modal closes. Today's Sales now has 2 deposits, payment mix shows both Card and Cash.
+- Tap [Start Service] on the $200-deposit-taken appointment → cart hydrates with customer + service line at full price + active staff = artist + "Deposit on file: $200.00" banner above lines.
+- Cart footer math: Subtotal $X, Tax $X, Tip selectable, "Deposit credit -$200.00" row, Balance due $X. Card and Cash button labels both show the BALANCE not the subtotal.
+- Add a tip → balance recomputes correctly, Card/Cash button labels update.
+- Tap Card on the balance → 2-sec sim → success → service transaction recorded with type='service', depositApplied=20000, appointmentRef set, totalPaid=balance.
+- Open receipt: shows "Deposit applied · -$200.00" line, "Balance paid" label, footnote "Deposit of $200.00 collected on [date]".
+- Open Today's Sales → service transaction visible with linked-deposit panel showing "Linked deposit · $200.00 · taken [date]". Today's Sales total = previous totals + service balance (NOT + full service price). Per-staff revenue for the artist now reflects FULL SERVICE PRICE (e.g., $500 service line × 1 = $500 in their per-staff column, not the $300 balance). Payment mix shows the balance amount in the appropriate Card/Cash bucket.
+- Tap the linked-deposit panel → opens that deposit transaction's receipt detail.
+- Tap [No-Show] on a deposit-taken appointment → confirm reads "Mark [name] as no-show? Deposit of $X.XX will remain on file (refund separately if needed)." Confirm → appointment in History as NO-SHOW. Deposit transaction unchanged in Today's Sales.
+- Tap [No-Show] on a non-deposit appointment → confirm message is the original B18 wording ("Mark [name] as no-show?"), no deposit text.
+- Switch to salon → zero tattoo data leaks. Salon Today's Sales total math still works on its own transactions (legacy + any new service transactions).
+- Reload → all state persists: tattoo appointments with their deposit statuses, deposit transactions, service transactions with depositApplied/appointmentRef/totalPaid, cart with appointmentRef/depositApplied if mid-build.
+- Service transaction in salon (no deposit, normal flow) → totalPaid === full total. Today's Sales math handles legacy and new transactions identically.
+- Refund a service transaction that had a deposit applied → existing line-level partial refund works on the line revenue; refund amount deducts from per-staff revenue; Today's Sales total subtracts the refund. Deposit transaction is untouched. (No deposit-side refund flow this batch; just verify nothing crashes.)
+- TakeDepositModal close mid-card-sim or mid-cash-tender → modal closes, no transaction created. Confirm by checking transaction count before/after.
+- Comp interaction: hydrate from a deposit-taken appointment, then comp the ticket → ticket completes at $0 service revenue, deposit transaction stays in Today's Sales unchanged. No crash. Receipt shows COMPED stamp + deposit info (best-effort, just don't crash).
+
+DO NOT TOUCH GIT
+Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab after this batch lands.
+
+REPORT FORMAT — REQUIRED
+Agent's response must include four sections in this order:
+- WHAT WAS BUILT
+- ERRORS ENCOUNTERED
+- ITEMS SKIPPED
+- OPEN QUESTIONS
+
+OPEN QUESTIONS is for clarifying questions about THIS scope only. Do not propose follow-on features.
+
+HARD STOP
+Stop after the scope above. Do not begin a next batch. Wait for the next prompt.
