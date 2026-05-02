@@ -1,0 +1,68 @@
+▶ PROMPT [Phase 2 · Batch 1 · Replit Agent]
+
+CONTEXT
+Throwaway UX prototype for Nuatis POS — a service-based point-of-sale system for salons. Goal of the prototype day is validating UX flow and visual hierarchy on a tablet-sized screen. Salon vertical only. No backend, no real payments. Code quality is exploratory — this is NOT production foundation. Will be pushed to GitHub at end of day on a `prototype/` branch, then mothballed. Replit Auth is acceptable for login. This is Batch 1 of the day; later batches will add cart, tip selection, mock checkout, mock receipt, and customer search.
+
+GOAL
+Render an authenticated quick-tile register screen with 12 hardcoded salon services as tappable color-coded tiles in a 4×3 grid, optimized for iPad portrait (1024×768).
+
+SCOPE — BUILD THIS
+1. Bootstrap a Next.js 14 App Router project with TypeScript strict mode, Tailwind v3 (NOT v4), React 18.
+2. Wire up Replit Auth — unauthed visitors land on a simple login page, post-login redirects to /register, header shows logged-in user email + logout button.
+3. Single primary page at app/page.tsx (route /register) showing the quick-tile grid. Auth-gated — redirect to login if no session.
+4. Hardcode 12 salon services in lib/services.ts. Each service: { id, name, priceCents, durationMinutes, category }. Categories: cuts, color, treatments, styling.
+5. The 12 services exactly:
+   - Cuts: Women's Cut $55 / 45min · Men's Cut $35 / 30min · Beard Trim $20 / 15min · Kids Cut $25 / 20min
+   - Color: Highlights Full $185 / 120min · Color Root $95 / 75min · Gloss $65 / 45min
+   - Treatments: Olaplex Treatment $45 / 30min · Deep Conditioning $35 / 25min · Wax $30 / 20min
+   - Styling: Blowout $45 / 30min · Polish Change $15 / 15min
+6. Render tiles in a 4-column × 3-row grid. Each tile minimum 140px tall. Color-coded by category — Cuts pink (#FBCFE8), Color cream (#FEF3C7), Treatments lavender (#E9D5FF), Styling peach (#FED7AA). Tile content: service name (Epilogue 600, 18px), price (Fraunces 700, 22px), duration (JetBrains Mono 500, 12px, muted).
+7. Header bar: "Nuatis POS" left (Fraunces 700), live ticking clock center (JetBrains Mono 500, updates every second), user email + logout button right.
+8. Tap on a tile triggers console.log("tapped:", service.name) only — cart logic comes in Batch 2. Do NOT build cart yet.
+9. Tile tap visual feedback: scale to 0.97 for 100ms via Tailwind active:scale-[0.97] transition-transform.
+10. Page background #F8F7F4 (paper).
+11. Use Google Fonts via next/font/google in app/layout.tsx: Epilogue (300, 400, 500, 600, 700), Fraunces (600, 700), JetBrains Mono (400, 500, 700).
+12. README.md at root with disclaimer: "Throwaway prototype built with Replit Agent for UX validation only. Code quality is exploratory. Do NOT use as basis for production POS build. Production POS build follows separate Master Plan documents."
+
+SCOPE — DO NOT BUILD
+- No cart panel, no checkout flow, no tip selection, no payment screens — later batches.
+- No state management library (no Zustand, Redux, Jotai). Plain useState only.
+- No localStorage yet — added with cart in Batch 2.
+- No customer search, no staff PIN, no multi-vertical switching, no settings page.
+- No animations beyond the active scale on tile tap.
+- No mobile responsive optimization — tablet portrait only.
+- No tests, no Storybook, no Sentry, no analytics, no error boundaries.
+- No backend or /api/ routes beyond what Replit Auth itself requires.
+- No images or icons on tiles — text only.
+- No Tailwind theme extension — arbitrary values only (e.g. bg-[#FBCFE8]).
+
+TECH CONSTRAINTS
+- Next.js 14.2.x (NOT 15)
+- TypeScript 5.x with strict: true and noUncheckedIndexedAccess: true
+- Tailwind v3.4.x — verify package.json shows ^3.4.0, NOT ^4.x
+- React 18.x (NOT 19)
+- Node 20.x
+- Replit Auth using Replit's official recommended pattern
+- File structure: app/page.tsx, app/layout.tsx, app/globals.css, app/login/page.tsx, lib/services.ts, components/ServiceTile.tsx, components/Header.tsx, plus whatever Replit Auth requires. No other files.
+- Functional components only. No class components.
+
+ACCEPTANCE
+1. npm run dev starts on Replit without errors.
+2. Visiting / while logged out redirects to login page.
+3. After Replit Auth login, user lands on /register.
+4. /register renders 12 tiles in a 4×3 grid at 1024px viewport width.
+5. Tiles are color-coded correctly by category — visually distinguishable at a glance.
+6. Tapping a tile logs `tapped: <service name>` to browser console with no errors.
+7. Header shows "Nuatis POS" left, clock ticking every second, user email + working logout right.
+8. Tile tap shows visible scale feedback.
+9. Fonts load correctly — service name Epilogue, price Fraunces, duration JetBrains Mono.
+10. Page background is #F8F7F4, not white.
+11. No console errors, no hydration warnings, no Tailwind v4 compile errors.
+
+HARD STOP
+After scope is built, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions before next batch
+Then wait for the next prompt. Do NOT begin Batch 2 (cart panel) on your own.
