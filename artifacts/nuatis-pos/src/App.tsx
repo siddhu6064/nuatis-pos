@@ -1,6 +1,7 @@
 import { useAuth } from "@workspace/replit-auth-web";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { ManagerOverrideProvider } from "@/hooks/useManagerOverride";
 
 function App() {
   const { user, isLoading, isAuthenticated, login, logout } = useAuth();
@@ -25,7 +26,11 @@ function App() {
     return <LoginPage onLogin={login} />;
   }
 
-  return <RegisterPage user={user} onLogout={logout} />;
+  return (
+    <ManagerOverrideProvider>
+      <RegisterPage user={user} onLogout={logout} />
+    </ManagerOverrideProvider>
+  );
 }
 
 export default App;

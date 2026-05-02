@@ -4,7 +4,12 @@ import type { Modifier } from "@/lib/modifiers";
 import { STAFF } from "@/lib/staff";
 import { getModifiersForService } from "@/lib/modifiers";
 import { formatCurrency } from "@/lib/currency";
-import { calcLineTotalCents, calcLineDiscountCents } from "@/lib/cartMath";
+import {
+  calcLineTotalCents,
+  calcLineDiscountCents,
+  MANAGER_DISCOUNT_THRESHOLD,
+} from "@/lib/cartMath";
+import { useManagerOverride } from "@/hooks/useManagerOverride";
 
 interface CartLineProps {
   line: CartLineType;
@@ -31,6 +36,8 @@ export function CartLine({
   onToggleModifier,
   onSetDiscount,
 }: CartLineProps) {
+  const { requestManagerOverride } = useManagerOverride();
+
   const [staffPickerOpen, setStaffPickerOpen] = useState(false);
   const [modPickerOpen, setModPickerOpen] = useState(false);
   const [discountOpen, setDiscountOpen] = useState(false);
@@ -43,15 +50,31 @@ export function CartLine({
   const applicableMods = getModifiersForService(line.serviceId);
   const hasApplicableMods = applicableMods.length > 0;
   const hasDiscount = line.discountPercent > 0;
+  const isManagerDiscount = line.discountPercent > MANAGER_DISCOUNT_THRESHOLD;
 
-  function applyCustomDiscount() {
+  const stagedValue = parseInt(customRaw, 10);
+  const stagedNeedsManager =
+    !isNaN(stagedValue) && stagedValue > MANAGER_DISCOUNT_THRESHOLD;
+
+  async function applyCustomDiscount() {
     const val = parseInt(customRaw, 10);
-    if (!isNaN(val) && val >= 1 && val <= 99) {
-      onSetDiscount(line.lineId, val);
-      setDiscountOpen(false);
-      setCustomMode(false);
-      setCustomRaw("");
+    if (isNaN(val) || val < 1 || val > 99) return;
+
+    if (val > MANAGER_DISCOUNT_THRESHOLD) {
+      const approved = await requestManagerOverride(
+        `Line discount of ${val}%`,
+      );
+      if (!approved) {
+        // Clear staged value; picker stays open for retry
+        setCustomRaw("");
+        return;
+      }
     }
+
+    onSetDiscount(line.lineId, val);
+    setDiscountOpen(false);
+    setCustomMode(false);
+    setCustomRaw("");
   }
 
   return (
@@ -77,7 +100,19 @@ export function CartLine({
 
       {/* Discount amount sub-row */}
       {hasDiscount && (
-        <div className="flex justify-end mb-1">
+        <div className="flex justify-end items-center gap-1 mb-1">
+          {isManagerDiscount && (
+            <span
+              className="text-[10px] font-bold px-1 py-0.5 rounded"
+              style={{
+                fontFamily: "'Epilogue', sans-serif",
+                color: "#DC2626",
+                backgroundColor: "#FEE2E2",
+              }}
+            >
+              M
+            </span>
+          )}
           <span
             className="text-[12px] tabular-nums"
             style={{
@@ -203,7 +238,9 @@ export function CartLine({
                 return (
                   <button
                     key={mod.id}
-                    onClick={() => !frozen && onToggleModifier(line.lineId, mod)}
+                    onClick={() =>
+                      !frozen && onToggleModifier(line.lineId, mod)
+                    }
                     className="h-[26px] px-2 rounded-md text-[11px] transition-all duration-100"
                     style={{
                       fontFamily: "'Epilogue', sans-serif",
@@ -242,7 +279,9 @@ export function CartLine({
               color: hasDiscount ? "#DC2626" : "#9CA3AF",
             }}
           >
-            {hasDiscount ? `−${line.discountPercent}% ▾` : "+ Discount"}
+            {hasDiscount
+              ? `−${line.discountPercent}%${isManagerDiscount ? " M" : ""} ▾`
+              : "+ Discount"}
           </button>
         ) : (
           <div className="flex flex-wrap gap-1 items-center mt-0.5">
@@ -303,7 +342,7 @@ export function CartLine({
                   value={customRaw}
                   onChange={(e) => setCustomRaw(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") applyCustomDiscount();
+                    if (e.key === "Enter") void applyCustomDiscount();
                   }}
                   placeholder="1–99"
                   className="w-16 h-[26px] px-2 text-[12px] rounded-md border outline-none tabular-nums"
@@ -320,14 +359,14 @@ export function CartLine({
                   %
                 </span>
                 <button
-                  onClick={applyCustomDiscount}
+                  onClick={() => void applyCustomDiscount()}
                   className="h-[26px] px-2 rounded-md text-[11px] font-semibold text-white"
                   style={{
                     fontFamily: "'Epilogue', sans-serif",
-                    backgroundColor: "#DC2626",
+                    backgroundColor: stagedNeedsManager ? "#7C3AED" : "#DC2626",
                   }}
                 >
-                  Apply
+                  {stagedNeedsManager ? "Apply 🔒" : "Apply"}
                 </button>
               </div>
             )}

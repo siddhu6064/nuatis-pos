@@ -8,6 +8,16 @@ export type CheckoutState =
   | "receipt"
   | "completed";
 
+export interface RefundRecord {
+  id: string;
+  refundedAt: string;
+  lineIds: string[];
+  lineRefundCents: number;
+  taxRefundCents: number;
+  totalRefundCents: number;
+  managerOverride: boolean;
+}
+
 export interface Transaction {
   id: string;
   lineItems: CartLine[];
@@ -22,6 +32,8 @@ export interface Transaction {
   receiptDestination?: string;
   compApplied: boolean;
   compReason: string | null;
+  refunds?: RefundRecord[];
+  refundedTotalCents?: number;
 }
 
 export interface ConfirmData {

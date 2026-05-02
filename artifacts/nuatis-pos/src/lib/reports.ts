@@ -8,6 +8,7 @@ export interface DailySummary {
   count: number;
   avgTicketCents: number;
   discountCents: number;
+  refundCents: number;
 }
 
 export function calcDailySummary(transactions: Transaction[]): DailySummary {
@@ -18,13 +19,21 @@ export function calcDailySummary(transactions: Transaction[]): DailySummary {
   const discountCents = transactions.reduce(
     (sum, tx) =>
       sum +
-      tx.lineItems.reduce(
-        (s, line) => s + calcLineDiscountCents(line),
-        0,
-      ),
+      tx.lineItems.reduce((s, line) => s + calcLineDiscountCents(line), 0),
     0,
   );
-  return { revenueCents, tipCents, count, avgTicketCents, discountCents };
+  const refundCents = transactions.reduce(
+    (sum, tx) => sum + (tx.refundedTotalCents ?? 0),
+    0,
+  );
+  return {
+    revenueCents,
+    tipCents,
+    count,
+    avgTicketCents,
+    discountCents,
+    refundCents,
+  };
 }
 
 export interface StaffSummary {
@@ -43,16 +52,28 @@ export function calcPerStaffSummary(
     const txCount = transactions.filter((tx) =>
       tx.lineItems.some((line) => line.staffId === staff.id),
     ).length;
+
     const revenueCents = transactions.reduce((sum, tx) => {
       // Comped transactions contribute $0 to per-staff revenue
       if (tx.compApplied) return sum;
+
+      // Collect all refunded line IDs across all refund records
+      const refundedLineIds = new Set(
+        (tx.refunds ?? []).flatMap((r) => r.lineIds),
+      );
+
       return (
         sum +
         tx.lineItems
           .filter((line) => line.staffId === staff.id)
-          .reduce((s, line) => s + calcLineTotalCents(line), 0)
+          .reduce((s, line) => {
+            // Refunded lines contribute $0
+            if (refundedLineIds.has(line.lineId)) return s;
+            return s + calcLineTotalCents(line);
+          }, 0)
       );
     }, 0);
+
     return {
       staffId: staff.id,
       firstName: staff.firstName,

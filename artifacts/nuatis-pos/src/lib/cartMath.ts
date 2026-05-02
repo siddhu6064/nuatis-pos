@@ -2,6 +2,9 @@ import type { CartLine } from "@/hooks/useCart";
 
 export const TAX_RATE = 0.0825;
 
+// Discounts above this percentage require manager override (PIN)
+export const MANAGER_DISCOUNT_THRESHOLD = 20;
+
 export function calcLineTotalCents(line: CartLine): number {
   const modifierTotal = (line.modifiers ?? []).reduce(
     (s, m) => s + m.priceCents,

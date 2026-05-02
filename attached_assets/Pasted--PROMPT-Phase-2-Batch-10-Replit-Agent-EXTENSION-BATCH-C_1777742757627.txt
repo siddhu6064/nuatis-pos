@@ -1,0 +1,136 @@
+▶ PROMPT [Phase 2 · Batch 10 · Replit Agent — EXTENSION BATCH]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-9 complete: full operator loop including discount + comp. This is EXTENSION batch 2 of 3 planned for today.
+
+This batch adds the auth-pivot UX — manager override via PIN — and the refund flow that depends on it. Two triggers gate behind the same PIN modal: (1) line discount > 20%, (2) initiating any refund. Mock PIN validation — any 4 digits accepted. Refund initiated from Today's Sales transaction detail view, line-item level granularity.
+
+GOAL
+Operator attempting a >20% discount triggers PIN modal — accepts any 4 digits as "manager approved" → discount applies. Operator viewing a past transaction in Today's Sales sees a "Refund" button alongside re-delivery → tap triggers PIN modal → on success, line-item picker overlay → select lines → Confirm Refund → simulated 1.5s refund processing → success toast + transaction marked refunded. Refunded transactions visibly flagged in Today's Sales list.
+
+SCOPE — BUILD THIS — MANAGER OVERRIDE FOUNDATION
+
+1. components/PinModal.tsx — centered modal, dim backdrop rgba(0,0,0,0.6) darker than other modals to signal elevated context.
+   - Title: "Manager Override Required" (Fraunces 700, 22px)
+   - Subtitle: dynamic context line (Epilogue 400, 14px muted) — "Discount over 20%" or "Refund authorization" depending on trigger
+   - 4 PIN input boxes — large (each 56×64px), monospace, auto-advance to next box on input, auto-focus first box on open, accepts digits 0-9 only
+   - Below the boxes: small "Cancel" text link
+   - When all 4 digits entered: 200ms loading shimmer → "Approved" green flash → onApprove callback fires → modal dismisses
+   - Mock validation: any 4 digits accepted (no real PIN check). Document the hardcoded acceptance in a comment.
+   - ESC dismisses without approval.
+
+2. hooks/useManagerOverride.ts (or simple promise-based pattern) — exposes a function `requestManagerOverride(reason: string): Promise<boolean>` that mounts PinModal and resolves true on PIN entry, false on cancel/ESC. Reason string passes through to modal subtitle.
+
+3. Wire into App / RegisterPage so PinModal can be invoked from any descendant component without prop-drilling — Context provider + hook is fine.
+
+SCOPE — BUILD THIS — DISCOUNT > 20% GATE
+
+4. lib/cartMath.ts — add `MANAGER_DISCOUNT_THRESHOLD = 20` constant.
+
+5. components/CartLine.tsx discount picker behavior:
+   - When operator selects [Custom] and enters >20, the value is staged but NOT yet applied. Apply button text changes to "Apply (Manager)" and applies a small lock icon (text "🔒" or "M" badge) styling.
+   - Tapping Apply → invoke `requestManagerOverride(\`Line discount of \${value}%\`)` → on approval, set discountPercent on the line; on rejection/cancel, clear staged value, picker stays open.
+   - Same gate for preset chips? — keep it simple: presets cap at 20% (no preset >20). Custom is the only path to >20, which routes through the gate.
+
+6. Once a >20% discount is applied to a line, the line shows a small "M" badge inline next to the discount text (e.g. "−25% M (−$13.75)") to indicate manager-approved.
+
+7. Reducing or removing a manager-approved discount (back to ≤20% or 0) does NOT require re-approval. The gate fires on UPGRADING into manager-required range, not on downgrading out.
+
+SCOPE — BUILD THIS — REFUND FLOW
+
+8. ReportsOverlay receipt detail mode (Batch 6) gets a new button — "Refund" — added to the right column above or alongside the [Print] [Email] [SMS] [Close] re-delivery row. Visible only when transaction is NOT already fully refunded. Distinct styling: white background, red border #DC2626, red text. Same height as re-delivery buttons.
+
+9. Tapping Refund triggers `requestManagerOverride('Refund authorization')`. On approval → transition the receipt detail mode into a refund picker mode within the same overlay. On reject/cancel → no change, stay in receipt detail.
+
+10. Refund picker mode (in-overlay, replaces the receipt panel temporarily):
+    - Title: "Refund Items" (Fraunces 700, 22px)
+    - For each line item in the transaction: a tappable row with a checkbox left, line description (service name + qty × price + staff name) center, line total right. Tapping the row toggles checkbox.
+    - "Refund All" toggle at top — checks/unchecks all rows in one tap
+    - Live "Refund Total" footer at bottom: shows selected lines' total + their proportional tax allocation. Tip NOT refunded (rule: tip is voluntary).
+    - Two buttons bottom: [Cancel] and [Confirm Refund $X.XX] — Confirm disabled when no lines selected
+    - Cancel returns to receipt detail mode (no refund processed)
+
+11. Confirm Refund tap → 1500ms simulated processing overlay (smaller than full-screen — just a dimmed backdrop with "Processing refund..." centered) → on completion:
+    - Update the transaction in nuatis-pos:transactions: add `refunds: [{ id, refundedAt, lineIds: [], lineRefundCents, taxRefundCents, totalRefundCents, managerOverride: true }]` (array — supports multiple partial refunds, but for prototype just append)
+    - Add `refundedTotalCents: number` (cumulative across all refunds on this transaction)
+    - Toast "Refund processed (mock)" — same Toast component
+    - Return to receipt detail mode, which now reflects the refund state
+
+12. Refund math:
+    - Sum selected line totals (already discount-applied) = lineRefundCents
+    - taxRefundCents = Math.round((lineRefundCents / originalSubtotalCents) × originalTaxCents) — proportional
+    - totalRefundCents = lineRefundCents + taxRefundCents
+    - NO tip refund
+
+13. Receipt detail rendering after refund:
+    - Show "PARTIALLY REFUNDED" or "FULLY REFUNDED" stamp top-right in red (rotated -8deg, same pattern as COMPED)
+    - Below totals, show refund row(s): "Refund #1: −$X.XX" with date/time
+    - Show "Net: $X.XX" final line
+    - Refunded line items shown with strikethrough on the receipt
+    - Refund button hidden when fully refunded; visible when partially refunded (allows additional refund up to remaining)
+
+14. Today's Sales transaction list — refunded transactions visibly flagged:
+    - Red "REFUNDED" or "PARTIAL" badge inline next to time/customer
+    - The transaction's displayed total stays the original (don't subtract refund — confusing to operator scanning the day's sales). But add a small muted sub-line "Refunded $X.XX" below the row when applicable.
+
+15. Today's Sales summary stats:
+    - Add "Refunds: −$X.XX" as 5th stat (color #DC2626) — sum of all refunds today
+    - Net Revenue (informational, smaller): subtract refunds from Revenue stat. Display as small line under Revenue: "Net: $X.XX" (Epilogue 400, 12px muted) — only shows when refunds > 0
+    - Per-staff revenue subtracts refunds proportionally: when a refund affects line X attributed to staff Y, deduct that line's refund amount from staff Y's revenue. Comped tickets unchanged ($0 contribution).
+
+16. Per-staff transaction count: refunded-but-not-fully-refunded transactions still count as 1 transaction for the staff. Fully-refunded transactions still count (don't pretend they didn't happen).
+
+SCOPE — DO NOT BUILD
+- No real PIN validation, no hashed PIN comparison.
+- No PIN configuration screen, no "set your manager PIN" UX.
+- No PIN brute-force lockout.
+- No staff-role differentiation (all 3 staff are operator-level for prototype, manager is just whoever has the PIN).
+- No reason capture for refund — assumed valid by manager override.
+- No customer-facing refund email/SMS.
+- No Stripe Refund API call (mock only).
+- No void flow — refund covers the case for prototype.
+- No discount audit log viewer.
+- No new npm dependencies.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- All currency in integer cents
+- File additions: components/PinModal.tsx, hooks/useManagerOverride.ts, components/RefundPicker.tsx (or sub-component within ReportsOverlay)
+- Existing files updated: components/CartLine.tsx (>20% gate), components/ReportsOverlay.tsx (Refund button + refund picker mode + REFUNDED badges + summary stats + Net Revenue line), components/Receipt.tsx (REFUNDED stamp + refund rows + strikethrough lines), lib/reports.ts (refund deductions in per-staff math + new daily summary stats), hooks/useCheckout.ts (no changes expected — refunds happen post-completion)
+- Mock PIN: ANY 4 digits accepted. Hardcode this fact in a code comment for clarity.
+
+ACCEPTANCE
+1. Apply 15% discount via Custom input → no PIN modal, applies immediately (under threshold).
+2. Apply 25% discount via Custom input → tapping Apply triggers PIN modal with subtitle "Discount over 25%" (or "Discount of 25%" — matches the value).
+3. PIN modal: enter "1234" → all 4 boxes filled → green flash → modal dismisses → discount applies → line shows "−25% M (−$X.XX)".
+4. Cancel from PIN modal → discount NOT applied → picker still open with staged value.
+5. Reducing manager-approved 25% to 18% → no PIN required.
+6. Reducing manager-approved 25% to 0% → no PIN required.
+7. Re-applying 30% later → PIN required again (gate fires every time threshold is crossed upward).
+8. Today's Sales → tap a past transaction → receipt detail mode shows new red-bordered "Refund" button.
+9. Tap Refund → PIN modal → enter "9999" → approval → overlay transitions to refund picker mode showing all transaction lines with checkboxes.
+10. "Refund All" toggle selects all lines; live total reflects selected lines + proportional tax (no tip).
+11. Select 1 of 3 lines → live total = that line + (line/originalSubtotal × originalTax). E.g. line $100 in a $300 ticket with $24.75 tax → refund total = $100 + $8.25 = $108.25.
+12. Confirm Refund → 1500ms processing → toast "Refund processed (mock)" → return to receipt detail mode with PARTIALLY REFUNDED stamp + refund row visible.
+13. Refunded line items show strikethrough on receipt detail.
+14. Same transaction in Today's Sales list now shows red "PARTIAL" badge + "Refunded $108.25" sub-row.
+15. Refunding remaining 2 lines → second Refund cycle → PIN gate fires again → confirm → "FULLY REFUNDED" stamp replaces partial.
+16. Refund button hidden on fully-refunded transactions in receipt detail mode.
+17. Today's Sales summary shows new "Refunds: −$X.XX" stat in #DC2626 + "Net: $X.XX" sub-line under Revenue.
+18. Per-staff revenue: ring $100 sale to Maria → her revenue $100. Refund $50 of it → her revenue updates to $50.
+19. Comped transactions unchanged in per-staff math (still $0 contribution).
+20. Hold/Resume tickets: discount > 20% applied via PIN, ticket held, refresh, resume — discount intact, NOT re-prompted for PIN on resume (the override was already granted at apply-time).
+21. PIN modal frozen / inaccessible if cart in non-idle checkout state (no manager flows mid-charge).
+22. No console errors, no React key warnings, no Tailwind compile errors.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Sid runs git himself in the Shell tab.
+
+HARD STOP
+After scope is built and acceptance passes, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions before next batch
+Then wait for the next prompt. Do NOT begin Batch 11 (Spa vertical + vertical switcher) on your own.

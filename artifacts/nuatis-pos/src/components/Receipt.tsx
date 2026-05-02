@@ -1,7 +1,7 @@
 import type { Transaction } from "@/hooks/useCheckout";
 import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
-import { calcLineDiscountCents } from "@/lib/cartMath";
+import { calcLineDiscountCents, calcLineTotalCents } from "@/lib/cartMath";
 
 interface ReceiptProps {
   transaction: Transaction;
@@ -22,6 +22,17 @@ function formatReceiptDate(isoString: string): string {
   return `${datePart} · ${timePart}`;
 }
 
+function formatShortDatetime(isoString: string): string {
+  const d = new Date(isoString);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+}
+
 function Divider() {
   return <hr className="border-t border-gray-200 my-3" />;
 }
@@ -30,13 +41,31 @@ export function Receipt({ transaction }: ReceiptProps) {
   const txShort = transaction.id.slice(-8).toUpperCase();
   const isComped = transaction.compApplied ?? false;
 
+  // Refund state
+  const allRefundedLineIds = new Set(
+    (transaction.refunds ?? []).flatMap((r) => r.lineIds),
+  );
+  const hasAnyRefund = allRefundedLineIds.size > 0;
+  const isFullyRefunded = transaction.lineItems.every((l) =>
+    allRefundedLineIds.has(l.lineId),
+  );
+  const isPartiallyRefunded = hasAnyRefund && !isFullyRefunded;
+  const refundStampText = isFullyRefunded
+    ? "FULLY REFUNDED"
+    : isPartiallyRefunded
+      ? "PARTIALLY REFUNDED"
+      : null;
+
+  const refundedTotalCents = transaction.refundedTotalCents ?? 0;
+  const netCents = transaction.totalCents - refundedTotalCents;
+
   return (
     <div
       className="text-gray-900 text-[13px] w-full relative"
       style={{ fontFamily: "'Epilogue', sans-serif" }}
     >
       {/* COMPED stamp */}
-      {isComped && (
+      {isComped && !hasAnyRefund && (
         <div
           style={{
             position: "absolute",
@@ -53,6 +82,28 @@ export function Receipt({ transaction }: ReceiptProps) {
           }}
         >
           COMPED
+        </div>
+      )}
+
+      {/* Refund stamp */}
+      {refundStampText && (
+        <div
+          style={{
+            position: "absolute",
+            top: "8px",
+            right: "4px",
+            fontFamily: "'Fraunces', serif",
+            fontSize: "11px",
+            fontWeight: 700,
+            color: "#DC2626",
+            transform: "rotate(-8deg)",
+            userSelect: "none",
+            pointerEvents: "none",
+            letterSpacing: "0.05em",
+            textAlign: "right",
+          }}
+        >
+          {refundStampText}
         </div>
       )}
 
@@ -90,10 +141,7 @@ export function Receipt({ transaction }: ReceiptProps) {
           </p>
         )}
         {isComped && (
-          <p
-            className="text-[12px] font-semibold"
-            style={{ color: "#DC2626" }}
-          >
+          <p className="text-[12px] font-semibold" style={{ color: "#DC2626" }}>
             COMPED · {transaction.compReason ?? "No reason given"}
           </p>
         )}
@@ -104,27 +152,31 @@ export function Receipt({ transaction }: ReceiptProps) {
       {/* Line items */}
       <div className="space-y-2.5">
         {transaction.lineItems.map((line) => {
-          const modifierTotal = (line.modifiers ?? []).reduce(
-            (s, m) => s + m.priceCents,
-            0,
-          );
-          const lineTotal =
-            Math.round(
-              (line.priceCents + modifierTotal) *
-                line.quantity *
-                (1 - (line.discountPercent ?? 0) / 100),
-            );
+          const lineTotal = calcLineTotalCents(line);
           const discountCents = calcLineDiscountCents(line);
           const staffMember = STAFF.find((s) => s.id === line.staffId);
+          const isRefunded = allRefundedLineIds.has(line.lineId);
+
           return (
-            <div key={line.lineId}>
+            <div key={line.lineId} style={{ opacity: isRefunded ? 0.5 : 1 }}>
               <div className="flex justify-between items-baseline">
-                <span className="text-[13px] font-medium text-gray-900">
+                <span
+                  className="text-[13px] font-medium text-gray-900"
+                  style={
+                    isRefunded
+                      ? { textDecoration: "line-through", color: "#9CA3AF" }
+                      : {}
+                  }
+                >
                   {line.name}
                 </span>
                 <span
-                  className="text-[13px] font-medium text-gray-900 tabular-nums ml-4"
-                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                  className="text-[13px] font-medium tabular-nums ml-4"
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    color: isRefunded ? "#9CA3AF" : "#111827",
+                    textDecoration: isRefunded ? "line-through" : "none",
+                  }}
                 >
                   {formatCurrency(lineTotal)}
                 </span>
@@ -143,16 +195,12 @@ export function Receipt({ transaction }: ReceiptProps) {
                   )}
                 </span>
               </div>
-              {/* Modifier sub-rows */}
               {(line.modifiers ?? []).map((mod) => (
                 <div
                   key={mod.id}
                   className="flex justify-between items-baseline pl-4 mt-0.5"
                 >
-                  <span
-                    className="text-[12px] text-gray-400"
-                    style={{ fontFamily: "'Epilogue', sans-serif" }}
-                  >
+                  <span className="text-[12px] text-gray-400">
                     + {mod.name}
                   </span>
                   <span
@@ -163,12 +211,14 @@ export function Receipt({ transaction }: ReceiptProps) {
                   </span>
                 </div>
               ))}
-              {/* Discount sub-row */}
               {discountCents > 0 && (
                 <div className="flex justify-between items-baseline pl-4 mt-0.5">
                   <span
                     className="text-[12px]"
-                    style={{ color: "#DC2626", fontFamily: "'Epilogue', sans-serif" }}
+                    style={{
+                      color: "#DC2626",
+                      fontFamily: "'Epilogue', sans-serif",
+                    }}
                   >
                     Discount −{line.discountPercent}%
                   </span>
@@ -233,6 +283,45 @@ export function Receipt({ transaction }: ReceiptProps) {
             {formatCurrency(transaction.totalCents)}
           </span>
         </div>
+
+        {/* Refund rows */}
+        {(transaction.refunds ?? []).map((refund, i) => (
+          <div
+            key={refund.id}
+            className="flex justify-between text-[12px] pt-0.5"
+            style={{ color: "#DC2626" }}
+          >
+            <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
+              Refund #{i + 1} · {formatShortDatetime(refund.refundedAt)}
+            </span>
+            <span
+              className="tabular-nums"
+              style={{ fontFamily: "'JetBrains Mono', monospace" }}
+            >
+              −{formatCurrency(refund.totalRefundCents)}
+            </span>
+          </div>
+        ))}
+
+        {/* Net after refunds */}
+        {hasAnyRefund && (
+          <div className="flex justify-between text-[13px] font-semibold pt-1 border-t border-gray-200">
+            <span
+              style={{ fontFamily: "'Epilogue', sans-serif", color: "#374151" }}
+            >
+              Net
+            </span>
+            <span
+              className="tabular-nums"
+              style={{
+                fontFamily: "'Fraunces', serif",
+                color: "#374151",
+              }}
+            >
+              {formatCurrency(netCents)}
+            </span>
+          </div>
+        )}
       </div>
 
       <Divider />

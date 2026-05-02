@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
-import type { Transaction } from "@/hooks/useCheckout";
+import type { Transaction, RefundRecord } from "@/hooks/useCheckout";
 import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
 import { calcDailySummary, calcPerStaffSummary } from "@/lib/reports";
+import { calcLineTotalCents } from "@/lib/cartMath";
 import { Receipt } from "./Receipt";
+import { RefundPicker } from "./RefundPicker";
 import { Toast } from "./Toast";
+import { useManagerOverride } from "@/hooks/useManagerOverride";
 
 const TRANSACTIONS_KEY = "nuatis-pos:transactions";
 
@@ -15,6 +18,10 @@ function loadTransactions(): Transaction[] {
   } catch {
     return [];
   }
+}
+
+function saveTransactions(txs: Transaction[]): void {
+  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(txs));
 }
 
 function formatTime(isoString: string): string {
@@ -46,6 +53,17 @@ function txStaffLabel(tx: Transaction): string {
   return "Multiple";
 }
 
+function txRefundStatus(
+  tx: Transaction,
+): "none" | "partial" | "full" {
+  const refundedIds = new Set(
+    (tx.refunds ?? []).flatMap((r) => r.lineIds),
+  );
+  if (refundedIds.size === 0) return "none";
+  if (tx.lineItems.every((l) => refundedIds.has(l.lineId))) return "full";
+  return "partial";
+}
+
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 function isValidEmail(v: string) {
   return EMAIL_RE.test(v);
@@ -58,15 +76,23 @@ interface ReceiptDetailProps {
   tx: Transaction;
   onBack: () => void;
   onClose: () => void;
+  onUpdateTransaction: (updated: Transaction) => void;
 }
 
-function ReceiptDetail({ tx, onBack, onClose }: ReceiptDetailProps) {
+function ReceiptDetail({
+  tx,
+  onBack,
+  onClose,
+  onUpdateTransaction,
+}: ReceiptDetailProps) {
+  const { requestManagerOverride } = useManagerOverride();
   const [expandedInput, setExpandedInput] = useState<"email" | "sms" | null>(
     null,
   );
   const [emailInput, setEmailInput] = useState("");
   const [smsInput, setSmsInput] = useState("");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [inRefundPicker, setInRefundPicker] = useState(false);
 
   function showToast(msg: string) {
     setToastMsg(msg);
@@ -77,16 +103,73 @@ function ReceiptDetail({ tx, onBack, onClose }: ReceiptDetailProps) {
   const btnCls =
     "flex-1 h-[48px] rounded-lg text-[14px] font-semibold transition-all duration-150 active:scale-[0.97]";
 
+  const allRefundedLineIds = new Set(
+    (tx.refunds ?? []).flatMap((r) => r.lineIds),
+  );
+  const refundStatus = txRefundStatus(tx);
+  const isFullyRefunded = refundStatus === "full";
+  const canRefund = tx.totalCents > 0 && !isFullyRefunded;
+
+  async function handleRefundTap() {
+    const approved = await requestManagerOverride("Refund authorization");
+    if (approved) {
+      setInRefundPicker(true);
+    }
+  }
+
+  function handleRefundComplete(selectedLineIds: string[]) {
+    // Compute refund math
+    const selectedLines = tx.lineItems.filter((l) =>
+      selectedLineIds.includes(l.lineId),
+    );
+    const lineRefundCents = selectedLines.reduce(
+      (s, l) => s + calcLineTotalCents(l),
+      0,
+    );
+    const taxRefundCents =
+      tx.subtotalCents > 0
+        ? Math.round((lineRefundCents / tx.subtotalCents) * tx.taxCents)
+        : 0;
+    const totalRefundCents = lineRefundCents + taxRefundCents;
+
+    const newRefund: RefundRecord = {
+      id: crypto.randomUUID(),
+      refundedAt: new Date().toISOString(),
+      lineIds: selectedLineIds,
+      lineRefundCents,
+      taxRefundCents,
+      totalRefundCents,
+      managerOverride: true,
+    };
+
+    const updated: Transaction = {
+      ...tx,
+      refunds: [...(tx.refunds ?? []), newRefund],
+      refundedTotalCents: (tx.refundedTotalCents ?? 0) + totalRefundCents,
+    };
+
+    onUpdateTransaction(updated);
+    setInRefundPicker(false);
+    showToast("Refund processed (mock)");
+  }
+
   return (
     <>
       {toastMsg && <Toast message={toastMsg} />}
 
+      {/* Top bar */}
       <div
         className="flex items-center px-5 py-4 border-b flex-shrink-0"
         style={{ borderColor: "#E5E7EB" }}
       >
         <button
-          onClick={onBack}
+          onClick={() => {
+            if (inRefundPicker) {
+              setInRefundPicker(false);
+            } else {
+              onBack();
+            }
+          }}
           className="text-[14px] font-medium text-gray-500 hover:text-gray-800 transition-colors mr-3"
           style={{ fontFamily: "'Epilogue', sans-serif" }}
         >
@@ -96,7 +179,7 @@ function ReceiptDetail({ tx, onBack, onClose }: ReceiptDetailProps) {
           className="flex-1 text-center text-[18px] font-semibold text-gray-900"
           style={{ fontFamily: "'Fraunces', serif" }}
         >
-          Receipt #{txShort}
+          {inRefundPicker ? "Refund Items" : `Receipt #${txShort}`}
         </p>
         <button
           onClick={onClose}
@@ -107,109 +190,170 @@ function ReceiptDetail({ tx, onBack, onClose }: ReceiptDetailProps) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5">
-        <Receipt transaction={tx} />
+      {inRefundPicker ? (
+        /* Refund picker */
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <RefundPicker
+            transaction={tx}
+            refundedLineIds={allRefundedLineIds}
+            onComplete={handleRefundComplete}
+            onCancel={() => setInRefundPicker(false)}
+          />
+        </div>
+      ) : (
+        /* Receipt detail */
+        <div className="flex-1 overflow-y-auto p-5">
+          <Receipt transaction={tx} />
 
-        <div className="mt-5 pt-4 border-t" style={{ borderColor: "#E5E7EB" }}>
-          {expandedInput === "email" && (
-            <div className="flex gap-2 mb-3">
-              <input
-                type="email"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="customer@example.com"
-                className="flex-1 h-[42px] px-3 text-[14px] rounded-lg border outline-none"
-                style={{
-                  fontFamily: "'Epilogue', sans-serif",
-                  borderColor: "#D1D5DB",
-                }}
-                autoFocus
-              />
+          <div
+            className="mt-5 pt-4 border-t"
+            style={{ borderColor: "#E5E7EB" }}
+          >
+            {expandedInput === "email" && (
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="customer@example.com"
+                  className="flex-1 h-[42px] px-3 text-[14px] rounded-lg border outline-none"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    borderColor: "#D1D5DB",
+                  }}
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    if (!isValidEmail(emailInput)) return;
+                    showToast("Email sent (mock)");
+                    setEmailInput("");
+                    setExpandedInput(null);
+                  }}
+                  disabled={!isValidEmail(emailInput)}
+                  className="h-[42px] px-4 rounded-lg text-[13px] font-semibold text-white"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    backgroundColor: isValidEmail(emailInput)
+                      ? "#E84A00"
+                      : "#D1D5DB",
+                    cursor: isValidEmail(emailInput)
+                      ? "pointer"
+                      : "not-allowed",
+                  }}
+                >
+                  Send
+                </button>
+              </div>
+            )}
+            {expandedInput === "sms" && (
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="tel"
+                  value={smsInput}
+                  onChange={(e) => setSmsInput(e.target.value)}
+                  placeholder="(555) 123-4567"
+                  className="flex-1 h-[42px] px-3 text-[14px] rounded-lg border outline-none"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    borderColor: "#D1D5DB",
+                  }}
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    if (!isValidPhone(smsInput)) return;
+                    showToast("SMS sent (mock)");
+                    setSmsInput("");
+                    setExpandedInput(null);
+                  }}
+                  disabled={!isValidPhone(smsInput)}
+                  className="h-[42px] px-4 rounded-lg text-[13px] font-semibold text-white"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    backgroundColor: isValidPhone(smsInput)
+                      ? "#E84A00"
+                      : "#D1D5DB",
+                    cursor: isValidPhone(smsInput) ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Send
+                </button>
+              </div>
+            )}
+
+            {/* Refund button */}
+            {canRefund && (
               <button
-                onClick={() => {
-                  if (!isValidEmail(emailInput)) return;
-                  showToast("Email sent (mock)");
-                  setEmailInput("");
-                  setExpandedInput(null);
-                }}
-                disabled={!isValidEmail(emailInput)}
-                className="h-[42px] px-4 rounded-lg text-[13px] font-semibold text-white"
+                onClick={() => void handleRefundTap()}
+                className="w-full h-[48px] rounded-lg text-[14px] font-semibold mb-2 transition-all duration-150 active:scale-[0.97]"
                 style={{
                   fontFamily: "'Epilogue', sans-serif",
-                  backgroundColor: isValidEmail(emailInput) ? "#E84A00" : "#D1D5DB",
-                  cursor: isValidEmail(emailInput) ? "pointer" : "not-allowed",
+                  backgroundColor: "white",
+                  color: "#DC2626",
+                  border: "2px solid #DC2626",
                 }}
               >
-                Send
+                Refund
               </button>
-            </div>
-          )}
-          {expandedInput === "sms" && (
-            <div className="flex gap-2 mb-3">
-              <input
-                type="tel"
-                value={smsInput}
-                onChange={(e) => setSmsInput(e.target.value)}
-                placeholder="(555) 123-4567"
-                className="flex-1 h-[42px] px-3 text-[14px] rounded-lg border outline-none"
-                style={{
-                  fontFamily: "'Epilogue', sans-serif",
-                  borderColor: "#D1D5DB",
-                }}
-                autoFocus
-              />
+            )}
+
+            {/* Re-delivery buttons */}
+            <div className="flex gap-2">
               <button
-                onClick={() => {
-                  if (!isValidPhone(smsInput)) return;
-                  showToast("SMS sent (mock)");
-                  setSmsInput("");
-                  setExpandedInput(null);
-                }}
-                disabled={!isValidPhone(smsInput)}
-                className="h-[42px] px-4 rounded-lg text-[13px] font-semibold text-white"
+                onClick={() => showToast("Sent to printer (mock)")}
+                className={btnCls}
                 style={{
                   fontFamily: "'Epilogue', sans-serif",
-                  backgroundColor: isValidPhone(smsInput) ? "#E84A00" : "#D1D5DB",
-                  cursor: isValidPhone(smsInput) ? "pointer" : "not-allowed",
+                  backgroundColor: "#E84A00",
+                  color: "white",
                 }}
               >
-                Send
+                Print
+              </button>
+              <button
+                onClick={() =>
+                  setExpandedInput((p) => (p === "email" ? null : "email"))
+                }
+                className={btnCls}
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  backgroundColor: "white",
+                  color: "#E84A00",
+                  border: "2px solid #E84A00",
+                }}
+              >
+                Email
+              </button>
+              <button
+                onClick={() =>
+                  setExpandedInput((p) => (p === "sms" ? null : "sms"))
+                }
+                className={btnCls}
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  backgroundColor: "white",
+                  color: "#E84A00",
+                  border: "2px solid #E84A00",
+                }}
+              >
+                SMS
+              </button>
+              <button
+                onClick={onBack}
+                className={btnCls}
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  backgroundColor: "#F3F4F6",
+                  color: "#374151",
+                }}
+              >
+                Close
               </button>
             </div>
-          )}
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => showToast("Sent to printer (mock)")}
-              className={btnCls}
-              style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "#E84A00", color: "white" }}
-            >
-              Print
-            </button>
-            <button
-              onClick={() => setExpandedInput((p) => p === "email" ? null : "email")}
-              className={btnCls}
-              style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "white", color: "#E84A00", border: "2px solid #E84A00" }}
-            >
-              Email
-            </button>
-            <button
-              onClick={() => setExpandedInput((p) => p === "sms" ? null : "sms")}
-              className={btnCls}
-              style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "white", color: "#E84A00", border: "2px solid #E84A00" }}
-            >
-              SMS
-            </button>
-            <button
-              onClick={onBack}
-              className={btnCls}
-              style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "#F3F4F6", color: "#374151" }}
-            >
-              Close
-            </button>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
@@ -222,7 +366,9 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
   const [viewMode, setViewMode] = useState<"summary" | "receipt">("summary");
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [filter, setFilter] = useState<"today" | "all">("today");
-  const [transactions] = useState<Transaction[]>(() => loadTransactions());
+  const [transactions, setTransactions] = useState<Transaction[]>(() =>
+    loadTransactions(),
+  );
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -232,6 +378,15 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  function updateTransaction(updated: Transaction) {
+    setTransactions((prev) => {
+      const next = prev.map((t) => (t.id === updated.id ? updated : t));
+      saveTransactions(next);
+      return next;
+    });
+    setSelectedTx(updated);
+  }
+
   const today = new Date().toDateString();
   const todayTxs = transactions.filter(
     (tx) => new Date(tx.completedAt).toDateString() === today,
@@ -240,11 +395,34 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
   const summary = calcDailySummary(todayTxs);
   const staffSummaries = calcPerStaffSummary(todayTxs, STAFF);
 
+  const netRevenueCents = summary.revenueCents - summary.refundCents;
+
   const stats = [
-    { label: "Transactions", value: String(summary.count), valueColor: "#111827" },
-    { label: "Tips", value: formatCurrency(summary.tipCents), valueColor: "#111827" },
-    { label: "Avg Ticket", value: formatCurrency(summary.avgTicketCents), valueColor: "#111827" },
-    { label: "Discounts", value: formatCurrency(summary.discountCents), valueColor: "#DC2626" },
+    {
+      label: "Transactions",
+      value: String(summary.count),
+      valueColor: "#111827",
+    },
+    {
+      label: "Tips",
+      value: formatCurrency(summary.tipCents),
+      valueColor: "#111827",
+    },
+    {
+      label: "Avg Ticket",
+      value: formatCurrency(summary.avgTicketCents),
+      valueColor: "#111827",
+    },
+    {
+      label: "Discounts",
+      value: formatCurrency(summary.discountCents),
+      valueColor: "#DC2626",
+    },
+    {
+      label: "Refunds",
+      value: summary.refundCents > 0 ? `−${formatCurrency(summary.refundCents)}` : "$0.00",
+      valueColor: summary.refundCents > 0 ? "#DC2626" : "#111827",
+    },
   ];
 
   return (
@@ -264,31 +442,68 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
               className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0"
               style={{ borderColor: "#E5E7EB" }}
             >
-              <p className="text-[22px] font-bold text-gray-900" style={{ fontFamily: "'Fraunces', serif" }}>
+              <p
+                className="text-[22px] font-bold text-gray-900"
+                style={{ fontFamily: "'Fraunces', serif" }}
+              >
                 Today's Sales
               </p>
-              <button onClick={onClose} className="text-[20px] text-gray-400 hover:text-gray-700 transition-colors leading-none">
+              <button
+                onClick={onClose}
+                className="text-[20px] text-gray-400 hover:text-gray-700 transition-colors leading-none"
+              >
                 ✕
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto">
               <div className="px-5 pt-5 pb-4">
-                <p className="text-[14px] text-gray-500 mb-2" style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                <p
+                  className="text-[14px] text-gray-500 mb-2"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                >
                   {formatTodayDate()}
                 </p>
-                <p className="text-[48px] font-bold text-gray-900 tabular-nums leading-none mb-4" style={{ fontFamily: "'Fraunces', serif" }}>
-                  {formatCurrency(summary.revenueCents)}
-                </p>
 
-                {/* 4-stat row */}
-                <div className="flex gap-2 mb-4">
+                {/* Revenue + Net sub-line */}
+                <div className="mb-4">
+                  <p
+                    className="text-[48px] font-bold text-gray-900 tabular-nums leading-none"
+                    style={{ fontFamily: "'Fraunces', serif" }}
+                  >
+                    {formatCurrency(summary.revenueCents)}
+                  </p>
+                  {summary.refundCents > 0 && (
+                    <p
+                      className="text-[12px] text-gray-400 mt-0.5 tabular-nums"
+                      style={{ fontFamily: "'Epilogue', sans-serif" }}
+                    >
+                      Net: {formatCurrency(netRevenueCents)}
+                    </p>
+                  )}
+                </div>
+
+                {/* 5-stat row */}
+                <div className="flex gap-1.5 mb-4">
                   {stats.map(({ label, value, valueColor }) => (
-                    <div key={label} className="flex-1 rounded-xl p-3" style={{ backgroundColor: "#F3F4F6" }}>
-                      <p className="text-[11px] text-gray-500 mb-0.5" style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                    <div
+                      key={label}
+                      className="flex-1 rounded-xl p-2.5"
+                      style={{ backgroundColor: "#F3F4F6" }}
+                    >
+                      <p
+                        className="text-[10px] text-gray-500 mb-0.5"
+                        style={{ fontFamily: "'Epilogue', sans-serif" }}
+                      >
                         {label}
                       </p>
-                      <p className="text-[17px] font-semibold tabular-nums" style={{ fontFamily: "'Fraunces', serif", color: valueColor }}>
+                      <p
+                        className="text-[14px] font-semibold tabular-nums"
+                        style={{
+                          fontFamily: "'Fraunces', serif",
+                          color: valueColor,
+                        }}
+                      >
                         {value}
                       </p>
                     </div>
@@ -296,26 +511,51 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                 </div>
 
                 {/* By Staff */}
-                <div className="border-t pt-4" style={{ borderColor: "#E5E7EB" }}>
-                  <p className="text-[14px] font-semibold text-gray-700 mb-3" style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                <div
+                  className="border-t pt-4"
+                  style={{ borderColor: "#E5E7EB" }}
+                >
+                  <p
+                    className="text-[14px] font-semibold text-gray-700 mb-3"
+                    style={{ fontFamily: "'Epilogue', sans-serif" }}
+                  >
                     By Staff
                   </p>
                   <div className="flex flex-col gap-2">
                     {staffSummaries.map((s) => (
-                      <div key={s.staffId} className="flex items-center justify-between py-1">
+                      <div
+                        key={s.staffId}
+                        className="flex items-center justify-between py-1"
+                      >
                         <div>
-                          <span className="text-[14px] font-medium text-gray-800" style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                          <span
+                            className="text-[14px] font-medium text-gray-800"
+                            style={{ fontFamily: "'Epilogue', sans-serif" }}
+                          >
                             {s.firstName}
                           </span>
-                          <span className="text-[13px] text-gray-400 ml-2" style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                          <span
+                            className="text-[13px] text-gray-400 ml-2"
+                            style={{ fontFamily: "'Epilogue', sans-serif" }}
+                          >
                             {s.role}
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-[13px] text-gray-500 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                          <span
+                            className="text-[13px] text-gray-500 tabular-nums"
+                            style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                            }}
+                          >
                             {s.txCount} txn
                           </span>
-                          <span className="text-[14px] font-medium text-gray-900 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                          <span
+                            className="text-[14px] font-medium text-gray-900 tabular-nums"
+                            style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                            }}
+                          >
                             {formatCurrency(s.revenueCents)}
                           </span>
                         </div>
@@ -326,9 +566,15 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
               </div>
 
               {/* Transaction list */}
-              <div className="border-t px-5 pt-4 pb-5" style={{ borderColor: "#E5E7EB" }}>
+              <div
+                className="border-t px-5 pt-4 pb-5"
+                style={{ borderColor: "#E5E7EB" }}
+              >
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-[18px] font-semibold text-gray-900" style={{ fontFamily: "'Fraunces', serif" }}>
+                  <p
+                    className="text-[18px] font-semibold text-gray-900"
+                    style={{ fontFamily: "'Fraunces', serif" }}
+                  >
                     Recent Transactions
                   </p>
                   <div className="flex gap-1">
@@ -339,9 +585,13 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                         className="h-[28px] px-3 rounded-full text-[12px] font-medium transition-all duration-100"
                         style={{
                           fontFamily: "'Epilogue', sans-serif",
-                          backgroundColor: filter === f ? "#FFF0E8" : "#F3F4F6",
+                          backgroundColor:
+                            filter === f ? "#FFF0E8" : "#F3F4F6",
                           color: filter === f ? "#E84A00" : "#6B7280",
-                          border: filter === f ? "1.5px solid #E84A00" : "1.5px solid transparent",
+                          border:
+                            filter === f
+                              ? "1.5px solid #E84A00"
+                              : "1.5px solid transparent",
                           fontWeight: filter === f ? 600 : 400,
                         }}
                       >
@@ -352,57 +602,128 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                 </div>
 
                 {displayTxs.length === 0 ? (
-                  <p className="text-center text-[16px] text-gray-400 py-8" style={{ fontFamily: "'Epilogue', sans-serif" }}>
-                    {filter === "today" ? "No sales yet today" : "No transactions saved"}
+                  <p
+                    className="text-center text-[16px] text-gray-400 py-8"
+                    style={{ fontFamily: "'Epilogue', sans-serif" }}
+                  >
+                    {filter === "today"
+                      ? "No sales yet today"
+                      : "No transactions saved"}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-1">
-                    {[...displayTxs].reverse().map((tx) => (
-                      <button
-                        key={tx.id}
-                        onClick={() => { setSelectedTx(tx); setViewMode("receipt"); }}
-                        className="w-full text-left px-3 py-3 rounded-xl hover:bg-gray-50 transition-colors duration-100"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[14px] font-medium text-gray-500 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                              {formatTime(tx.completedAt)}
-                            </span>
-                            {(tx.compApplied ?? false) && (
+                    {[...displayTxs].reverse().map((tx) => {
+                      const refundStatus = txRefundStatus(tx);
+                      const refundedCents = tx.refundedTotalCents ?? 0;
+                      return (
+                        <button
+                          key={tx.id}
+                          onClick={() => {
+                            setSelectedTx(tx);
+                            setViewMode("receipt");
+                          }}
+                          className="w-full text-left px-3 py-3 rounded-xl hover:bg-gray-50 transition-colors duration-100"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span
-                                className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                className="text-[14px] font-medium text-gray-500 tabular-nums"
+                                style={{
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                              >
+                                {formatTime(tx.completedAt)}
+                              </span>
+                              {(tx.compApplied ?? false) && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#DC2626",
+                                    backgroundColor: "#FEE2E2",
+                                  }}
+                                >
+                                  COMPED
+                                </span>
+                              )}
+                              {refundStatus === "full" && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#DC2626",
+                                    backgroundColor: "#FEE2E2",
+                                  }}
+                                >
+                                  REFUNDED
+                                </span>
+                              )}
+                              {refundStatus === "partial" && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#DC2626",
+                                    backgroundColor: "#FEE2E2",
+                                  }}
+                                >
+                                  PARTIAL
+                                </span>
+                              )}
+                              <span
+                                className="text-[14px] font-medium text-gray-900"
+                                style={{
+                                  fontFamily: "'Epilogue', sans-serif",
+                                }}
+                              >
+                                {tx.customer
+                                  ? `${tx.customer.firstName} ${tx.customer.lastName}`
+                                  : "Walk-in"}
+                              </span>
+                            </div>
+                            <span
+                              className="text-[16px] font-semibold text-gray-900 tabular-nums ml-2 flex-shrink-0"
+                              style={{ fontFamily: "'Fraunces', serif" }}
+                            >
+                              {formatCurrency(tx.totalCents)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            <span
+                              className="text-[12px] text-gray-400"
+                              style={{
+                                fontFamily: "'JetBrains Mono', monospace",
+                              }}
+                            >
+                              #{tx.id.slice(-8).toUpperCase()}
+                            </span>
+                            <span
+                              className="text-[12px] text-gray-400"
+                              style={{ fontFamily: "'Epilogue', sans-serif" }}
+                            >
+                              {deliveryIcon(tx)}
+                            </span>
+                            <span
+                              className="text-[12px] text-gray-400"
+                              style={{ fontFamily: "'Epilogue', sans-serif" }}
+                            >
+                              {txStaffLabel(tx)}
+                            </span>
+                            {refundedCents > 0 && (
+                              <span
+                                className="text-[12px]"
                                 style={{
                                   fontFamily: "'Epilogue', sans-serif",
                                   color: "#DC2626",
-                                  backgroundColor: "#FEE2E2",
                                 }}
                               >
-                                COMPED
+                                Refunded {formatCurrency(refundedCents)}
                               </span>
                             )}
-                            <span className="text-[14px] font-medium text-gray-900" style={{ fontFamily: "'Epilogue', sans-serif" }}>
-                              {tx.customer
-                                ? `${tx.customer.firstName} ${tx.customer.lastName}`
-                                : "Walk-in"}
-                            </span>
                           </div>
-                          <span className="text-[16px] font-semibold text-gray-900 tabular-nums" style={{ fontFamily: "'Fraunces', serif" }}>
-                            {formatCurrency(tx.totalCents)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className="text-[12px] text-gray-400" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                            #{tx.id.slice(-8).toUpperCase()}
-                          </span>
-                          <span className="text-[12px] text-gray-400" style={{ fontFamily: "'Epilogue', sans-serif" }}>
-                            {deliveryIcon(tx)}
-                          </span>
-                          <span className="text-[12px] text-gray-400" style={{ fontFamily: "'Epilogue', sans-serif" }}>
-                            {txStaffLabel(tx)}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -414,6 +735,7 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
               tx={selectedTx}
               onBack={() => setViewMode("summary")}
               onClose={onClose}
+              onUpdateTransaction={updateTransaction}
             />
           )
         )}
