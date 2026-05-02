@@ -12,6 +12,8 @@ interface HeaderProps {
   onOpenReports: () => void;
   heldCount: number;
   onOpenHeldTickets: () => void;
+  waitlistCount: number;
+  onOpenWaitlist: () => void;
   activeVerticalDisplayName: string;
   switcherDisabled: boolean;
   onOpenVerticalSwitcher: () => void;
@@ -41,6 +43,8 @@ export function Header({
   onOpenReports,
   heldCount,
   onOpenHeldTickets,
+  waitlistCount,
+  onOpenWaitlist,
   activeVerticalDisplayName,
   switcherDisabled,
   onOpenVerticalSwitcher,
@@ -76,7 +80,7 @@ export function Header({
       className="flex items-center justify-between px-6 py-3 border-b border-black/10 flex-shrink-0"
       style={{ backgroundColor: "#F8F7F4" }}
     >
-      {/* Left: brand + vertical pill + held pill + reports link */}
+      {/* Left: brand + vertical pill + held pill + waitlist pill + reports link */}
       <div className="flex items-center gap-3">
         <span
           className="text-[22px] font-bold text-gray-900 tracking-tight"
@@ -117,6 +121,20 @@ export function Header({
             Held: {heldCount}
           </button>
         )}
+
+        {/* Waitlist pill — always visible so operators can add the first walk-in */}
+        <button
+          onClick={onOpenWaitlist}
+          className="h-[22px] px-2.5 rounded-full text-[11px] font-semibold transition-colors duration-150"
+          style={{
+            fontFamily: "'Epilogue', sans-serif",
+            backgroundColor: waitlistCount > 0 ? "#E84A00" : "#F3F4F6",
+            color: waitlistCount > 0 ? "white" : "#9CA3AF",
+            cursor: "pointer",
+          }}
+        >
+          Waitlist{waitlistCount > 0 ? `: ${waitlistCount}` : ""}
+        </button>
 
         {/* Today's Sales link */}
         <button

@@ -10,12 +10,14 @@ import { ReportsOverlay } from "@/components/ReportsOverlay";
 import { HeldTicketsModal } from "@/components/HeldTicketsModal";
 import { VerticalSwitcher } from "@/components/VerticalSwitcher";
 import { SettingsOverlay } from "@/components/SettingsOverlay";
+import { WaitlistOverlay } from "@/components/WaitlistOverlay";
 import { Toast } from "@/components/Toast";
 import { useCart } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
 import { useActiveStaff } from "@/hooks/useActiveStaff";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
 import { useVerticalSettings } from "@/hooks/useVerticalSettings";
+import { useWaitlist } from "@/hooks/useWaitlist";
 import { calcSubtotal, calcTaxWithRate, calcTotal } from "@/lib/cartMath";
 import {
   getHeldTickets,
@@ -24,6 +26,7 @@ import {
   removeHeldTicket,
   type HeldTicket,
 } from "@/lib/heldTickets";
+import type { WaitlistEntry } from "@/lib/waitlist";
 import type { VerticalId } from "@/lib/verticals";
 import type { AuthUser } from "@workspace/replit-auth-web";
 
@@ -58,6 +61,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
   const { activeStaff, setActiveStaff } = useActiveStaff();
   const checkout = useCheckout(clear);
+  const { entries: waitlistEntries, addEntry, removeEntry } = useWaitlist();
 
   const [pulsingServiceId, setPulsingServiceId] = useState<string | null>(null);
   const [showStaffSwitcher, setShowStaffSwitcher] = useState(false);
@@ -66,6 +70,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [showHeldModal, setShowHeldModal] = useState(false);
   const [showVerticalSwitcher, setShowVerticalSwitcher] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showWaitlist, setShowWaitlist] = useState(false);
   const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() =>
     getHeldTickets(activeVerticalId),
   );
@@ -178,7 +183,42 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [setActiveVerticalId],
   );
 
+  // Promote a waitlist entry to an active cart ticket
+  const handleStartService = useCallback(
+    (entry: WaitlistEntry) => {
+      // Build CartCustomer from the entry's name
+      const nameParts = entry.name.trim().split(/\s+/);
+      const firstName = nameParts[0] ?? entry.name.trim();
+      const lastName = nameParts.slice(1).join(" ");
+      attachCustomer({
+        id: entry.id,
+        firstName,
+        lastName,
+        phone: entry.phone,
+      });
+
+      // Add the pre-selected service as a cart line if present
+      if (
+        entry.serviceId !== null &&
+        entry.serviceName !== null &&
+        entry.servicePriceCents !== null
+      ) {
+        addItem(
+          entry.serviceId,
+          entry.serviceName,
+          entry.servicePriceCents,
+          activeStaff.id,
+        );
+      }
+
+      removeEntry(entry.id);
+      setShowWaitlist(false);
+    },
+    [attachCustomer, addItem, activeStaff.id, removeEntry],
+  );
+
   const switcherDisabled = lines.length > 0 || checkout.state !== "idle";
+  const cartIsIdle = lines.length === 0 && checkout.state === "idle";
   const activeStaffList = settings.staff.filter((s) => s.active);
 
   return (
@@ -197,6 +237,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         onOpenReports={() => setReportsOpen(true)}
         heldCount={heldTickets.length}
         onOpenHeldTickets={() => setShowHeldModal(true)}
+        waitlistCount={waitlistEntries.length}
+        onOpenWaitlist={() => setShowWaitlist(true)}
         activeVerticalDisplayName={config.displayName}
         switcherDisabled={switcherDisabled}
         onOpenVerticalSwitcher={() => setShowVerticalSwitcher(true)}
@@ -300,6 +342,17 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
       {showSettings && (
         <SettingsOverlay onClose={() => setShowSettings(false)} />
+      )}
+
+      {showWaitlist && (
+        <WaitlistOverlay
+          entries={waitlistEntries}
+          onAdd={addEntry}
+          onRemove={removeEntry}
+          onStartService={handleStartService}
+          cartIsIdle={cartIsIdle}
+          onClose={() => setShowWaitlist(false)}
+        />
       )}
     </div>
   );

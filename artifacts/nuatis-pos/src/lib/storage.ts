@@ -10,6 +10,9 @@ export const heldTicketsKey = (verticalId: string): string =>
 export const settingsKey = (verticalId: string): string =>
   `nuatis-pos:${verticalId}:settings`;
 
+export const waitlistKey = (verticalId: string): string =>
+  `nuatis-pos:${verticalId}:waitlist`;
+
 export const ACTIVE_STAFF_KEY = "nuatis-pos:activeStaffId";
 export const ACTIVE_VERTICAL_KEY = "nuatis-pos:activeVerticalId";
 
