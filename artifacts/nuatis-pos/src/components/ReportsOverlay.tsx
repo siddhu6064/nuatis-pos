@@ -448,22 +448,29 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
     },
   ];
 
-  // Payment mix — today's non-comped transactions only
-  const cardTxsToday = todayTxs.filter(
-    (tx) => !tx.compApplied && (tx.paymentMethod ?? "card") === "card",
-  );
-  const cashTxsToday = todayTxs.filter(
-    (tx) => !tx.compApplied && (tx.paymentMethod ?? "card") === "cash",
-  );
-  const showPaymentMix = cardTxsToday.length > 0 && cashTxsToday.length > 0;
-  const cardNetRevenue = cardTxsToday.reduce(
-    (s, tx) => s + (tx.totalPaid ?? tx.totalCents) - (tx.refundedTotalCents ?? 0),
-    0,
-  );
-  const cashNetRevenue = cashTxsToday.reduce(
-    (s, tx) => s + (tx.totalPaid ?? tx.totalCents) - (tx.refundedTotalCents ?? 0),
-    0,
-  );
+  // Payment mix — today's non-comped transactions, split-aware
+  // Split txs contribute each leg to the matching bucket
+  let cardNetRevenue = 0;
+  let cashNetRevenue = 0;
+  for (const tx of todayTxs) {
+    if (tx.compApplied) continue;
+    const refundDeduct = tx.refundedTotalCents ?? 0;
+    const method = tx.paymentMethod ?? "card";
+    if (method === "card") {
+      cardNetRevenue += (tx.totalPaid ?? tx.totalCents) - refundDeduct;
+    } else if (method === "cash") {
+      cashNetRevenue += (tx.totalPaid ?? tx.totalCents) - refundDeduct;
+    } else if (method === "split") {
+      // Defensive: if payments array missing, skip split-level
+      for (const p of tx.payments ?? []) {
+        if (p.method === "card") cardNetRevenue += p.amountCents;
+        else if (p.method === "cash") cashNetRevenue += p.amountCents;
+      }
+      // Deduct refunds from the card bucket (single refund record, no routing)
+      cardNetRevenue -= refundDeduct;
+    }
+  }
+  const showPaymentMix = cardNetRevenue > 0 && cashNetRevenue > 0;
 
   return (
     <div
@@ -571,14 +578,14 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                       className="text-[12px] font-medium text-gray-700 tabular-nums"
                       style={{ fontFamily: "'JetBrains Mono', monospace" }}
                     >
-                      Card: {formatCurrency(cardNetRevenue)} ({cardTxsToday.length})
+                      Card: {formatCurrency(cardNetRevenue)}
                     </span>
                     <span className="text-gray-300 text-[10px]">·</span>
                     <span
                       className="text-[12px] font-medium text-gray-700 tabular-nums"
                       style={{ fontFamily: "'JetBrains Mono', monospace" }}
                     >
-                      Cash: {formatCurrency(cashNetRevenue)} ({cashTxsToday.length})
+                      Cash: {formatCurrency(cashNetRevenue)}
                     </span>
                   </div>
                 )}
@@ -754,6 +761,18 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                                   }}
                                 >
                                   DEPOSIT
+                                </span>
+                              )}
+                              {(tx.paymentMethod ?? "card") === "split" && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#0369A1",
+                                    backgroundColor: "#E0F2FE",
+                                  }}
+                                >
+                                  SPLIT
                                 </span>
                               )}
                               <span

@@ -1,0 +1,134 @@
+▶ PROMPT [Phase 3 · Batch 20 · Replit Agent]
+
+CONTEXT
+Nuatis POS prototype, prototype/replit-day-1 branch. 19 batches shipped clean, v0.0.4-prototype tagged at B19. Four verticals live: salon, spa, nail_bar, tattoo. Full operator + owner loops including walk-in queue, cash payment with change calc, appointment-aware register with status state machine, deposit pattern with two-phase transactions and totalPaid as revenue truth.
+
+This batch validates split tender — one transaction, multiple payment methods. Until now, every transaction has been single-method (Card or Cash exclusively, plus deposits credited via appointmentRef). Real-world: customer hands over $40 cash and asks to put the rest on card; or splits a $300 group session across two cards (this batch covers card+cash, not multi-card). New mental model: payment as a multi-step process inside one transaction, with running balance feedback through each step. The Transaction record itself stays single — split tender is a payment-collection pattern, not a transaction-shape change.
+
+GOAL
+Operator can split a single transaction's payment across cash and card in either order, with the cart showing running balance through each payment step, and the resulting transaction record cleanly capturing both portions in Today's Sales and on the receipt.
+
+SCOPE — BUILD THIS
+
+1. New "Split" button in the cart footer, placed beneath or beside the Card/Cash buttons (not replacing them). Treatment: secondary visual weight (outlined or muted-fill, NOT accent-filled — Card/Cash remain the primary paths). Label: "Split Card + Cash". Disabled when cart total is below a sensible minimum ($1.00); allowed otherwise. Disabled when comp is applied (split on $0 makes no sense).
+
+2. Tapping Split opens a new SplitTenderModal (z-50, full-screen overlay matching CashTenderModal panel style):
+   - Top: "Split Tender · {balance display}" title.
+   - Two cards side-by-side: "Card portion" (left) and "Cash portion" (right). Each card shows the amount allocated so far ($0.00 default, JetBrains Mono large display) and a status pill (Pending / Charged / Tendered).
+   - Below the two cards: a single "Remaining: $X.XX" prominent display (JetBrains Mono, accent color when > 0, green when = 0, red when < 0 — last case shouldn't happen but defensive).
+   - Action area: a numeric keypad (same 3×4 layout, right-to-left cents fill, 00/⌫) plus a "Split evenly" quick-button. Above the keypad: a "Tendering for:" segmented control with [Card] / [Cash] selecting which portion the next keypad input applies to.
+   - Two confirm-row buttons:
+     - "Charge Card $X.XX" — gated until Card portion > 0 AND Card portion is not already 'Charged'. On tap → 2-sec simulated card reader (reuse existing pattern), success marks Card portion as 'Charged'. Modal stays open.
+     - "Tender Cash $X.XX" — gated until Cash portion > 0 AND Cash portion is not already 'Tendered'. On tap → opens an inner cash sub-flow (see #4 below).
+   - "Complete Split Sale" final button: gated until BOTH portions are settled (Card='Charged' AND Cash='Tendered') AND remaining = $0.00. On tap: build transaction, fire cash drawer toast (cash was part of payment), close modal, land on receipt.
+   - Cancel ✕: confirms with "Cancel split? Any charges already processed will be voided in production — for prototype this is mock." Confirm cancels, no transaction created. (Prototype mock; do not actually simulate void calls.)
+
+3. Allocation rules (enforced by the modal logic, not just visually):
+   - Card portion + Cash portion must sum to ≤ total at all times. Keypad input that would push the sum above total is silently capped at remaining.
+   - "Split evenly" sets each portion to floor(total/2) cents, with any odd cent appended to Card portion (arbitrary tiebreaker, document inline).
+   - Either portion can be $0 — but if a portion is $0, its corresponding Charge/Tender button stays disabled. (Operator can Split-evenly then re-allocate, e.g., set Card=$0 and Cash=full → effectively a regular cash sale, but they used Split UI; just let it complete — don't force them out.)
+   - Once a portion is settled (Charged/Tendered), its keypad input is locked — operator cannot change Card portion after charging it. Visual: that card grays out with a small lock icon, "Charged $X.XX" pinned.
+   - Active "Tendering for:" segment auto-switches to the other portion when one is settled (small UX nicety).
+
+4. Cash sub-flow inside SplitTenderModal: when "Tender Cash $X.XX" is tapped, the modal transitions to its cash-tender state (does NOT open a separate CashTenderModal — too much z-index stacking). Same UI treatment: large "Amount tendered: $X.XX" display, change-due / need-more feedback, quick-tender row computed from the cash portion (NOT total), the existing keypad area pivots to amount-tendered entry mode. "Confirm Cash $X.XX" button replaces the prior keypad-allocation context. On confirm: cash portion marked 'Tendered', stores tenderedCents and changeCents for the cash leg, drawer toast fires, modal returns to allocation view (or completes immediately if Card already Charged).
+
+5. Transaction record extensions for split-tender:
+   - paymentMethod becomes a discriminated value: keep 'card' and 'cash' for single-method, ADD a new value 'split' for split tender.
+   - When paymentMethod === 'split', the transaction has a payments array: [{ method: 'card', amountCents, processedAt }, { method: 'cash', amountCents, tenderedCents, changeCents, processedAt }] in payment order.
+   - totalPaid = sum of payments[].amountCents (NOT the tendered amounts — change went back to customer). This is critical for Today's Sales math.
+   - For single-method legacy/B17 transactions, payments array is undefined; existing reads continue to work (backward compatible).
+   - Defensive read: if a transaction has paymentMethod='split' but no payments array (data corruption), treat as single-method with empty payments. Don't crash.
+
+6. Receipt rendering for split-tender transactions:
+   - Payment section shows TWO rows: "Card payment: $X.XX" + (mock card-info string matching existing Card pattern), and "Cash payment: $X.XX · Tendered $X.XX · Change $X.XX".
+   - Below those: "Total paid: $X.XX" line for clarity (= sum of both card and cash, NOT including change).
+   - For split with deposit (split tender on a deposit-taken appointment's balance), all existing deposit-applied / balance-paid receipt language is preserved; the split-tender rows replace the single-method row in that section. Deposit credit is applied BEFORE split allocation (operator sees the post-deposit balance as their "total to split").
+
+7. Today's Sales overlay updates:
+   - Transaction list: split-tender transactions show a SPLIT badge (distinct from CASH/DEPOSIT — pick a token that doesn't collide; consider a two-color split chevron or "S+C" abbreviation styling).
+   - Payment mix line: split transactions contribute their card portion to the Card bucket and their cash portion to the Cash bucket (BOTH portions counted, not the larger one). Verify the sum-of-buckets math still equals total revenue across all transactions.
+   - Receipt detail view: same split-aware rendering as live receipt.
+
+8. Refund interaction with split-tender:
+   - Existing line-level partial refund flow runs unchanged: operator picks lines, simulated 1500ms refund processing, REFUNDED/PARTIAL badge applies, per-staff math deducts.
+   - Refund amount calculation: same as today (line revenue × proportional tax). The refund itself does NOT need to allocate back across the original payment methods — that's a production-Stripe concern; for prototype, just record the refund as a single negative on totalPaid. (Real Stripe refunds back to the originating payment method automatically; prototype doesn't simulate that fidelity.)
+   - Refund visualization on the split-tender receipt: same REFUNDED stamp + refund row pattern as today. No special split-aware refund UX.
+
+9. Held tickets compatibility: a held ticket that gets resumed and then taken to split-tender flows correctly through SplitTenderModal — held ticket state restoration sets up the cart total normally, no special path needed. Verify via acceptance.
+
+10. Per-vertical isolation preserved: split-tender transactions in salon don't leak into spa Today's Sales. Standard expectation — just verify nothing in the new code breaks the namespacing pattern.
+
+11. Edge cases handled gracefully (don't crash):
+    - Split allocation entered but operator cancels before charging anything: no transaction created.
+    - Card charged successfully, then operator hits Cancel before tendering cash: confirm message ("Cancel split? Any charges already processed will be voided in production — for prototype this is mock.") — user confirms cancellation, modal closes WITHOUT recording a transaction. (Prototype simplification; real Stripe would require void.)
+    - Card portion = total, Cash portion = $0: completing this is allowed; transaction records as 'split' with payments=[{card, total}], cash entry omitted from payments array. Acceptable — split UX path for an effectively single-method sale.
+    - Operator types a card portion higher than total (impossible due to cap, but verify the cap actually holds via DevTools paste): silently caps at remaining. No crash.
+
+12. Header pill / overlay behavior: SplitTenderModal opens from the cart footer (not the header). It does NOT add a new header pill. It IS subject to the same checkout-state freeze as the existing card flow (cart locks during 2-sec card reader sim, locks during cash tendering inside the modal).
+
+SCOPE — DO NOT BUILD
+- Multi-card split (two card payments on one transaction) — out of scope; card+cash only this batch
+- More than 2-way split (e.g., card + card + cash) — fixed at exactly two methods
+- Split-aware refund routing (refund to card portion vs cash portion) — production-Stripe concern, not validating UX
+- Custom split percentages (40/60, 30/70 buttons) — even split + free entry is enough for validation
+- Saving partial-split state if operator navigates away or reloads mid-split — mid-split is in-memory only, reload aborts the split
+- Split-tender on $0 comped tickets (Split button disabled when comped, already in scope #1)
+- Manager PIN gate on split tender (no policy reason; existing PIN gates remain on >20% discount only)
+- Receipt option to email/SMS the cash portion separately — single combined receipt only
+- Tip allocation across the two payment methods (tip is on the transaction; operator picks tip in the existing tip step before opening Split, total includes tip, split divides post-tip total)
+- Deposit + split on appointment WITH a deposit refund mid-flow — out of scope
+- Operator-attention nudges (no toast when "remaining = $0", no banner when ready to complete — previously declined pattern)
+- README/replit.md updates this batch (wrap batch handles docs)
+- New verticals or new wrinkle categories
+- Real backend, real Stripe, real anything
+
+OPEN QUESTIONS section in your report is for clarifying questions about THIS batch's scope. Do NOT use it to suggest follow-on features.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4, no new dependencies
+- SplitTenderModal at z-50, single modal (no z-60 sub-modal stacking — the cash sub-flow is a state transition within the same modal)
+- Reuse: 2-sec card simulation pattern, formatCents, integer-cents math, cash quick-tender computation (computeQuickTenders from B17 — call with the cash portion as total, not full transaction total), existing toast pattern for cash drawer
+- Allocation state machine inside the modal: 'allocating' → 'card-processing' → 'allocating' (after card charged) → 'cash-tendering' → 'allocating' (after cash settled) → 'complete'. Or any equivalent — just keep states explicit and prevent invalid transitions.
+- Transaction.payments shape stable across reloads (Today's Sales still renders correctly after page refresh).
+- Card portion's "processedAt" and cash portion's "processedAt" are Date.now() at the moment that leg settled, not at modal open time. Helps debugging.
+- Discriminated union approach for paymentMethod is preferred but optional — pragmatic if-checks are fine for prototype as long as defensive reads are in place.
+
+ACCEPTANCE
+- Salon: cart with 2 services totaling $87.50 post-tax. Cart footer shows Card $87.50 / Cash $87.50 / Split Card + Cash buttons. Split is secondary-styled.
+- Tap Split → SplitTenderModal opens. Both portions $0.00, Remaining $87.50, both Charge/Tender buttons disabled.
+- Tap "Split evenly" → Card = $43.75, Cash = $43.75 (or $43.76/$43.74 depending on tiebreaker). Remaining $0.00. Both Charge/Tender enabled.
+- Re-allocate manually: tap [Card] in segmented control, type "5000" on keypad → Card portion shows $50.00, Cash auto-stays at $43.75 (or whatever it was — manual entry overrides previous "split evenly" only on the side being typed). Remaining recalculates to $-6.25 → keypad input is silently capped so Card portion can't exceed Total - Cash. Test with Cash = $43.75, Card max-input is capped at $43.75; further keypad input beyond cap is ignored.
+- Reset by tapping ⌫ multiple times → Card portion drops, Cash unchanged.
+- Tap "Charge Card $50.00" → 2-sec card reader sim → Card pill flips to 'Charged', card portion locks (gray + lock icon), keypad locks for Card. "Tendering for" auto-switches to Cash.
+- Tap "Tender Cash $37.50" → modal pivots to cash-tender state. Display "Amount tendered: $0.00", quick-tender row computed for $37.50 (e.g., [Exact $37.50, $40, $50, $60, $100], skipping any < total). Keypad pivots to amount-tendered fill.
+- Tap [$40] quick-tender → tendered $40.00, change due $2.50. Tap "Confirm Cash $37.50" → cash drawer toast fires → modal returns to allocation view, both portions settled, Cash pill flips to 'Tendered' showing "$37.50 · Tendered $40 · Change $2.50".
+- "Complete Split Sale" enabled → tap → transaction recorded, success overlay, receipt panel.
+- Receipt shows: "Card payment: $50.00 · Visa •••• 4242" line, "Cash payment: $37.50 · Tendered $40.00 · Change $2.50" line, "Total paid: $87.50" line.
+- Open Today's Sales → SPLIT badge on the new row. Total revenue includes $87.50 (NOT $90 — tendered cash had $2.50 change). Payment mix: Card +$50, Cash +$37.50.
+- Sum across all transactions: Card bucket + Cash bucket = total revenue. Verify with at least one of each: a B17 single-cash, a B17 single-card, a B19 deposit, a B20 split-tender. Math reconciles.
+- Hold ticket mid-cart, resume, take to Split, complete: works.
+- Split with $87.50 → Card $87.50, Cash $0 → Charge Card → Cash tender step is skipped (Tender button stays disabled at $0, Complete becomes enabled with only Card settled). Allow this. Transaction records as 'split' with payments=[{card, $87.50}], cash entry omitted.
+- Split with $0 card, $87.50 cash → Tender Cash $87.50 → cash flow runs, modal completes. Transaction records as 'split' with payments=[{cash, $87.50, tendered, change}].
+- Cancel mid-split before any charge: no transaction.
+- Cancel after card charged, before cash tendered: confirm dialog with the prototype-mock-void message → confirm → modal closes, NO transaction created (prototype simplification, document this as an intentional gap from production where Stripe void would be required).
+- Tattoo deposit-taken appointment: hydrate cart with $300 service, $100 deposit applied, balance $200. Tap Split → modal opens with Total field = $200 (post-deposit balance). Allocate Card $120, Cash $80 → tender → complete. Receipt shows "Deposit applied: -$100.00", "Balance paid: $200.00", "Card payment: $120.00", "Cash payment: $80.00 · Tendered $X · Change $Y", "Total paid: $200.00". Today's Sales: linked deposit panel still works, totalPaid = $200, payment mix +$120 Card +$80 Cash.
+- Refund a split-tender transaction's first line via existing refund flow → REFUNDED/PARTIAL badge applies, per-staff math deducts, refund renders on receipt with the standard pattern (no split-aware refund routing).
+- Reload page mid-split (during allocation, before any charge): on reload, modal is closed, cart restored to pre-split state. (In-memory split state is lost; cart total unchanged.)
+- Switch verticals while SplitTenderModal is open: vertical switcher remains gated by cart-not-idle (existing rule), so this should not be possible. Verify gate holds.
+- comp button in cart disabled / Split button disabled when cart is comped (already in scope #1) — verify.
+- Per-vertical isolation: salon split-tender transactions don't appear in spa Today's Sales.
+
+DO NOT TOUCH GIT
+Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab after this batch lands.
+
+REPORT FORMAT — REQUIRED
+Agent's response must include four sections in this order:
+- WHAT WAS BUILT
+- ERRORS ENCOUNTERED
+- ITEMS SKIPPED
+- OPEN QUESTIONS
+
+OPEN QUESTIONS is for clarifying questions about THIS scope only. Do not propose follow-on features.
+
+HARD STOP
+Stop after the scope above. Do not begin a next batch. Wait for the next prompt.

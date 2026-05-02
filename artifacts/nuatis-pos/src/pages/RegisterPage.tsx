@@ -13,9 +13,11 @@ import { SettingsOverlay } from "@/components/SettingsOverlay";
 import { WaitlistOverlay } from "@/components/WaitlistOverlay";
 import { AppointmentsOverlay } from "@/components/AppointmentsOverlay";
 import { CashTenderModal } from "@/components/CashTenderModal";
+import { SplitTenderModal } from "@/components/SplitTenderModal";
 import { Toast } from "@/components/Toast";
 import { useCart } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
+import type { SplitPayment } from "@/hooks/useCheckout";
 import { useActiveStaff } from "@/hooks/useActiveStaff";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
 import { useVerticalSettings } from "@/hooks/useVerticalSettings";
@@ -88,6 +90,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [showWaitlist, setShowWaitlist] = useState(false);
   const [showAppointments, setShowAppointments] = useState(false);
   const [showCashModal, setShowCashModal] = useState(false);
+  const [showSplitModal, setShowSplitModal] = useState(false);
   const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() =>
     getHeldTickets(activeVerticalId),
   );
@@ -97,12 +100,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const holdToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cashToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reload held tickets when vertical changes
   useEffect(() => {
     setHeldTickets(getHeldTickets(activeVerticalId));
   }, [activeVerticalId]);
 
-  // If active staff is no longer in the active staff list, fall back to first active
   const activeStaffIds = settings.staff
     .filter((s) => s.active)
     .map((s) => s.id)
@@ -131,7 +132,6 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [addItem, activeStaff.id],
   );
 
-  // Shared helper to compute current cart totals
   const buildCartTotals = useCallback(() => {
     const subtotalCents = calcSubtotal(lines);
     const taxCents = compApplied
@@ -193,6 +193,38 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef],
   );
 
+  const handleOpenSplit = useCallback(() => {
+    setShowSplitModal(true);
+  }, []);
+
+  const handleConfirmSplit = useCallback(
+    (payments: SplitPayment[]) => {
+      const { subtotalCents, taxCents, tipCents, totalCents } = buildCartTotals();
+      setShowSplitModal(false);
+      checkout.confirmCheckout({
+        lineItems: lines,
+        subtotalCents,
+        taxCents,
+        tipCents,
+        totalCents,
+        customer,
+        compApplied,
+        compReason,
+        paymentMethod: "split",
+        splitPayments: payments,
+        ...(depositApplied > 0 ? { depositApplied } : {}),
+        ...(appointmentRef ? { appointmentRef } : {}),
+      });
+      // Fire cash drawer toast if cash was part of the split
+      if (payments.some((p) => p.method === "cash")) {
+        if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
+        setCashDrawerToast(true);
+        cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
+      }
+    },
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef],
+  );
+
   const handleHold = useCallback(() => {
     if (lines.length === 0) return;
     const ticket: HeldTicket = {
@@ -243,73 +275,38 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [setActiveVerticalId],
   );
 
-  // Promote a waitlist entry to an active cart ticket
   const handleStartWalkIn = useCallback(
     (entry: WaitlistEntry) => {
       const nameParts = entry.name.trim().split(/\s+/);
       const firstName = nameParts[0] ?? entry.name.trim();
       const lastName = nameParts.slice(1).join(" ");
-      attachCustomer({
-        id: entry.id,
-        firstName,
-        lastName,
-        phone: entry.phone,
-      });
-
+      attachCustomer({ id: entry.id, firstName, lastName, phone: entry.phone });
       if (
         entry.serviceId !== null &&
         entry.serviceName !== null &&
         entry.servicePriceCents !== null
       ) {
-        addItem(
-          entry.serviceId,
-          entry.serviceName,
-          entry.servicePriceCents,
-          activeStaff.id,
-        );
+        addItem(entry.serviceId, entry.serviceName, entry.servicePriceCents, activeStaff.id);
       }
-
       removeEntry(entry.id);
       setShowWaitlist(false);
     },
     [attachCustomer, addItem, activeStaff.id, removeEntry],
   );
 
-  // Promote an appointment to an active cart ticket
   const handleStartAppointment = useCallback(
     (appt: Appointment) => {
-      // Split name into first + last
       const nameParts = appt.customerName.trim().split(/\s+/);
       const firstName = nameParts[0] ?? appt.customerName.trim();
       const lastName = nameParts.slice(1).join(" ");
-      attachCustomer({
-        id: appt.id,
-        firstName,
-        lastName,
-        phone: appt.customerPhone,
-      });
+      attachCustomer({ id: appt.id, firstName, lastName, phone: appt.customerPhone });
+      addItem(appt.serviceId, appt.serviceName, appt.servicePriceCents, appt.staffId);
 
-      // Add line using snapshotted price, always attributing to appointment's staffId
-      addItem(
-        appt.serviceId,
-        appt.serviceName,
-        appt.servicePriceCents,
-        appt.staffId,
-      );
-
-      // Switch active staff if they're still in the active list
-      const apptStaff = settings.staff.find(
-        (s) => s.active && s.id === appt.staffId,
-      );
+      const apptStaff = settings.staff.find((s) => s.active && s.id === appt.staffId);
       if (apptStaff) {
-        setActiveStaff({
-          id: apptStaff.id,
-          firstName: apptStaff.firstName,
-          role: apptStaff.role,
-        });
+        setActiveStaff({ id: apptStaff.id, firstName: apptStaff.firstName, role: apptStaff.role });
       }
 
-      // Set or clear deposit context
       if (
         (appt.depositRequired ?? false) &&
         appt.depositStatus === "taken" &&
@@ -320,7 +317,6 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         clearDepositContext();
       }
 
-      // Mark appointment started, close overlay
       startAppointment(appt.id);
       setShowAppointments(false);
     },
@@ -329,15 +325,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
   // Compute cash modal total — tip-inclusive, post-comp, post-deposit
   const cashSubtotal = calcSubtotal(lines);
-  const cashTax = compApplied
-    ? 0
-    : calcTaxWithRate(cashSubtotal, settings.taxRatePercent);
-  const cashTotalCents = compApplied
-    ? 0
-    : calcTotal(cashSubtotal, cashTax, checkout.tipCents);
+  const cashTax = compApplied ? 0 : calcTaxWithRate(cashSubtotal, settings.taxRatePercent);
+  const cashTotalCents = compApplied ? 0 : calcTotal(cashSubtotal, cashTax, checkout.tipCents);
   const cashBalanceCents = compApplied ? 0 : Math.max(0, cashTotalCents - depositApplied);
 
-  // Appointments urgent count: scheduled within next 24h
   const appointmentsUrgentCount = appointments.filter(
     (a) => a.status === "scheduled" && a.scheduledAt <= Date.now() + 24 * 3600000,
   ).length;
@@ -419,6 +410,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             onCancelCheckout={checkout.cancelCheckout}
             onConfirmCard={handleConfirmCard}
             onOpenCash={handleOpenCash}
+            onOpenSplit={handleOpenSplit}
             onTipPresetSelect={checkout.selectPreset}
             onCustomTipApply={checkout.applyCustomTip}
             depositApplied={depositApplied}
@@ -443,6 +435,14 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         />
       )}
 
+      {showSplitModal && checkout.state === "tip" && (
+        <SplitTenderModal
+          totalCents={cashBalanceCents}
+          onConfirmSplit={handleConfirmSplit}
+          onClose={() => setShowSplitModal(false)}
+        />
+      )}
+
       {showStaffSwitcher && (
         <StaffSwitcher
           staff={activeStaffList}
@@ -462,9 +462,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         />
       )}
 
-      {reportsOpen && (
-        <ReportsOverlay onClose={() => setReportsOpen(false)} />
-      )}
+      {reportsOpen && <ReportsOverlay onClose={() => setReportsOpen(false)} />}
 
       {showHeldModal && heldTickets.length > 0 && (
         <HeldTicketsModal
@@ -484,9 +482,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         />
       )}
 
-      {showSettings && (
-        <SettingsOverlay onClose={() => setShowSettings(false)} />
-      )}
+      {showSettings && <SettingsOverlay onClose={() => setShowSettings(false)} />}
 
       {showWaitlist && (
         <WaitlistOverlay

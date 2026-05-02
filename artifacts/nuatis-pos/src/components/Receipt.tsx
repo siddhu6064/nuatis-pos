@@ -6,7 +6,7 @@ import { useVerticalSettings } from "@/hooks/useVerticalSettings";
 
 interface ReceiptProps {
   transaction: Transaction;
-  linkedDepositTx?: Transaction;  // for service txs with depositApplied, optional
+  linkedDepositTx?: Transaction;
 }
 
 function formatReceiptDate(isoString: string): string {
@@ -47,6 +47,7 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
   const isComped = transaction.compApplied ?? false;
   const paymentMethod = transaction.paymentMethod ?? "card";
   const isCash = paymentMethod === "cash";
+  const isSplit = paymentMethod === "split";
   const isDepositTx = (transaction.type ?? "service") === "deposit";
   const depositApplied = transaction.depositApplied ?? 0;
   const hasDepositCredit = !isDepositTx && depositApplied > 0;
@@ -67,6 +68,9 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
 
   const refundedTotalCents = transaction.refundedTotalCents ?? 0;
   const netCents = transaction.totalCents - refundedTotalCents;
+
+  // Split payment legs (defensive: treat missing payments as empty)
+  const splitPayments = isSplit ? (transaction.payments ?? []) : [];
 
   return (
     <div
@@ -169,6 +173,14 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
               DEPOSIT
             </span>
           )}
+          {isSplit && (
+            <span
+              className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
+              style={{ color: "#0369A1", backgroundColor: "#E0F2FE", fontFamily: "'Epilogue', sans-serif" }}
+            >
+              SPLIT
+            </span>
+          )}
         </p>
         {transaction.customer && (
           <p className="text-[12px] text-gray-700 font-medium">
@@ -190,7 +202,6 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
         {transaction.lineItems.map((line) => {
           const lineTotal = calcLineTotalCents(line);
           const discountCents = calcLineDiscountCents(line);
-          // staffId "" is the deposit sentinel — show no staff attribution
           const staffMember = line.staffId ? STAFF.find((s) => s.id === line.staffId) : undefined;
           const isRefunded = allRefundedLineIds.has(line.lineId);
 
@@ -252,19 +263,13 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
                 <div className="flex justify-between items-baseline pl-4 mt-0.5">
                   <span
                     className="text-[12px]"
-                    style={{
-                      color: "#DC2626",
-                      fontFamily: "'Epilogue', sans-serif",
-                    }}
+                    style={{ color: "#DC2626", fontFamily: "'Epilogue', sans-serif" }}
                   >
                     Discount −{line.discountPercent}%
                   </span>
                   <span
                     className="text-[12px] tabular-nums"
-                    style={{
-                      color: "#DC2626",
-                      fontFamily: "'JetBrains Mono', monospace",
-                    }}
+                    style={{ color: "#DC2626", fontFamily: "'JetBrains Mono', monospace" }}
                   >
                     −{formatCurrency(discountCents)}
                   </span>
@@ -277,8 +282,9 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
 
       <Divider />
 
-      {/* Math rows — deposit-type tx has a simplified layout */}
+      {/* Math rows */}
       {isDepositTx ? (
+        /* ── Deposit transaction ─────────────────────────────────────────── */
         <div className="space-y-1">
           <div className="flex justify-between text-[15px] font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
             <span style={{ fontFamily: "'Epilogue', sans-serif" }}>Deposit</span>
@@ -324,32 +330,24 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
           )}
         </div>
       ) : (
+        /* ── Service transaction ─────────────────────────────────────────── */
         <div className="space-y-1">
           <div className="flex justify-between text-[12px] text-gray-600">
             <span>Subtotal</span>
-            <span
-              className="tabular-nums"
-              style={{ fontFamily: "'JetBrains Mono', monospace" }}
-            >
+            <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
               {formatCurrency(transaction.subtotalCents)}
             </span>
           </div>
           <div className="flex justify-between text-[12px] text-gray-600">
             <span>Tax</span>
-            <span
-              className="tabular-nums"
-              style={{ fontFamily: "'JetBrains Mono', monospace" }}
-            >
+            <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
               {formatCurrency(transaction.taxCents)}
             </span>
           </div>
           {transaction.tipCents > 0 && (
             <div className="flex justify-between text-[12px] text-gray-600">
               <span>Tip</span>
-              <span
-                className="tabular-nums"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
+              <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                 {formatCurrency(transaction.tipCents)}
               </span>
             </div>
@@ -365,6 +363,7 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
             </div>
           )}
 
+          {/* Total / Balance paid row */}
           <div className="flex justify-between text-[15px] font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
             <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
               {hasDepositCredit ? "Balance paid" : "Total"}
@@ -376,44 +375,86 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
                 color: isComped ? "#DC2626" : "inherit",
               }}
             >
-              {formatCurrency(hasDepositCredit
-                ? (transaction.totalPaid ?? transaction.totalCents)
-                : transaction.totalCents
+              {formatCurrency(
+                hasDepositCredit
+                  ? (transaction.totalPaid ?? transaction.totalCents)
+                  : transaction.totalCents,
               )}
             </span>
           </div>
 
-          {/* Payment info */}
-          <div className="flex justify-between text-[12px] text-gray-600 pt-0.5">
-            <span>Payment</span>
-            <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
-              {isCash ? "Cash" : "Card"}
-            </span>
-          </div>
-
-          {isCash && transaction.amountTendered !== undefined && (
+          {/* Payment rows — single-method or split */}
+          {isSplit ? (
+            /* Split-tender payment legs */
+            <div className="space-y-1 pt-0.5">
+              {splitPayments.map((p, i) => (
+                <div key={i}>
+                  {p.method === "card" ? (
+                    <div className="flex justify-between text-[12px] text-gray-600">
+                      <span>Card payment</span>
+                      <span
+                        className="tabular-nums"
+                        style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                      >
+                        {formatCurrency(p.amountCents)} · Visa •••• 4242
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-[12px] text-gray-600">
+                      <span>Cash payment</span>
+                      <span
+                        className="tabular-nums"
+                        style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                      >
+                        {formatCurrency(p.amountCents)} · Tndr{" "}
+                        {formatCurrency(p.tenderedCents ?? p.amountCents)} · Chg{" "}
+                        {formatCurrency(p.changeCents ?? 0)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div className="flex justify-between text-[13px] font-semibold text-gray-800 pt-0.5">
+                <span style={{ fontFamily: "'Epilogue', sans-serif" }}>Total paid</span>
+                <span
+                  className="tabular-nums"
+                  style={{ fontFamily: "'Fraunces', serif" }}
+                >
+                  {formatCurrency(
+                    splitPayments.reduce((s, p) => s + p.amountCents, 0),
+                  )}
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* Single-method payment */
             <>
-              <div className="flex justify-between text-[12px] text-gray-600">
-                <span>Tendered</span>
-                <span
-                  className="tabular-nums"
-                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                >
-                  {formatCurrency(transaction.amountTendered)}
+              <div className="flex justify-between text-[12px] text-gray-600 pt-0.5">
+                <span>Payment</span>
+                <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                  {isCash ? "Cash" : "Card · Visa •••• 4242"}
                 </span>
               </div>
-              <div className="flex justify-between text-[12px] text-gray-600">
-                <span>Change</span>
-                <span
-                  className="tabular-nums"
-                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                >
-                  {formatCurrency(transaction.changeGiven ?? 0)}
-                </span>
-              </div>
+              {isCash && transaction.amountTendered !== undefined && (
+                <>
+                  <div className="flex justify-between text-[12px] text-gray-600">
+                    <span>Tendered</span>
+                    <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                      {formatCurrency(transaction.amountTendered)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[12px] text-gray-600">
+                    <span>Change</span>
+                    <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                      {formatCurrency(transaction.changeGiven ?? 0)}
+                    </span>
+                  </div>
+                </>
+              )}
             </>
           )}
 
+          {/* Refunds */}
           {(transaction.refunds ?? []).map((refund, i) => (
             <div
               key={refund.id}
@@ -423,10 +464,7 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
               <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
                 Refund #{i + 1} · {formatShortDatetime(refund.refundedAt)}
               </span>
-              <span
-                className="tabular-nums"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
+              <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                 −{formatCurrency(refund.totalRefundCents)}
               </span>
             </div>
@@ -434,15 +472,10 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
 
           {hasAnyRefund && (
             <div className="flex justify-between text-[13px] font-semibold pt-1 border-t border-gray-200">
-              <span
-                style={{ fontFamily: "'Epilogue', sans-serif", color: "#374151" }}
-              >
+              <span style={{ fontFamily: "'Epilogue', sans-serif", color: "#374151" }}>
                 Net
               </span>
-              <span
-                className="tabular-nums"
-                style={{ fontFamily: "'Fraunces', serif", color: "#374151" }}
-              >
+              <span className="tabular-nums" style={{ fontFamily: "'Fraunces', serif", color: "#374151" }}>
                 {formatCurrency(netCents)}
               </span>
             </div>
@@ -455,7 +488,9 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
       {/* Linked deposit footnote */}
       {hasDepositCredit && linkedDepositTx && (
         <p className="text-[11px] text-gray-400 mb-2">
-          Deposit of {formatCurrency(depositApplied)} collected {formatShortDatetime(linkedDepositTx.completedAt)} · Txn #{linkedDepositTx.id.slice(-8).toUpperCase()}
+          Deposit of {formatCurrency(depositApplied)} collected{" "}
+          {formatShortDatetime(linkedDepositTx.completedAt)} · Txn #
+          {linkedDepositTx.id.slice(-8).toUpperCase()}
         </p>
       )}
 
@@ -464,20 +499,18 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
           ? "Deposit received — balance due at service"
           : isComped
             ? "No charge — comped"
-            : isCash
-              ? "Cash payment"
-              : "Card • Visa •••• 4242"}
+            : isSplit
+              ? "Split tender — card + cash"
+              : isCash
+                ? "Cash payment"
+                : "Card · Visa •••• 4242"}
       </p>
 
       <Divider />
 
       <p
         className="text-center text-[16px] text-gray-700"
-        style={{
-          fontFamily: "'Fraunces', serif",
-          fontStyle: "italic",
-          fontWeight: 600,
-        }}
+        style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontWeight: 600 }}
       >
         Thank you
       </p>

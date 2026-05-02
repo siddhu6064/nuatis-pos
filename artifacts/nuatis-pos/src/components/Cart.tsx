@@ -34,6 +34,7 @@ interface CartProps {
   onCancelCheckout: () => void;
   onConfirmCard: () => void;
   onOpenCash: () => void;
+  onOpenSplit: () => void;
   onTipPresetSelect: (preset: string, subtotalCents: number) => void;
   onCustomTipApply: (cents: number) => void;
   depositApplied?: number;
@@ -64,6 +65,7 @@ export function Cart({
   onCancelCheckout,
   onConfirmCard,
   onOpenCash,
+  onOpenSplit,
   onTipPresetSelect,
   onCustomTipApply,
   depositApplied = 0,
@@ -83,6 +85,9 @@ export function Cart({
   const balanceCents = Math.max(0, displayTotalCents - depositCredit);
   const hasDeposit = depositCredit > 0;
   const buttonAmount = hasDeposit ? balanceCents : displayTotalCents;
+
+  // Split: disabled when comped OR balance < $1.00
+  const splitDisabled = compApplied || buttonAmount < 100;
 
   const isEmpty = lines.length === 0;
   const isIdle = checkoutState === "idle";
@@ -391,27 +396,44 @@ export function Cart({
               Confirm Comp ($0.00)
             </button>
           ) : (
-            // Non-comped: Card + Cash side by side
-            <div className="flex gap-2">
+            // Non-comped: Card + Cash primary, Split secondary below
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={onConfirmCard}
+                  className="flex-1 h-[52px] rounded-lg text-[15px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    backgroundColor: "#E84A00",
+                  }}
+                >
+                  Card {formatCurrency(buttonAmount)}
+                </button>
+                <button
+                  onClick={onOpenCash}
+                  className="flex-1 h-[52px] rounded-lg text-[15px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+                  style={{
+                    fontFamily: "'Epilogue', sans-serif",
+                    backgroundColor: "#E84A00",
+                  }}
+                >
+                  Cash {formatCurrency(buttonAmount)}
+                </button>
+              </div>
+              {/* Split button — secondary visual weight */}
               <button
-                onClick={onConfirmCard}
-                className="flex-1 h-[56px] rounded-lg text-[16px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+                onClick={splitDisabled ? undefined : onOpenSplit}
+                disabled={splitDisabled}
+                className="w-full h-[40px] rounded-lg text-[13px] font-semibold transition-all duration-150 active:scale-[0.98]"
                 style={{
                   fontFamily: "'Epilogue', sans-serif",
-                  backgroundColor: "#E84A00",
+                  color: splitDisabled ? "#9CA3AF" : "#E84A00",
+                  backgroundColor: "white",
+                  border: `2px solid ${splitDisabled ? "#E5E7EB" : "#E84A00"}`,
+                  cursor: splitDisabled ? "not-allowed" : "pointer",
                 }}
               >
-                Card {formatCurrency(buttonAmount)}
-              </button>
-              <button
-                onClick={onOpenCash}
-                className="flex-1 h-[56px] rounded-lg text-[16px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
-                style={{
-                  fontFamily: "'Epilogue', sans-serif",
-                  backgroundColor: "#E84A00",
-                }}
-              >
-                Cash {formatCurrency(buttonAmount)}
+                Split Card + Cash
               </button>
             </div>
           )

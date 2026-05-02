@@ -20,6 +20,16 @@ export interface RefundRecord {
   managerOverride: boolean;
 }
 
+// B20: Split-tender payment leg
+export interface SplitPayment {
+  method: "card" | "cash";
+  amountCents: number;
+  processedAt: number; // Date.now() at the moment that leg settled
+  // Cash-only
+  tenderedCents?: number;
+  changeCents?: number;
+}
+
 export interface Transaction {
   id: string;
   lineItems: CartLine[];
@@ -27,9 +37,11 @@ export interface Transaction {
   taxCents: number;
   tipCents: number;
   totalCents: number;
-  paymentMethod: "card" | "cash";
+  paymentMethod: "card" | "cash" | "split";
   amountTendered?: number;
   changeGiven?: number;
+  // B20: split-tender payments array (only when paymentMethod === 'split')
+  payments?: SplitPayment[];
   completedAt: string;
   customer: CartCustomer | null;
   receiptDelivery?: "print" | "email" | "sms" | "none";
@@ -55,11 +67,13 @@ export interface ConfirmData {
   customer: CartCustomer | null;
   compApplied: boolean;
   compReason: string | null;
-  paymentMethod?: "card" | "cash";
+  paymentMethod?: "card" | "cash" | "split";
   amountTendered?: number;
   changeGiven?: number;
   depositApplied?: number;
   appointmentRef?: string;
+  // B20: split-tender
+  splitPayments?: SplitPayment[];
 }
 
 function appendTransaction(tx: Transaction, verticalId: string): void {
@@ -69,7 +83,7 @@ function appendTransaction(tx: Transaction, verticalId: string): void {
     const existing: Transaction[] = raw
       ? (JSON.parse(raw) as Transaction[])
       : [];
-    const updated = [...existing, tx].slice(-50); // increased from 10 for deposit+service pairs
+    const updated = [...existing, tx].slice(-50);
     localStorage.setItem(key, JSON.stringify(updated));
   } catch {
     // silent fail
@@ -130,6 +144,35 @@ export function useCheckout(onComplete: () => void) {
     const method = data.paymentMethod ?? "card";
     const depositApplied = data.depositApplied ?? 0;
     const totalPaid = Math.max(0, data.totalCents - depositApplied);
+
+    if (method === "split") {
+      // Card was already charged and cash already tendered inside SplitTenderModal.
+      // Sum of splitPayments.amountCents is the actual revenue (change excluded).
+      const payments = data.splitPayments ?? [];
+      const splitTotalPaid = payments.reduce((s, p) => s + p.amountCents, 0);
+      const tx: Transaction = {
+        id: crypto.randomUUID(),
+        lineItems: data.lineItems,
+        subtotalCents: data.subtotalCents,
+        taxCents: data.taxCents,
+        tipCents: data.tipCents,
+        totalCents: data.totalCents,
+        paymentMethod: "split",
+        payments,
+        completedAt: new Date().toISOString(),
+        customer: data.customer,
+        compApplied: data.compApplied,
+        compReason: data.compReason,
+        type: "service",
+        totalPaid: depositApplied > 0 ? splitTotalPaid : totalPaid,
+        ...(depositApplied > 0 && { depositApplied }),
+        ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
+      };
+      setProcessingTotalCents(tx.totalPaid ?? totalPaid);
+      setCompletedTx(tx);
+      setState("receipt");
+      return;
+    }
 
     if (method === "cash") {
       const tx: Transaction = {
