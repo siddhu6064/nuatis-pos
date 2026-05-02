@@ -1,5 +1,6 @@
 import type { CartLine as CartLineType, CartCustomer } from "@/hooks/useCart";
 import type { CheckoutState } from "@/hooks/useCheckout";
+import type { Modifier } from "@/lib/modifiers";
 import { CartLine } from "./CartLine";
 import { TipPicker } from "./TipPicker";
 import { formatCurrency } from "@/lib/currency";
@@ -12,7 +13,9 @@ interface CartProps {
   onDecrement: (lineId: string) => void;
   onRemove: (lineId: string) => void;
   onClear: () => void;
+  onHold: () => void;
   onStaffChange: (lineId: string, staffId: string) => void;
+  onToggleModifier: (lineId: string, modifier: Modifier) => void;
   // customer
   customer: CartCustomer | null;
   onOpenCustomerSearch: () => void;
@@ -35,7 +38,9 @@ export function Cart({
   onDecrement,
   onRemove,
   onClear,
+  onHold,
   onStaffChange,
+  onToggleModifier,
   customer,
   onOpenCustomerSearch,
   onDetachCustomer,
@@ -52,7 +57,9 @@ export function Cart({
   const taxCents = calcTax(subtotalCents);
   const totalCents = calcTotal(subtotalCents, taxCents, tipCents);
   const isEmpty = lines.length === 0;
+  const isIdle = checkoutState === "idle";
   const inTipState = checkoutState === "tip";
+  const frozen = !isIdle;
 
   return (
     <div
@@ -100,20 +107,23 @@ export function Cart({
         >
           Cart
         </span>
-        {!isEmpty && !inTipState && (
-          <button
-            onClick={onClear}
-            className="
-              text-[13px] font-medium text-gray-500
-              hover:text-red-500
-              transition-colors duration-150
-              px-2 py-1 rounded
-              hover:bg-red-50
-            "
-            style={{ fontFamily: "'Epilogue', sans-serif" }}
-          >
-            Clear
-          </button>
+        {!isEmpty && isIdle && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onHold}
+              className="text-[13px] font-medium text-gray-500 hover:text-amber-600 transition-colors duration-150 px-2 py-1 rounded hover:bg-amber-50"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Hold
+            </button>
+            <button
+              onClick={onClear}
+              className="text-[13px] font-medium text-gray-500 hover:text-red-500 transition-colors duration-150 px-2 py-1 rounded hover:bg-red-50"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Clear
+            </button>
+          </div>
         )}
       </div>
 
@@ -135,10 +145,12 @@ export function Cart({
                 <CartLine
                   line={line}
                   isPulsing={pulsingServiceId === line.serviceId}
-                  onIncrement={inTipState ? () => {} : onIncrement}
-                  onDecrement={inTipState ? () => {} : onDecrement}
-                  onRemove={inTipState ? () => {} : onRemove}
-                  onStaffChange={inTipState ? () => {} : onStaffChange}
+                  frozen={frozen}
+                  onIncrement={onIncrement}
+                  onDecrement={onDecrement}
+                  onRemove={onRemove}
+                  onStaffChange={onStaffChange}
+                  onToggleModifier={onToggleModifier}
                 />
                 {idx < lines.length - 1 && (
                   <div className="mx-4 h-px bg-black/6" />
@@ -245,12 +257,7 @@ export function Cart({
                 : onStartCheckout
           }
           disabled={isEmpty}
-          className="
-            w-full h-[56px] rounded-lg
-            text-[18px] font-semibold text-white
-            transition-all duration-150
-            active:scale-[0.98]
-          "
+          className="w-full h-[56px] rounded-lg text-[18px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
           style={{
             fontFamily: "'Epilogue', sans-serif",
             backgroundColor: isEmpty ? "#D1D5DB" : "#E84A00",

@@ -73,7 +73,11 @@ export function Receipt({ transaction }: ReceiptProps) {
       {/* Line items */}
       <div className="space-y-2.5">
         {transaction.lineItems.map((line) => {
-          const lineTotal = line.priceCents * line.quantity;
+          const modifierTotal = (line.modifiers ?? []).reduce(
+            (s, m) => s + m.priceCents,
+            0,
+          );
+          const lineTotal = (line.priceCents + modifierTotal) * line.quantity;
           const staffMember = STAFF.find((s) => s.id === line.staffId);
           return (
             <div key={line.lineId}>
@@ -95,14 +99,33 @@ export function Receipt({ transaction }: ReceiptProps) {
                 >
                   {line.quantity} × {formatCurrency(line.priceCents)}
                   {staffMember && (
-                    <span
-                      style={{ fontFamily: "'Epilogue', sans-serif" }}
-                    >
-                      {" "}· {staffMember.firstName}
+                    <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                      {" "}
+                      · {staffMember.firstName}
                     </span>
                   )}
                 </span>
               </div>
+              {/* Modifier sub-rows */}
+              {(line.modifiers ?? []).map((mod) => (
+                <div
+                  key={mod.id}
+                  className="flex justify-between items-baseline pl-4 mt-0.5"
+                >
+                  <span
+                    className="text-[12px] text-gray-400"
+                    style={{ fontFamily: "'Epilogue', sans-serif" }}
+                  >
+                    + {mod.name}
+                  </span>
+                  <span
+                    className="text-[12px] text-gray-400 tabular-nums"
+                    style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                  >
+                    +{formatCurrency(mod.priceCents)}
+                  </span>
+                </div>
+              ))}
             </div>
           );
         })}

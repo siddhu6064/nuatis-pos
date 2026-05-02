@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { STAFF } from "@/lib/staff";
 import type { CartCustomer } from "@/lib/customers";
+import type { Modifier } from "@/lib/modifiers";
 
 export interface CartLine {
   lineId: string;
@@ -9,6 +10,7 @@ export interface CartLine {
   priceCents: number;
   quantity: number;
   staffId: string;
+  modifiers: Modifier[];
 }
 
 export type { CartCustomer };
@@ -35,6 +37,7 @@ function loadCart(): CartLine[] {
         priceCents: l.priceCents!,
         quantity: l.quantity!,
         staffId: l.staffId ?? STAFF[0].id,
+        modifiers: l.modifiers ?? [],
       }));
   } catch {
     return [];
@@ -52,8 +55,12 @@ export function useCart() {
   const addItem = useCallback(
     (serviceId: string, name: string, priceCents: number, staffId: string) => {
       setLines((prev) => {
+        // Increment only if same serviceId + same staffId + no modifiers on existing line
         const existing = prev.find(
-          (l) => l.serviceId === serviceId && l.staffId === staffId,
+          (l) =>
+            l.serviceId === serviceId &&
+            l.staffId === staffId &&
+            l.modifiers.length === 0,
         );
         let next: CartLine[];
         if (existing) {
@@ -72,6 +79,7 @@ export function useCart() {
               priceCents,
               quantity: 1,
               staffId,
+              modifiers: [],
             },
           ];
         }
@@ -122,6 +130,24 @@ export function useCart() {
     });
   }, []);
 
+  const toggleModifier = useCallback(
+    (lineId: string, modifier: Modifier) => {
+      setLines((prev) => {
+        const next = prev.map((l) => {
+          if (l.lineId !== lineId) return l;
+          const hasIt = l.modifiers.some((m) => m.id === modifier.id);
+          const modifiers = hasIt
+            ? l.modifiers.filter((m) => m.id !== modifier.id)
+            : [...l.modifiers, modifier];
+          return { ...l, modifiers };
+        });
+        saveCart(next);
+        return next;
+      });
+    },
+    [],
+  );
+
   const attachCustomer = useCallback((c: CartCustomer) => {
     setCustomer(c);
   }, []);
@@ -129,6 +155,15 @@ export function useCart() {
   const detachCustomer = useCallback(() => {
     setCustomer(null);
   }, []);
+
+  const loadHeld = useCallback(
+    (lineItems: CartLine[], heldCustomer: CartCustomer | null) => {
+      saveCart(lineItems);
+      setLines(lineItems);
+      setCustomer(heldCustomer);
+    },
+    [],
+  );
 
   const clear = useCallback(() => {
     const next: CartLine[] = [];
@@ -145,8 +180,10 @@ export function useCart() {
     decrement,
     remove,
     changeStaff,
+    toggleModifier,
     attachCustomer,
     detachCustomer,
+    loadHeld,
     clear,
   };
 }

@@ -32,14 +32,20 @@ export function calcPerStaffSummary(
     const txCount = transactions.filter((tx) =>
       tx.lineItems.some((line) => line.staffId === staff.id),
     ).length;
-    const revenueCents = transactions.reduce(
-      (sum, tx) =>
+    const revenueCents = transactions.reduce((sum, tx) => {
+      return (
         sum +
         tx.lineItems
           .filter((line) => line.staffId === staff.id)
-          .reduce((s, line) => s + line.priceCents * line.quantity, 0),
-      0,
-    );
+          .reduce((s, line) => {
+            const modifierTotal = (line.modifiers ?? []).reduce(
+              (ms, m) => ms + m.priceCents,
+              0,
+            );
+            return s + (line.priceCents + modifierTotal) * line.quantity;
+          }, 0)
+      );
+    }, 0);
     return {
       staffId: staff.id,
       firstName: staff.firstName,

@@ -7,10 +7,19 @@ import { CheckoutOverlay } from "@/components/CheckoutOverlay";
 import { StaffSwitcher } from "@/components/StaffSwitcher";
 import { CustomerSearch } from "@/components/CustomerSearch";
 import { ReportsOverlay } from "@/components/ReportsOverlay";
+import { HeldTicketsModal } from "@/components/HeldTicketsModal";
+import { Toast } from "@/components/Toast";
 import { useCart } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
 import { useActiveStaff } from "@/hooks/useActiveStaff";
 import { calcSubtotal, calcTax, calcTotal } from "@/lib/cartMath";
+import {
+  getHeldTickets,
+  holdTicket,
+  resumeTicket,
+  removeHeldTicket,
+  type HeldTicket,
+} from "@/lib/heldTickets";
 import type { AuthUser } from "@workspace/replit-auth-web";
 
 interface RegisterPageProps {
@@ -27,8 +36,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     decrement,
     remove,
     changeStaff,
+    toggleModifier,
     attachCustomer,
     detachCustomer,
+    loadHeld,
     clear,
   } = useCart();
 
@@ -39,7 +50,17 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [showStaffSwitcher, setShowStaffSwitcher] = useState(false);
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
+  const [showHeldModal, setShowHeldModal] = useState(false);
+  const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() =>
+    getHeldTickets(),
+  );
+  const [holdToast, setHoldToast] = useState(false);
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshHeld = useCallback(() => {
+    setHeldTickets(getHeldTickets());
+  }, []);
 
   const handleTileTap = useCallback(
     (service: Service) => {
@@ -68,11 +89,50 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     });
   }, [lines, checkout, customer]);
 
+  const handleHold = useCallback(() => {
+    if (lines.length === 0) return;
+    const ticket: HeldTicket = {
+      id: crypto.randomUUID(),
+      heldAt: new Date().toISOString(),
+      customer,
+      lineItems: lines,
+    };
+    holdTicket(ticket);
+    refreshHeld();
+    clear();
+    // Show toast
+    if (holdToastTimerRef.current) clearTimeout(holdToastTimerRef.current);
+    setHoldToast(true);
+    holdToastTimerRef.current = setTimeout(() => setHoldToast(false), 1500);
+  }, [lines, customer, clear, refreshHeld]);
+
+  const handleResume = useCallback(
+    (ticket: HeldTicket) => {
+      resumeTicket(ticket.id);
+      loadHeld(ticket.lineItems, ticket.customer);
+      refreshHeld();
+      setShowHeldModal(false);
+    },
+    [loadHeld, refreshHeld],
+  );
+
+  const handleDiscard = useCallback(
+    (id: string) => {
+      removeHeldTicket(id);
+      refreshHeld();
+      // Auto-close modal if no more tickets
+      if (heldTickets.length <= 1) setShowHeldModal(false);
+    },
+    [heldTickets.length, refreshHeld],
+  );
+
   return (
     <div
       className="h-screen flex flex-col overflow-hidden"
       style={{ backgroundColor: "#F8F7F4" }}
     >
+      {holdToast && <Toast message="Ticket held" />}
+
       <Header
         user={user}
         onLogout={onLogout}
@@ -80,6 +140,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         onSwitchStaff={() => setShowStaffSwitcher(true)}
         checkoutState={checkout.state}
         onOpenReports={() => setReportsOpen(true)}
+        heldCount={heldTickets.length}
+        onOpenHeldTickets={() => setShowHeldModal(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -103,7 +165,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             onDecrement={decrement}
             onRemove={remove}
             onClear={clear}
+            onHold={handleHold}
             onStaffChange={changeStaff}
+            onToggleModifier={toggleModifier}
             customer={customer}
             onOpenCustomerSearch={() => setShowCustomerSearch(true)}
             onDetachCustomer={detachCustomer}
@@ -148,6 +212,16 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
       {reportsOpen && (
         <ReportsOverlay onClose={() => setReportsOpen(false)} />
+      )}
+
+      {showHeldModal && heldTickets.length > 0 && (
+        <HeldTicketsModal
+          tickets={heldTickets}
+          currentCartHasItems={lines.length > 0}
+          onResume={handleResume}
+          onDiscard={handleDiscard}
+          onClose={() => setShowHeldModal(false)}
+        />
       )}
     </div>
   );

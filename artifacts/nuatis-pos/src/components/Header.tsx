@@ -10,6 +10,8 @@ interface HeaderProps {
   onSwitchStaff: () => void;
   checkoutState: CheckoutState;
   onOpenReports: () => void;
+  heldCount: number;
+  onOpenHeldTickets: () => void;
 }
 
 function useClock() {
@@ -33,6 +35,8 @@ export function Header({
   onSwitchStaff,
   checkoutState,
   onOpenReports,
+  heldCount,
+  onOpenHeldTickets,
 }: HeaderProps) {
   const clock = useClock();
   const [accountOpen, setAccountOpen] = useState(false);
@@ -43,7 +47,7 @@ export function Header({
     [user.firstName, user.lastName].filter(Boolean).join(" ") ??
     "Account";
 
-  const reportsEnabled = checkoutState === "idle";
+  const actionsEnabled = checkoutState === "idle";
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -64,24 +68,42 @@ export function Header({
       className="flex items-center justify-between px-6 py-3 border-b border-black/10 flex-shrink-0"
       style={{ backgroundColor: "#F8F7F4" }}
     >
-      {/* Left: brand + reports link */}
-      <div className="flex items-center gap-4">
+      {/* Left: brand + held pill + reports link */}
+      <div className="flex items-center gap-3">
         <span
           className="text-[22px] font-bold text-gray-900 tracking-tight"
           style={{ fontFamily: "'Fraunces', serif" }}
         >
           Nuatis POS
         </span>
+
+        {/* Held tickets pill — only when count > 0 */}
+        {heldCount > 0 && (
+          <button
+            onClick={actionsEnabled ? onOpenHeldTickets : undefined}
+            className="h-[22px] px-2.5 rounded-full text-[11px] font-semibold text-white transition-opacity duration-150"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              backgroundColor: actionsEnabled ? "#E84A00" : "#D1D5DB",
+              cursor: actionsEnabled ? "pointer" : "not-allowed",
+            }}
+            title={actionsEnabled ? undefined : "Finish current ticket first"}
+          >
+            Held: {heldCount}
+          </button>
+        )}
+
+        {/* Today's Sales link */}
         <button
-          onClick={reportsEnabled ? onOpenReports : undefined}
+          onClick={actionsEnabled ? onOpenReports : undefined}
           className="text-[14px] transition-colors duration-150"
           style={{
             fontFamily: "'Epilogue', sans-serif",
             fontWeight: 500,
-            color: reportsEnabled ? "#E84A00" : "#D1D5DB",
-            cursor: reportsEnabled ? "pointer" : "not-allowed",
+            color: actionsEnabled ? "#E84A00" : "#D1D5DB",
+            cursor: actionsEnabled ? "pointer" : "not-allowed",
           }}
-          title={reportsEnabled ? undefined : "Finish current ticket first"}
+          title={actionsEnabled ? undefined : "Finish current ticket first"}
         >
           Today's Sales
         </button>
@@ -126,13 +148,7 @@ export function Header({
         <div className="relative" ref={accountRef}>
           <button
             onClick={() => setAccountOpen((o) => !o)}
-            className="
-              text-[14px] font-medium text-gray-600
-              px-2 py-1.5 rounded-lg
-              border border-black/10
-              hover:bg-black/5
-              transition-colors duration-150
-            "
+            className="text-[14px] font-medium text-gray-600 px-2 py-1.5 rounded-lg border border-black/10 hover:bg-black/5 transition-colors duration-150"
             style={{ fontFamily: "'Epilogue', sans-serif" }}
           >
             ···

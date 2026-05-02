@@ -2,8 +2,16 @@ import type { CartLine } from "@/hooks/useCart";
 
 export const TAX_RATE = 0.0825;
 
+export function calcLineTotalCents(line: CartLine): number {
+  const modifierTotal = (line.modifiers ?? []).reduce(
+    (s, m) => s + m.priceCents,
+    0,
+  );
+  return (line.priceCents + modifierTotal) * line.quantity;
+}
+
 export function calcSubtotal(lines: CartLine[]): number {
-  return lines.reduce((sum, line) => sum + line.priceCents * line.quantity, 0);
+  return lines.reduce((sum, line) => sum + calcLineTotalCents(line), 0);
 }
 
 export function calcTax(subtotalCents: number): number {

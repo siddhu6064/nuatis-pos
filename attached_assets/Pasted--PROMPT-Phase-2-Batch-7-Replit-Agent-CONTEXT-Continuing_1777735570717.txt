@@ -1,0 +1,121 @@
+▶ PROMPT [Phase 2 · Batch 7 · Replit Agent]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-6 shipped: Replit Auth, register grid (12 salon services), right-side cart with quantity + tax + tip, simulated card reader, receipt panel + mock delivery, transaction log, customer attach (pre/post-sale, phone-first), per-line staff attribution, Today's Sales overlay with per-staff breakdown + transaction list + receipt re-delivery. Header has "Switch Staff" + Account dropdown + "Today's Sales" link.
+
+This is the LAST feature batch of the day. It adds two patterns: service-specific modifier add-ons (per-line, fixed-price, multi-select) and Hold/Resume tickets (full state persistence, cap 5, survives page refresh). After this batch we're done with feature work — remaining time is README polish + screenshot capture.
+
+GOAL
+Operator can attach modifier add-ons (e.g. "Olaplex Add-on +$25") to specific cart lines via an inline picker on the line. Operator can also Hold the current ticket (preserves cart + customer + per-line staff to localStorage), and Resume any of up to 5 held tickets from a header pill that lists held tickets.
+
+SCOPE — BUILD THIS — MODIFIERS
+
+1. lib/modifiers.ts — Map of service IDs to applicable modifiers. Use the EXACT service IDs from lib/services.ts (don't invent new ones). Example shape:
+   export type Modifier = { id: string; name: string; priceCents: number };
+   export const MODIFIERS_BY_SERVICE: Record<string, Modifier[]> = {
+     // map keyed on service.id from lib/services.ts
+   };
+   Define modifiers as follows (map to whatever service IDs match):
+   - Women's Cut: [{ id: 'wash_style', name: 'Wash & Style', priceCents: 1500 }]
+   - Men's Cut: [{ id: 'beard_addon', name: 'Beard Trim Add-on', priceCents: 1500 }]
+   - Highlights Full: [{ id: 'olaplex', name: 'Olaplex Add-on', priceCents: 2500 }, { id: 'toner', name: 'Toner', priceCents: 1500 }]
+   - Color Root: [{ id: 'olaplex', name: 'Olaplex Add-on', priceCents: 2500 }, { id: 'long_hair', name: 'Long Hair', priceCents: 2000 }]
+   - Gloss: [{ id: 'olaplex', name: 'Olaplex Add-on', priceCents: 2500 }]
+   - All other 7 services: empty array (no modifiers).
+   Export getModifiersForService(serviceId): Modifier[].
+
+2. CartLine shape extended — add `modifiers: Modifier[]` field. Default empty array on new lines from tile tap. Migrate persisted carts on load: missing modifiers field → default to [].
+
+3. Cart line tile-tap dedupe rule UPDATED: tile tap increments existing line ONLY if that existing line has zero modifiers AND same serviceId AND same staffId. If existing line has modifiers, append new line instead. Fresh new line always starts with modifiers=[].
+
+4. Per-line modifier UI in components/CartLine.tsx — below the existing "→ <Staff>" label, add a small "+ Add-ons" text link (Epilogue 400, 12px muted) IFF getModifiersForService(line.serviceId).length > 0. If no applicable modifiers, omit the link entirely.
+
+5. Tapping "+ Add-ons" reveals an inline modifier picker replacing the link — each applicable modifier rendered as a toggleable chip: "<Name> +$<price>" (Epilogue 500, 12px). Toggle state controlled by whether the modifier id is present in line.modifiers. Active chip: accent #E84A00 border + bold. Inactive chip: thin muted border. Tap any chip toggles its presence in the line's modifiers array. A small "Done" text link or ✕ closes the picker (collapses back to the "+ Add-ons" link, or shows "<count> add-ons ▾" when at least one is selected — tappable to reopen).
+
+6. Math update — line total now = (line.priceCents + sum of line.modifiers[].priceCents) × line.quantity. Update calcSubtotal in lib/cartMath.ts to use this formula. Tax and tip math unchanged (computed on subtotalCents).
+
+7. Receipt rendering — for each line item, render modifiers as indented sub-rows beneath the service name row. Each modifier row: "  + <Name>" left (Epilogue 400, 12px muted) + "+$<price>" right (JetBrains Mono 400, 12px muted). Indent visually with left padding. Per-line subtotal in the receipt should reflect (base + modifiers) × qty.
+
+8. Per-staff reports update — calcPerStaffSummary in lib/reports.ts now sums (line.priceCents + modifier total) × quantity for each line where line.staffId matches. Modifiers contribute to the staff's revenue.
+
+9. Modifier picker freezes during checkout (tip / processing / receipt / completed states) — same pattern as quantity controls in Batch 3. Operator cannot toggle modifiers mid-checkout.
+
+SCOPE — BUILD THIS — HOLD/RESUME
+
+10. lib/heldTickets.ts — pure storage helpers:
+    - export type HeldTicket = { id: string; heldAt: string; customer: CartCustomer | null; lineItems: CartLine[] };
+    - getHeldTickets(): HeldTicket[] — read from localStorage `nuatis-pos:heldTickets`, parse, default [] on error
+    - holdTicket(ticket): void — push to held list, cap at 5 (drop oldest on overflow), write to localStorage
+    - resumeTicket(id): HeldTicket | null — read held by id, remove from list, return the ticket
+    - removeHeldTicket(id): void — remove without resuming (in case of "discard")
+
+11. Hold action — in cart panel, add a "Hold Ticket" text link near the "Clear" link in the cart header row (or just below). Visible IFF cart has at least 1 line item AND checkoutState === 'idle'. Tap → snapshot { id: crypto.randomUUID(), heldAt: ISO timestamp, customer, lineItems } → holdTicket(snapshot) → cart.clear() → toast "Ticket held" (1500ms).
+
+12. "Held: N" pill in header — to the LEFT of the "Today's Sales" link, add a "Held: <count>" pill (smaller, accent #E84A00 background, white text, rounded-full, ~10px font). Visible only when held count > 0. Tap opens HeldTicketsModal. Disabled when checkoutState !== 'idle' (same gating as Today's Sales link).
+
+13. components/HeldTicketsModal.tsx — centered modal, dim backdrop. Lists held tickets, newest first. Each row:
+    - Top row: time held (HH:MM AM/PM, JetBrains Mono 500 14px) — customer name or "Walk-in" (Epilogue 500 14px) — total "$X.XX" right (Fraunces 600 16px)
+    - Bottom row: "<N> items" + first staff name or "Multiple" if >1 distinct staffId (Epilogue 400 12px muted)
+    - Right side of row: [Resume] button (accent #E84A00, 36px tall, white text) + small ✕ for discard
+    - Tapping Resume:
+      - If current cart has items: prompt confirmation modal "Replace current cart? Resume will discard current cart." with [Replace] [Cancel] buttons. Replace → cart.clear() then load held ticket into cart (lineItems + customer); held ticket removed from list; modal closes.
+      - If current cart is empty: load held ticket directly without confirmation; remove from list; modal closes.
+    - Tapping ✕ (discard): confirmation toast or inline "Discard ticket?" → confirm removes from list without loading.
+    - Empty state: never shown — pill is hidden when count is 0, so modal won't open.
+    - ESC + backdrop click dismiss.
+
+14. Held ticket persistence verified across page refresh — held tickets array survives refresh, modal repopulates from localStorage on open.
+
+15. Active staff is NOT restored on resume — only line-level staffId is restored. Header continues showing whoever is currently active.
+
+SCOPE — DO NOT BUILD
+- No modifier discounts, no negative-priced modifiers, no required modifiers (all are optional toggles).
+- No modifier categories, no modifier groups, no exclusive-choice modifiers (e.g. "pick one of three sizes").
+- No held-ticket auto-expiry, no hold timestamp display in cart on resume.
+- No hold name/note (operator can't label held tickets).
+- No persistence cap configurable from UI — hardcode 5.
+- No undo for hold action.
+- No new npm dependencies.
+- No animations beyond existing patterns.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- All currency in integer cents
+- crypto.randomUUID() for held ticket ids
+- File additions: lib/modifiers.ts, lib/heldTickets.ts, components/HeldTicketsModal.tsx, components/ModifierPicker.tsx (or inline in CartLine.tsx)
+- Existing files updated: hooks/useCart.ts (modifier mutators + load-time migration for both modifiers and held cart format), components/CartLine.tsx (modifier UI), components/Cart.tsx (Hold link), components/Header.tsx (Held pill), components/Receipt.tsx (modifier sub-rows), lib/cartMath.ts (line total accounts for modifiers), lib/reports.ts (per-staff includes modifier revenue)
+- Modifier toggle: simple array operations on line.modifiers — splice in / splice out by id
+
+ACCEPTANCE
+1. Tap Women's Cut tile → cart line appears with "+ Add-ons" link visible. Tap → see "Wash & Style +$15.00" chip. Tap chip → active state. Total updates immediately to reflect +$15.
+2. Tap Polish Change tile → cart line shows NO "+ Add-ons" link (no applicable modifiers).
+3. Tap Highlights Full → "+ Add-ons" link reveals two chips (Olaplex, Toner). Toggling both shows total = $185 + $25 + $15 = $225. Toggling one off updates total in real-time.
+4. Add Highlights Full again — original line had Olaplex+Toner; new tile tap creates a NEW line (does not increment) because original line has modifiers.
+5. Two cart lines for Women's Cut where one has modifiers and one doesn't — staff change on either line still works.
+6. Receipt renders modifiers indented as sub-rows under the parent service with "+ <Name>" / "+$<price>" formatting.
+7. Per-staff reports include modifier revenue — verify by ringing a sale with a $185 service + $25 modifier attributed to Maria, then opening Today's Sales: Maria shows revenue = $210 (not $185).
+8. Modifier picker frozen during tip / processing states — chips not tappable.
+9. Cart with items shows "Hold Ticket" text link in idle state. Hold tap → toast "Ticket held" → cart clears → "Held: 1" pill appears in header.
+10. Held pill is hidden when held count is 0.
+11. Tapping Held: 1 opens modal listing the held ticket with correct customer (or Walk-in), item count, total, time held.
+12. With current cart empty, Resume loads the held ticket directly (lines + customer + per-line staff).
+13. With current cart items present, Resume prompts confirmation; Cancel keeps current cart unchanged; Replace clears current cart and loads held.
+14. Discard ✕ removes held ticket without loading.
+15. Hold 6 tickets in succession → oldest dropped, count caps at 5.
+16. Page refresh → held tickets persist, "Held: N" pill still shows correct count, modal still lists them on open.
+17. Active staff in header does NOT change when a ticket is resumed.
+18. Held pill is disabled (greyed out, not tappable) when checkoutState !== 'idle' (same gating as Today's Sales).
+19. Resume during reports overlay open — both should not coexist; Resume action assumed via Held pill which is gated on idle. Confirm header pill is disabled when reports overlay is open if checkout state is non-idle (already covered).
+20. No console errors, no React key warnings, no Tailwind compile errors, no localStorage parse crashes on legacy carts (the migrations from Batch 5 + this batch should handle it).
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Do not attempt checkout, add, commit, or push. Sid runs git himself in the Shell tab after this batch is verified.
+
+HARD STOP
+After scope is built and acceptance passes, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions
+Then wait for the next prompt. This is the last feature batch — next prompt will cover README polish + screenshot capture, NOT more features.
