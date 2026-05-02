@@ -10,6 +10,14 @@ export function calcTax(subtotalCents: number): number {
   return Math.round(subtotalCents * TAX_RATE);
 }
 
-export function calcTotal(subtotalCents: number, taxCents: number): number {
-  return subtotalCents + taxCents;
+export function calcTip(subtotalCents: number, percent: number): number {
+  return Math.round(subtotalCents * (percent / 100));
+}
+
+export function calcTotal(
+  subtotalCents: number,
+  taxCents: number,
+  tipCents = 0,
+): number {
+  return subtotalCents + taxCents + tipCents;
 }

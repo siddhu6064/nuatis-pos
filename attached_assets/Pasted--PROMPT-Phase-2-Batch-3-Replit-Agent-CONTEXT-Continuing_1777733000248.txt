@@ -1,0 +1,75 @@
+▶ PROMPT [Phase 2 · Batch 3 · Replit Agent]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack is React 18 + Vite + Tailwind v4 (deviated from Next.js 14 / Tailwind v3 spec — fine for prototype, won't carry into production). Batch 1 shipped auth + register grid. Batch 2 shipped the right-side cart with quantity controls, 8.25% tax, integer-cents math, and localStorage persistence at key `nuatis-pos:cart`. Tapping Charge currently just console.logs.
+
+This batch adds tip selection (in-place within cart) and the mock checkout flow: simulated card reader → success → New Sale clears and returns to register. Tip selection uses presets [No Tip, 15%, 18%, 20%, 25%, Custom]. Tip is calculated on subtotal only (NOT subtotal+tax). Production will use Stripe Terminal exclusively — for prototype, Card-only mock is sufficient.
+
+GOAL
+With items in cart, tapping Charge transforms the cart into tip-selection mode in place; selecting a tip and tapping Confirm Charge launches a full-screen simulated card reader for 2 seconds, then a success screen with "New Sale" button that clears everything and returns to the register grid.
+
+SCOPE — BUILD THIS
+1. Checkout state machine in hooks/useCheckout.ts: states 'idle' | 'tip' | 'processing' | 'success'. Transitions: idle→tip (tap Charge), tip→idle (tap Cancel), tip→processing (tap Confirm), processing→success (after 2000ms setTimeout), success→idle+clear (tap New Sale).
+2. In 'tip' state, cart panel shows a tip preset row above the math summary: 6 buttons in a single horizontal row — [No Tip] [15%] [18%] [20%] [25%] [Custom]. Each button ~52px tall, equal width. Selected preset gets accent border + bold text. No preset selected at start (No Tip is the rest state showing tipCents=0).
+3. Selecting 15/18/20/25 sets tipCents = Math.round(subtotalCents × pct). Total updates immediately.
+4. Selecting [Custom] reveals an inline numeric input below the preset row: "$" prefix + text input. Accepts dollars-cents like "5.00" or "5" or "12.50". Validate: numeric only, max two decimals, no negatives. "Apply" button next to input commits the value. Empty/invalid input shows "Apply" disabled.
+5. Math summary in tip state: Subtotal row, Tax row, Tip row (hidden when tipCents=0, visible otherwise), Total row. All fonts as in Batch 2.
+6. Tip math: tipCents calculated on subtotalCents only — NEVER on subtotalCents+taxCents. totalCents = subtotalCents + taxCents + tipCents.
+7. "Charge" button (idle) becomes "Confirm $X.XX" (tip state) — shows live total reflecting current tip selection. A small "Cancel" text link sits above or below — tapping returns to idle, cart and items intact.
+8. Confirm Charge tap → full-screen overlay (fixed position, z-50, covers header + grid + cart). Background #0F0F10 (near-black). Centered content:
+   - Top: "Present card to reader" (Epilogue 600, 24px, white)
+   - Middle: animated indicator — three dots cycling opacity 0.3→1.0→0.3 in sequence, 1200ms loop, pure CSS
+   - Bottom: total amount (Fraunces 700, 56px, white)
+9. After 2000ms, transition to success state without user action:
+   - Green checkmark — pure CSS or inline SVG, ~80px diameter, brief fade-in (200ms)
+   - "Approved" (Epilogue 600, 32px, white)
+   - Charged amount (Fraunces 700, 56px, white)
+   - "New Sale" button — full-width-ish (max 320px), 56px tall, accent #E84A00, white text, Epilogue 600, 18px
+10. New Sale tap → dismiss overlay, clear cart from state + localStorage, reset checkout state to 'idle', return to register grid with empty cart.
+11. On success transition, append the completed transaction to localStorage key `nuatis-pos:transactions` as an array. Transaction shape: { id: crypto.randomUUID(), lineItems, subtotalCents, taxCents, tipCents, totalCents, paymentMethod: 'card', completedAt: new Date().toISOString() }. Cap array at last 10 transactions (drop oldest on overflow).
+12. Extend lib/cartMath.ts with `calcTip(subtotalCents, percent): number` (returns integer cents) and update `calcTotal` signature to take tipCents. Existing TAX_RATE constant unchanged.
+13. console.log on success: full transaction record. (For future Z report.)
+
+SCOPE — DO NOT BUILD
+- No real Stripe Terminal SDK or any payment provider.
+- No Cash, Split, or alternate payment method buttons — Card mock only.
+- No receipt screen, no print/email/SMS — Batch 4.
+- No retry path, no failed-payment simulation — happy path only.
+- No customer attach, no staff attribution, no modifiers, no discounts, no comp.
+- No keyboard component for custom tip — native HTML input is fine.
+- No animations beyond: dot cycle, checkmark fade-in, tile tap scale (Batch 1), cart-line pulse (Batch 2).
+- No persisting checkout intermediate states (tip/processing/success) across page refresh — only cart in idle state persists.
+- No new npm dependencies — no icon libraries, no animation libraries.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current version, v4 acceptable)
+- TypeScript strict: true
+- All currency as integer cents — never floats
+- Custom tip input: parse dollars-cents string → integer cents using simple math (no third-party number parser)
+- crypto.randomUUID() for transaction id (no uuid lib)
+- File additions: hooks/useCheckout.ts, components/TipPicker.tsx, components/CheckoutOverlay.tsx
+- Cart.tsx extended to render TipPicker conditionally on checkout state
+- Overlay uses fixed positioning with z-50 to cover everything including the header
+
+ACCEPTANCE
+1. With items in cart, tapping Charge transitions cart to tip state — preset row visible, "Charge" button replaced by "Confirm $X.XX" reflecting current total.
+2. No preset is selected initially in tip state — total shows subtotal+tax (tipCents=0), Tip row in math summary is hidden.
+3. Selecting 18% on a $100 subtotal produces $18.00 tip exactly; total = $100 + $8.25 tax + $18 tip = $126.25 (not 18% of $108.25).
+4. Custom tip input accepting "5.50" produces tipCents = 550 and updates total immediately on Apply.
+5. Custom input rejects negative numbers and non-numeric input.
+6. Cancel from tip state returns to idle — cart line items intact, no data lost.
+7. Confirm Charge tap shows the full-screen overlay covering header + grid + cart (no UI bleed-through).
+8. Processing screen displays for ~2000ms with cycling dots animation, then auto-transitions to success.
+9. Success screen shows correct charged amount matching total at moment of confirm.
+10. New Sale clears cart from state AND localStorage, dismisses overlay, returns to clean register grid.
+11. localStorage key `nuatis-pos:transactions` contains the completed transaction record with all required fields.
+12. Page refresh while in idle preserves cart; refresh during tip/processing/success returns to idle (intermediate states not persisted).
+13. No console errors, no React key warnings, no Tailwind compile errors.
+
+HARD STOP
+After scope is built, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions before next batch
+Then wait for the next prompt. Do NOT begin Batch 4 (mock receipt with Print/Email/SMS) on your own.

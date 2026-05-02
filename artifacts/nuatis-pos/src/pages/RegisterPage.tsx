@@ -3,7 +3,9 @@ import { SERVICES, type Service } from "@/lib/services";
 import { ServiceTile } from "@/components/ServiceTile";
 import { Header } from "@/components/Header";
 import { Cart } from "@/components/Cart";
+import { CheckoutOverlay } from "@/components/CheckoutOverlay";
 import { useCart } from "@/hooks/useCart";
+import { useCheckout } from "@/hooks/useCheckout";
 import { calcSubtotal, calcTax, calcTotal } from "@/lib/cartMath";
 import type { AuthUser } from "@workspace/replit-auth-web";
 
@@ -16,6 +18,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const { lines, addItem, increment, decrement, remove, clear } = useCart();
   const [pulsingServiceId, setPulsingServiceId] = useState<string | null>(null);
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const checkout = useCheckout(clear);
 
   const handleTileTap = useCallback(
     (service: Service) => {
@@ -30,12 +34,25 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [addItem],
   );
 
-  const handleCharge = useCallback(() => {
+  const handleConfirmCharge = useCallback(() => {
     const subtotalCents = calcSubtotal(lines);
     const taxCents = calcTax(subtotalCents);
-    const totalCents = calcTotal(subtotalCents, taxCents);
-    console.log("checkout:", { lineItems: lines, subtotalCents, taxCents, totalCents });
-  }, [lines]);
+    const totalCents = calcTotal(subtotalCents, taxCents, checkout.tipCents);
+    checkout.confirmCheckout({
+      lineItems: lines,
+      subtotalCents,
+      taxCents,
+      tipCents: checkout.tipCents,
+      totalCents,
+    });
+  }, [lines, checkout]);
+
+  const overlayTotalCents = checkout.completedTx
+    ? checkout.completedTx.totalCents
+    : (() => {
+        const sub = calcSubtotal(lines);
+        return calcTotal(sub, calcTax(sub), checkout.tipCents);
+      })();
 
   return (
     <div
@@ -65,10 +82,23 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             onDecrement={decrement}
             onRemove={remove}
             onClear={clear}
-            onCharge={handleCharge}
+            checkoutState={checkout.state}
+            tipCents={checkout.tipCents}
+            selectedPreset={checkout.selectedPreset}
+            onStartCheckout={checkout.startCheckout}
+            onCancelCheckout={checkout.cancelCheckout}
+            onConfirmCharge={handleConfirmCharge}
+            onTipPresetSelect={checkout.selectPreset}
+            onCustomTipApply={checkout.applyCustomTip}
           />
         </aside>
       </div>
+
+      <CheckoutOverlay
+        state={checkout.state}
+        totalCents={overlayTotalCents}
+        onNewSale={checkout.completeSale}
+      />
     </div>
   );
 }
