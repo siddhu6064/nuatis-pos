@@ -1,0 +1,71 @@
+▶ PROMPT [Phase 3 · Batch 16 · Replit Agent]
+
+CONTEXT
+Nuatis POS prototype, prototype/replit-day-1 branch. 15 batches shipped, v0.0.3-prototype tagged. Three verticals live (salon/spa/nail_bar) with full operator + owner loops: register, cart, tip, mock checkout, receipts + 4-channel mock delivery, customer attach (phone-first, pre+post-sale), per-line staff attribution, Today's Sales overlay, modifiers, Hold/Resume (cap 5), discounts, comp, manager PIN override, line-level partial refunds, header vertical switcher, per-vertical namespaced localStorage, Owner Settings overlay (Business / Tax & Tips / Staff CRUD). All batches landed clean, zero error escapes.
+
+This batch validates a genuinely NEW UX pattern not yet in the prototype: pre-cart customer state. The walk-in queue captures customers BEFORE they become a ticket — name on the list, position assigned, wait elapsed shown — then promotes to ticket when it's their turn. New mental model. Foundation for an appointment-aware register later (out of scope this batch).
+
+GOAL
+Operator can add a walk-in to a per-vertical FIFO queue from the header, see position and wait elapsed, and promote a queue entry to a fresh cart pre-filled with the customer's name/phone (and a service line if one was selected at queue time).
+
+SCOPE — BUILD THIS
+1. New useWaitlist hook reading/writing localStorage at nuatis-pos:{verticalId}:waitlist. Per-vertical isolation (switching verticals swaps which queue is visible, others persist). Cap 10 entries. FIFO order by addedAt timestamp.
+2. Waitlist entry shape: id (uuid or timestamp), name (required, trimmed, non-empty), phone (optional, normalized to digits), serviceId (optional, must reference a service in the active vertical's catalog at add time — store snapshot of name+price for safety), addedAt (epoch ms).
+3. Header gets a Waitlist: N pill placed adjacent to the existing Held: N pill, same visual language. N reflects active-vertical queue count. Clicking opens a WaitlistOverlay.
+4. WaitlistOverlay (modal/full-screen overlay matching Today's Sales overlay style): top bar with title "Waitlist" + close button, "+ Walk-in" button top-right, scrollable list below. Empty state: "No one waiting" with subtle helper text.
+5. Each queue row shows: position number (1, 2, 3…), name (large), phone (smaller, formatted (xxx) xxx-xxxx if 10 digits), service name + price if attached (smaller), wait elapsed badge (computed on render from addedAt: "Xm" under 60 min, "Xh Ym" beyond), and two action buttons: [Start Service] (primary) and [Remove] (secondary/destructive).
+6. "+ Walk-in" opens an AddWalkInModal with: Name input (required, autofocus), Phone input (optional, digits only with formatting hint), Service select (optional, dropdown populated from active vertical's services config — first option "No service yet"). Submit button disabled until Name has at least 1 non-whitespace char. Cancel returns to overlay without changes.
+7. Submitting AddWalkInModal appends to waitlist, closes the modal, returns to overlay with new entry at bottom (highest position number).
+8. When waitlist is at cap (10), the "+ Walk-in" button is disabled with helper text "Waitlist full (10 max)".
+9. [Start Service] on a queue entry: clears any empty cart state, attaches the customer (name + phone if present) using the existing customer-attach mechanism (name-only entries skip the customer-book save path), and if a service was selected at queue time, adds it as a cart line at the snapshotted price with the active staff attribution. Removes the entry from the queue. Closes the overlay so the operator lands on the register with the cart populated.
+10. [Start Service] is disabled (with tooltip "Finish current ticket first") when cart has items OR checkout state is non-idle. Same gating model as the vertical switcher. Adding a walk-in is NOT gated — allowed even mid-checkout.
+11. [Remove] shows a confirm dialog "Remove [name] from waitlist?" with Cancel / Remove buttons. Confirm removes the entry. No audit trail or reason picker — keep it light.
+12. Per-vertical persistence verified: adding entries in salon, switching to spa shows spa's queue (likely empty), switching back to salon restores the salon queue intact.
+
+SCOPE — DO NOT BUILD
+- SMS notify when ready (no Telnyx, no mock toast for notify — just promote-to-ticket flow)
+- Auto-promote when previous ticket completes
+- Party size / group entries (one person per entry)
+- Priority / reorder / drag-to-reorder
+- Service-duration-based wait estimate (count-based or elapsed-only; do not multiply by service durations)
+- Staff assignment at queue time (staff attaches via the existing per-line attribution model when promoted)
+- Cross-vertical waitlist view (each vertical's queue is isolated; same locked principle as everything else)
+- Service-level free-text notes on queue entries (previously declined; no new UX pattern)
+- Customer purchase history / profile view from the queue row
+- Live-ticking wait elapsed (recompute on render is fine, no setInterval)
+- Any real SMS, real backend, real auth, real anything — prototype is localStorage only
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4, no new dependencies
+- Match existing overlay/modal patterns (Today's Sales overlay for full-screen list, Hold/Resume for compact list, AddWalkInModal can mirror customer-attach modal style)
+- localStorage key: nuatis-pos:{verticalId}:waitlist (one array per vertical, no shared waitlist key)
+- ID generation: same approach as held tickets / transactions (timestamp or crypto.randomUUID, whichever the codebase uses)
+- Phone normalization: strip non-digits on input, format on display
+- Wait elapsed formatter is a pure function — call from render, no effects
+- Reuse the existing customer-attach hook/state for the promote flow; do not introduce a parallel customer pathway
+
+ACCEPTANCE
+- Add 3 walk-ins to salon → Waitlist: 3 pill in header. Switch to spa → pill shows Waitlist: 0 (or hidden if 0). Switch back to salon → all 3 entries present in original order with positions 1, 2, 3.
+- Add 10 entries → "+ Walk-in" disables with "Waitlist full" helper. Remove one → button re-enables.
+- Add walk-in with name only → row shows name, no phone, no service, position, wait elapsed.
+- Add walk-in with name + phone + service → row shows all four. Promote → cart has customer attached + that service as a line at the snapshotted price + active staff attribution. Entry gone from queue.
+- Promote a name-only entry → cart has customer attached (name only, no phone), no service line, ready for tile selection. Entry gone from queue.
+- With cart populated, click [Start Service] on any queue entry → button disabled with tooltip; entry stays in queue.
+- During simulated checkout (2-sec card reader running), [Start Service] disabled across all entries; [+ Walk-in] still works and adds to queue.
+- Remove entry → confirm dialog appears with the correct name → confirm removes; cancel keeps it.
+- Wait elapsed renders "Xm" for entries under an hour, "Xh Ym" past an hour. (Backdate an entry's addedAt manually in DevTools to test.)
+- Empty state shows "No one waiting" when queue is empty for the active vertical.
+- Reload the page → active-vertical queue restored from localStorage in the same order.
+
+DO NOT TOUCH GIT
+Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab after this batch lands.
+
+REPORT FORMAT — REQUIRED
+Agent's response must include four sections in this order:
+- WHAT WAS BUILT
+- ERRORS ENCOUNTERED
+- ITEMS SKIPPED
+- OPEN QUESTIONS
+
+HARD STOP
+Stop after the scope above. Do not begin a next batch. Wait for the next prompt.
