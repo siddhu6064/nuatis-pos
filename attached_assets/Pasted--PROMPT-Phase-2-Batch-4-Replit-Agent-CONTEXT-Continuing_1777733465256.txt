@@ -1,0 +1,93 @@
+▶ PROMPT [Phase 2 · Batch 4 · Replit Agent]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-3 shipped: Replit Auth, register grid (12 salon services), right-side cart with quantity controls + 8.25% tax + localStorage at `nuatis-pos:cart`, in-place tip selection (No Tip / 15 / 18 / 20 / 25 / Custom), 2-second simulated card reader overlay, success screen with single "New Sale" button, transaction log at `nuatis-pos:transactions` (capped 10).
+
+This batch replaces the single "New Sale" button on the success screen with a four-button receipt picker, and adds a rendered receipt panel that previews exactly what the operator would print/send. All delivery channels are mocked — no real printer, no SendGrid, no Twilio. Tapping any of the four buttons fires a toast confirmation and advances to a final "New Sale" affordance that clears the cart and returns to the register.
+
+GOAL
+After mock payment success, operator sees a rendered receipt preview alongside four delivery options [Print, Email, SMS, No Receipt]. Tapping Print fires a "Sent to printer (mock)" toast; Email/SMS reveal an inline input then fire "Sent (mock)" toast; No Receipt advances directly. After any choice, "New Sale" button appears to return to the register.
+
+SCOPE — BUILD THIS
+1. Extend useCheckout state machine — add 'receipt' state. Transition: 'processing' → 'receipt' (after 2000ms) instead of 'success'. 'success' state can be removed or re-purposed. Add 'completed' state — entered after operator picks a delivery option. New Sale tap moves 'completed' → 'idle' and clears cart.
+2. Receipt overlay layout: replace the existing success-screen content with a two-column layout inside the same #0F0F10 fullscreen overlay. Left column (~440px): rendered receipt panel on a white card. Right column (rest): "Approved" header + charged amount + four delivery buttons stacked + (after a delivery choice) "New Sale" button.
+3. Rendered receipt panel — components/Receipt.tsx — white background, black text, monospaced/serif feel. Vertical layout top-to-bottom:
+   - Business name "Nuatis POS Demo Salon" (Fraunces 700, 22px, centered)
+   - Address "123 Main St, Austin, TX 78701" (Epilogue 400, 12px, centered, muted)
+   - Phone "(512) 555-0100" (Epilogue 400, 12px, centered, muted)
+   - Divider — thin horizontal rule
+   - Date + time row: formatted via Intl.DateTimeFormat — "May 02, 2026 · 3:42 PM"
+   - Transaction ID: "Txn #" + last 8 chars of completedTx.id, uppercased
+   - Divider
+   - Line items — for each: row 1 service name (left) + line total formatted (right), row 2 small "qty × $unit" (left, muted, indented). Use JetBrains Mono for amounts, Epilogue for names.
+   - Divider
+   - Math rows — Subtotal / Tax / Tip / Total. Tip row hidden when tipCents=0. Total row bold + larger.
+   - Divider
+   - Payment method — "Card • Visa •••• 4242" (mock — hardcoded)
+   - Divider
+   - "Thank you" centered (Fraunces 600 italic, 16px)
+4. Right column delivery picker — four full-width buttons stacked, 56px tall, 12px gap:
+   - [Print Receipt] — accent #E84A00 background, white text
+   - [Email Receipt] — white background with #E84A00 border, accent text
+   - [SMS Receipt] — white background with #E84A00 border, accent text
+   - [No Receipt] — transparent, white text muted, no border
+5. Print button: tap → 200ms scale feedback → toast "Sent to printer (mock)" appears top-right of overlay → after 1500ms toast fades → "New Sale" button appears at bottom of right column. The four delivery buttons disable after first tap (operator can't double-deliver).
+6. Email button: tap → reveal inline input above the button row: text input "customer@example.com" placeholder + "Send" button. Send disabled until input matches a basic email regex (/^\S+@\S+\.\S+$/). Send tap → toast "Email sent (mock)" → "New Sale" appears.
+7. SMS button: same pattern — reveal phone input ("(555) 123-4567" placeholder), basic validation (10-11 digits accepted, format-flexible), Send → toast "SMS sent (mock)" → "New Sale" appears.
+8. No Receipt: tap → no toast, immediately reveal "New Sale" button.
+9. Toast: lib/Toast.tsx (or simple inline component) — fixed top-right of viewport, white background, dark text, brief slide-in from top, fades after 1500ms. No queueing — only one toast at a time, new toast replaces old.
+10. New Sale button: same styling as Batch 3 — accent #E84A00, 56px tall, full-width-ish (max 320px). Tap → cart clear + localStorage cart clear + checkout state → idle + dismiss overlay.
+11. Append the delivery method to the transaction record before completion. Update transaction shape to include `receiptDelivery: 'print' | 'email' | 'sms' | 'none'` and (when email/sms) `receiptDestination: string`. Update existing transactions write in useCheckout to record this on the 'completed' transition, not the 'processing→receipt' transition.
+12. console.log on completion: full transaction record with delivery info.
+
+SCOPE — DO NOT BUILD
+- No real printer driver, no ESC/POS, no window.print().
+- No real email — no SendGrid, no Resend, no fetch calls.
+- No real SMS — no Twilio, no Telnyx, no fetch calls.
+- No receipt preview before payment — receipt only renders post-success.
+- No reprint of past transactions — Z report / recent sales is later.
+- No barcode, no QR code, no logo image on the receipt.
+- No customizable business info — hardcoded for prototype only.
+- No multi-language receipt.
+- No animations beyond: existing dot-fade/check-appear, button tap scale, toast slide-in fade-out.
+- No new npm dependencies.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- Email regex: /^\S+@\S+\.\S+$/ — basic only, no RFC compliance attempt
+- Phone validation: strip non-digits, check length 10 or 11, accept anything formatted
+- Date formatting via Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+- File additions: components/Receipt.tsx, components/ReceiptOverlay.tsx (extracted from CheckoutOverlay or extends it), components/Toast.tsx (or inline)
+- CheckoutOverlay.tsx refactored to switch between 'processing' and 'receipt' state content within the same #0F0F10 fullscreen container
+
+ACCEPTANCE
+1. After 2-second processing, operator sees the receipt panel + four delivery buttons (not the old single "New Sale").
+2. Receipt panel renders all line items with correct quantities and per-line totals.
+3. Receipt math rows match the transaction exactly — subtotal, tax, tip (hidden if 0), total.
+4. Transaction ID on receipt matches last 8 chars of completedTx.id, uppercased.
+5. Date/time on receipt uses formatted Intl output, not raw ISO string.
+6. Print tap → toast "Sent to printer (mock)" → "New Sale" appears.
+7. Email tap reveals input → invalid email keeps Send disabled → valid email enables → Send fires "Email sent (mock)" toast → "New Sale" appears.
+8. SMS tap reveals input → invalid phone keeps Send disabled → 10-digit phone enables → Send fires "SMS sent (mock)" toast → "New Sale" appears.
+9. After any delivery choice, the four delivery buttons are disabled (cannot double-deliver).
+10. No Receipt tap skips the toast and reveals "New Sale" immediately.
+11. New Sale tap clears cart from state + localStorage, dismisses overlay, returns to register grid.
+12. localStorage `nuatis-pos:transactions` records receiptDelivery and receiptDestination correctly per delivery choice.
+13. No console errors, no React key warnings, no Tailwind compile errors.
+
+GIT — DO THIS LAST AFTER ACCEPTANCE PASSES
+1. If not already on a `prototype/` branch, create one: `git checkout -b prototype/replit-day-1` (only if no prototype branch exists yet — otherwise stay on it).
+2. Stage all changes: `git add -A`
+3. Commit with message: `feat(batch-4): receipt panel + mock print/email/sms delivery`
+4. Push to origin: `git push -u origin prototype/replit-day-1` (or just `git push` if upstream already set).
+5. Report the commit SHA and confirm the push succeeded.
+
+HARD STOP
+After scope is built and pushed, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Git: branch name, commit SHA, push confirmation
+- Open questions before next batch
+Then wait for the next prompt. Do NOT begin Batch 5 (customer attach + staff attribution) on your own.

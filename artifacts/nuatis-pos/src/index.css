@@ -31,3 +31,10 @@
     transform: scale(1);
   }
 }
+
+@keyframes toast-slide {
+  0%   { opacity: 0; transform: translateY(-10px); }
+  12%  { opacity: 1; transform: translateY(0); }
+  75%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}

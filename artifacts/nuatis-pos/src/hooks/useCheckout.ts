@@ -1,7 +1,12 @@
 import { useState, useCallback } from "react";
 import type { CartLine } from "@/hooks/useCart";
 
-export type CheckoutState = "idle" | "tip" | "processing" | "success";
+export type CheckoutState =
+  | "idle"
+  | "tip"
+  | "processing"
+  | "receipt"
+  | "completed";
 
 export interface Transaction {
   id: string;
@@ -12,6 +17,8 @@ export interface Transaction {
   totalCents: number;
   paymentMethod: "card";
   completedAt: string;
+  receiptDelivery?: "print" | "email" | "sms" | "none";
+  receiptDestination?: string;
 }
 
 export interface ConfirmData {
@@ -42,6 +49,7 @@ export function useCheckout(onComplete: () => void) {
   const [tipCents, setTipCents] = useState(0);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [completedTx, setCompletedTx] = useState<Transaction | null>(null);
+  const [processingTotalCents, setProcessingTotalCents] = useState(0);
 
   const startCheckout = useCallback(() => {
     setTipCents(0);
@@ -75,6 +83,7 @@ export function useCheckout(onComplete: () => void) {
   }, []);
 
   const confirmCheckout = useCallback((data: ConfirmData) => {
+    setProcessingTotalCents(data.totalCents);
     setState("processing");
     setTimeout(() => {
       const tx: Transaction = {
@@ -87,18 +96,38 @@ export function useCheckout(onComplete: () => void) {
         paymentMethod: "card",
         completedAt: new Date().toISOString(),
       };
-      appendTransaction(tx);
-      console.log(tx);
       setCompletedTx(tx);
-      setState("success");
+      setState("receipt");
     }, 2000);
   }, []);
+
+  const completeDelivery = useCallback(
+    (
+      delivery: "print" | "email" | "sms" | "none",
+      destination?: string,
+    ) => {
+      setCompletedTx((prev) => {
+        if (!prev) return prev;
+        const updated: Transaction = {
+          ...prev,
+          receiptDelivery: delivery,
+          receiptDestination: destination,
+        };
+        appendTransaction(updated);
+        console.log(updated);
+        return updated;
+      });
+      setState("completed");
+    },
+    [],
+  );
 
   const completeSale = useCallback(() => {
     onComplete();
     setTipCents(0);
     setSelectedPreset(null);
     setCompletedTx(null);
+    setProcessingTotalCents(0);
     setState("idle");
   }, [onComplete]);
 
@@ -107,11 +136,13 @@ export function useCheckout(onComplete: () => void) {
     tipCents,
     selectedPreset,
     completedTx,
+    processingTotalCents,
     startCheckout,
     cancelCheckout,
     selectPreset,
     applyCustomTip,
     confirmCheckout,
+    completeDelivery,
     completeSale,
   };
 }

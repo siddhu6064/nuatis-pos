@@ -47,13 +47,6 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     });
   }, [lines, checkout]);
 
-  const overlayTotalCents = checkout.completedTx
-    ? checkout.completedTx.totalCents
-    : (() => {
-        const sub = calcSubtotal(lines);
-        return calcTotal(sub, calcTax(sub), checkout.tipCents);
-      })();
-
   return (
     <div
       className="h-screen flex flex-col overflow-hidden"
@@ -96,7 +89,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
       <CheckoutOverlay
         state={checkout.state}
-        totalCents={overlayTotalCents}
+        processingTotalCents={checkout.processingTotalCents}
+        completedTx={checkout.completedTx}
+        onCompleteDelivery={checkout.completeDelivery}
         onNewSale={checkout.completeSale}
       />
     </div>
