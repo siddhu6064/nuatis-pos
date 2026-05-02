@@ -1,12 +1,15 @@
+import { useState } from "react";
 import type { CartLine as CartLineType } from "@/hooks/useCart";
+import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
 
 interface CartLineProps {
   line: CartLineType;
   isPulsing: boolean;
-  onIncrement: (serviceId: string) => void;
-  onDecrement: (serviceId: string) => void;
-  onRemove: (serviceId: string) => void;
+  onIncrement: (lineId: string) => void;
+  onDecrement: (lineId: string) => void;
+  onRemove: (lineId: string) => void;
+  onStaffChange: (lineId: string, staffId: string) => void;
 }
 
 export function CartLine({
@@ -15,15 +18,16 @@ export function CartLine({
   onIncrement,
   onDecrement,
   onRemove,
+  onStaffChange,
 }: CartLineProps) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   const lineTotal = line.priceCents * line.quantity;
+  const assignedStaff = STAFF.find((s) => s.id === line.staffId);
 
   return (
     <div
       className="px-4 py-3 transition-colors duration-200"
-      style={{
-        backgroundColor: isPulsing ? "#FFF0E8" : "transparent",
-      }}
+      style={{ backgroundColor: isPulsing ? "#FFF0E8" : "transparent" }}
     >
       <div className="flex items-center justify-between mb-1.5">
         <span
@@ -43,7 +47,7 @@ export function CartLine({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1">
           <button
-            onClick={() => onDecrement(line.serviceId)}
+            onClick={() => onDecrement(line.lineId)}
             className="
               w-8 h-8 rounded-lg
               bg-black/6 hover:bg-black/10
@@ -63,7 +67,7 @@ export function CartLine({
             {line.quantity}
           </span>
           <button
-            onClick={() => onIncrement(line.serviceId)}
+            onClick={() => onIncrement(line.lineId)}
             className="
               w-8 h-8 rounded-lg
               bg-black/6 hover:bg-black/10
@@ -79,7 +83,7 @@ export function CartLine({
         </div>
 
         <button
-          onClick={() => onRemove(line.serviceId)}
+          onClick={() => onRemove(line.lineId)}
           className="
             text-[13px] font-medium text-gray-400
             hover:text-red-500
@@ -90,6 +94,47 @@ export function CartLine({
         >
           ✕
         </button>
+      </div>
+
+      {/* Staff attribution */}
+      <div className="mt-1.5">
+        {!pickerOpen ? (
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="text-[12px] text-gray-400 hover:text-gray-600 transition-colors duration-100"
+            style={{ fontFamily: "'Epilogue', sans-serif" }}
+          >
+            → {assignedStaff?.firstName ?? "Unassigned"}
+          </button>
+        ) : (
+          <div className="flex gap-1 flex-wrap">
+            {STAFF.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => {
+                  onStaffChange(line.lineId, s.id);
+                  setPickerOpen(false);
+                }}
+                className="h-[26px] px-2.5 rounded-md text-[11px] font-medium transition-colors duration-100"
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  backgroundColor:
+                    s.id === line.staffId ? "#E84A00" : "#F3F4F6",
+                  color: s.id === line.staffId ? "white" : "#374151",
+                }}
+              >
+                {s.firstName}
+              </button>
+            ))}
+            <button
+              onClick={() => setPickerOpen(false)}
+              className="h-[26px] px-2 rounded-md text-[11px] text-gray-400 hover:text-gray-600"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

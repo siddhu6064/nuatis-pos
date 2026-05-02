@@ -1,4 +1,4 @@
-import type { CartLine as CartLineType } from "@/hooks/useCart";
+import type { CartLine as CartLineType, CartCustomer } from "@/hooks/useCart";
 import type { CheckoutState } from "@/hooks/useCheckout";
 import { CartLine } from "./CartLine";
 import { TipPicker } from "./TipPicker";
@@ -8,10 +8,15 @@ import { calcSubtotal, calcTax, calcTotal } from "@/lib/cartMath";
 interface CartProps {
   lines: CartLineType[];
   pulsingServiceId: string | null;
-  onIncrement: (serviceId: string) => void;
-  onDecrement: (serviceId: string) => void;
-  onRemove: (serviceId: string) => void;
+  onIncrement: (lineId: string) => void;
+  onDecrement: (lineId: string) => void;
+  onRemove: (lineId: string) => void;
   onClear: () => void;
+  onStaffChange: (lineId: string, staffId: string) => void;
+  // customer
+  customer: CartCustomer | null;
+  onOpenCustomerSearch: () => void;
+  onDetachCustomer: () => void;
   // checkout
   checkoutState: CheckoutState;
   tipCents: number;
@@ -30,6 +35,10 @@ export function Cart({
   onDecrement,
   onRemove,
   onClear,
+  onStaffChange,
+  customer,
+  onOpenCustomerSearch,
+  onDetachCustomer,
   checkoutState,
   tipCents,
   selectedPreset,
@@ -50,6 +59,39 @@ export function Cart({
       className="h-full flex flex-col border-l border-black/8"
       style={{ backgroundColor: "#F8F7F4" }}
     >
+      {/* Customer pill */}
+      <div
+        className="px-4 py-2 border-b border-black/8 flex-shrink-0"
+        style={{ minHeight: "40px" }}
+      >
+        {customer ? (
+          <div className="flex items-center justify-between">
+            <span
+              className="text-[13px] font-medium text-gray-700"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              {customer.firstName} {customer.lastName[0]}.
+            </span>
+            <button
+              onClick={onDetachCustomer}
+              className="text-[12px] text-gray-400 hover:text-red-500 transition-colors px-1"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+              aria-label="Detach customer"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onOpenCustomerSearch}
+            className="text-[13px] font-medium transition-colors duration-100"
+            style={{ color: "#E84A00", fontFamily: "'Epilogue', sans-serif" }}
+          >
+            + Customer
+          </button>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-black/8 flex-shrink-0">
         <span
@@ -75,7 +117,7 @@ export function Cart({
         )}
       </div>
 
-      {/* Line items — scrollable */}
+      {/* Line items */}
       <div className="flex-1 overflow-y-auto">
         {isEmpty ? (
           <div className="flex items-center justify-center h-32 px-4">
@@ -89,13 +131,14 @@ export function Cart({
         ) : (
           <div>
             {lines.map((line, idx) => (
-              <div key={line.serviceId}>
+              <div key={line.lineId}>
                 <CartLine
                   line={line}
                   isPulsing={pulsingServiceId === line.serviceId}
                   onIncrement={inTipState ? () => {} : onIncrement}
                   onDecrement={inTipState ? () => {} : onDecrement}
                   onRemove={inTipState ? () => {} : onRemove}
+                  onStaffChange={inTipState ? () => {} : onStaffChange}
                 />
                 {idx < lines.length - 1 && (
                   <div className="mx-4 h-px bg-black/6" />
@@ -106,7 +149,7 @@ export function Cart({
         )}
       </div>
 
-      {/* Tip picker (tip state only) */}
+      {/* Tip picker */}
       {inTipState && (
         <>
           <div className="mx-4 h-px bg-black/8" />
@@ -119,7 +162,7 @@ export function Cart({
         </>
       )}
 
-      {/* Math summary + action button */}
+      {/* Math summary + action */}
       <div className="flex-shrink-0 border-t border-black/8 px-4 pt-3 pb-4">
         <div className="flex items-center justify-between mb-1.5">
           <span
@@ -214,9 +257,7 @@ export function Cart({
             cursor: isEmpty ? "not-allowed" : "pointer",
           }}
         >
-          {inTipState
-            ? `Confirm ${formatCurrency(totalCents)}`
-            : "Charge"}
+          {inTipState ? `Confirm ${formatCurrency(totalCents)}` : "Charge"}
         </button>
       </div>
     </div>

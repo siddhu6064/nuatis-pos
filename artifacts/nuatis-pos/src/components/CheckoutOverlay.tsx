@@ -1,8 +1,10 @@
 import { useState } from "react";
 import type { CheckoutState, Transaction } from "@/hooks/useCheckout";
+import type { CartCustomer } from "@/hooks/useCart";
 import { formatCurrency } from "@/lib/currency";
 import { Receipt } from "./Receipt";
 import { Toast } from "./Toast";
+import { CustomerSearch } from "./CustomerSearch";
 
 interface CheckoutOverlayProps {
   state: CheckoutState;
@@ -12,6 +14,7 @@ interface CheckoutOverlayProps {
     delivery: "print" | "email" | "sms" | "none",
     destination?: string,
   ) => void;
+  onAttachCustomerPostSale: (customer: CartCustomer) => void;
   onNewSale: () => void;
 }
 
@@ -33,36 +36,35 @@ function ProcessingDots() {
 }
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
-
 function isValidEmail(v: string): boolean {
   return EMAIL_RE.test(v);
 }
-
 function isValidPhone(v: string): boolean {
-  const digits = v.replace(/\D/g, "");
-  return digits.length === 10 || digits.length === 11;
+  return v.replace(/\D/g, "").length >= 10;
 }
 
 interface DeliveryPanelProps {
   tx: Transaction;
   onCompleteDelivery: CheckoutOverlayProps["onCompleteDelivery"];
+  onAttachCustomerPostSale: (c: CartCustomer) => void;
   onNewSale: () => void;
 }
 
-function DeliveryPanel({ tx, onCompleteDelivery, onNewSale }: DeliveryPanelProps) {
-  const [expandedChannel, setExpandedChannel] = useState<
-    "email" | "sms" | null
-  >(null);
+function DeliveryPanel({
+  tx,
+  onCompleteDelivery,
+  onAttachCustomerPostSale,
+  onNewSale,
+}: DeliveryPanelProps) {
+  const [expandedChannel, setExpandedChannel] = useState<"email" | "sms" | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [smsInput, setSmsInput] = useState("");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [newSaleVisible, setNewSaleVisible] = useState(false);
   const [deliveryDone, setDeliveryDone] = useState(false);
+  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
 
-  function fireDelivery(
-    type: "print" | "email" | "sms" | "none",
-    dest?: string,
-  ) {
+  function fireDelivery(type: "print" | "email" | "sms" | "none", dest?: string) {
     setDeliveryDone(true);
     onCompleteDelivery(type, dest);
     if (type === "none") {
@@ -88,6 +90,15 @@ function DeliveryPanel({ tx, onCompleteDelivery, onNewSale }: DeliveryPanelProps
   return (
     <>
       {toastMsg && <Toast message={toastMsg} />}
+      {showCustomerSearch && (
+        <CustomerSearch
+          onAttach={(c) => {
+            onAttachCustomerPostSale(c);
+            setShowCustomerSearch(false);
+          }}
+          onClose={() => setShowCustomerSearch(false)}
+        />
+      )}
 
       <div className="flex flex-col items-center justify-center h-full px-10 gap-3">
         <p
@@ -97,11 +108,35 @@ function DeliveryPanel({ tx, onCompleteDelivery, onNewSale }: DeliveryPanelProps
           Approved
         </p>
         <p
-          className="text-white text-[52px] font-bold tabular-nums mb-3"
+          className="text-white text-[52px] font-bold tabular-nums mb-2"
           style={{ fontFamily: "'Fraunces', serif" }}
         >
           {formatCurrency(tx.totalCents)}
         </p>
+
+        {/* Post-sale customer attach */}
+        {!tx.customer && (
+          <button
+            onClick={() => setShowCustomerSearch(true)}
+            className="text-[13px] font-medium px-3 py-1.5 rounded-lg border transition-colors"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              color: "#E84A00",
+              borderColor: "#E84A00",
+              backgroundColor: "transparent",
+            }}
+          >
+            + Attach Customer
+          </button>
+        )}
+        {tx.customer && (
+          <p
+            className="text-[13px] text-gray-400"
+            style={{ fontFamily: "'Epilogue', sans-serif" }}
+          >
+            {tx.customer.firstName} {tx.customer.lastName}
+          </p>
+        )}
 
         {/* Email input */}
         {expandedChannel === "email" && !deliveryDone && (
@@ -112,22 +147,16 @@ function DeliveryPanel({ tx, onCompleteDelivery, onNewSale }: DeliveryPanelProps
               onChange={(e) => setEmailInput(e.target.value)}
               placeholder="customer@example.com"
               className="flex-1 h-[44px] rounded-lg px-3 text-[14px] outline-none"
-              style={{
-                fontFamily: "'Epilogue', sans-serif",
-                backgroundColor: "white",
-                color: "#111827",
-              }}
+              style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "white", color: "#111827" }}
               autoFocus
             />
             <button
               onClick={() => fireDelivery("email", emailInput)}
               disabled={!isValidEmail(emailInput)}
-              className="h-[44px] px-4 rounded-lg text-[14px] font-semibold text-white transition-all duration-100"
+              className="h-[44px] px-4 rounded-lg text-[14px] font-semibold text-white"
               style={{
                 fontFamily: "'Epilogue', sans-serif",
-                backgroundColor: isValidEmail(emailInput)
-                  ? "#E84A00"
-                  : "#6B7280",
+                backgroundColor: isValidEmail(emailInput) ? "#E84A00" : "#6B7280",
                 cursor: isValidEmail(emailInput) ? "pointer" : "not-allowed",
               }}
             >
@@ -145,17 +174,13 @@ function DeliveryPanel({ tx, onCompleteDelivery, onNewSale }: DeliveryPanelProps
               onChange={(e) => setSmsInput(e.target.value)}
               placeholder="(555) 123-4567"
               className="flex-1 h-[44px] rounded-lg px-3 text-[14px] outline-none"
-              style={{
-                fontFamily: "'Epilogue', sans-serif",
-                backgroundColor: "white",
-                color: "#111827",
-              }}
+              style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "white", color: "#111827" }}
               autoFocus
             />
             <button
               onClick={() => fireDelivery("sms", smsInput)}
               disabled={!isValidPhone(smsInput)}
-              className="h-[44px] px-4 rounded-lg text-[14px] font-semibold text-white transition-all duration-100"
+              className="h-[44px] px-4 rounded-lg text-[14px] font-semibold text-white"
               style={{
                 fontFamily: "'Epilogue', sans-serif",
                 backgroundColor: isValidPhone(smsInput) ? "#E84A00" : "#6B7280",
@@ -242,16 +267,8 @@ function DeliveryPanel({ tx, onCompleteDelivery, onNewSale }: DeliveryPanelProps
         {newSaleVisible && (
           <button
             onClick={onNewSale}
-            className="
-              mt-2 h-[56px] w-full max-w-[320px]
-              rounded-lg text-[18px] font-semibold text-white
-              transition-all duration-150
-              active:scale-[0.98]
-            "
-            style={{
-              fontFamily: "'Epilogue', sans-serif",
-              backgroundColor: "#E84A00",
-            }}
+            className="mt-2 h-[56px] w-full max-w-[320px] rounded-lg text-[18px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+            style={{ fontFamily: "'Epilogue', sans-serif", backgroundColor: "#E84A00" }}
           >
             New Sale
           </button>
@@ -266,22 +283,15 @@ export function CheckoutOverlay({
   processingTotalCents,
   completedTx,
   onCompleteDelivery,
+  onAttachCustomerPostSale,
   onNewSale,
 }: CheckoutOverlayProps) {
-  if (
-    state !== "processing" &&
-    state !== "receipt" &&
-    state !== "completed"
-  ) {
+  if (state !== "processing" && state !== "receipt" && state !== "completed") {
     return null;
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50"
-      style={{ backgroundColor: "#0F0F10" }}
-    >
-      {/* Processing */}
+    <div className="fixed inset-0 z-50" style={{ backgroundColor: "#0F0F10" }}>
       {state === "processing" && (
         <div className="flex items-center justify-center h-full">
           <div className="flex flex-col items-center">
@@ -302,27 +312,21 @@ export function CheckoutOverlay({
         </div>
       )}
 
-      {/* Receipt / Completed */}
       {(state === "receipt" || state === "completed") && completedTx && (
         <div className="flex h-full">
-          {/* Left: Receipt card */}
           <div className="w-[440px] flex-shrink-0 flex items-center justify-center p-6">
             <div
               className="w-full rounded-2xl p-6 overflow-y-auto"
-              style={{
-                backgroundColor: "white",
-                maxHeight: "calc(100vh - 48px)",
-              }}
+              style={{ backgroundColor: "white", maxHeight: "calc(100vh - 48px)" }}
             >
               <Receipt transaction={completedTx} />
             </div>
           </div>
-
-          {/* Right: delivery actions */}
           <div className="flex-1 overflow-hidden">
             <DeliveryPanel
               tx={completedTx}
               onCompleteDelivery={onCompleteDelivery}
+              onAttachCustomerPostSale={onAttachCustomerPostSale}
               onNewSale={onNewSale}
             />
           </div>

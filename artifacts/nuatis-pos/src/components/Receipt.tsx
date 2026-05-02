@@ -1,4 +1,5 @@
 import type { Transaction } from "@/hooks/useCheckout";
+import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
 
 interface ReceiptProps {
@@ -59,6 +60,12 @@ export function Receipt({ transaction }: ReceiptProps) {
         >
           Txn #{txShort}
         </p>
+        {transaction.customer && (
+          <p className="text-[12px] text-gray-700 font-medium">
+            Customer: {transaction.customer.firstName}{" "}
+            {transaction.customer.lastName}
+          </p>
+        )}
       </div>
 
       <Divider />
@@ -67,8 +74,9 @@ export function Receipt({ transaction }: ReceiptProps) {
       <div className="space-y-2.5">
         {transaction.lineItems.map((line) => {
           const lineTotal = line.priceCents * line.quantity;
+          const staffMember = STAFF.find((s) => s.id === line.staffId);
           return (
-            <div key={line.serviceId}>
+            <div key={line.lineId}>
               <div className="flex justify-between items-baseline">
                 <span className="text-[13px] font-medium text-gray-900">
                   {line.name}
@@ -86,6 +94,13 @@ export function Receipt({ transaction }: ReceiptProps) {
                   style={{ fontFamily: "'JetBrains Mono', monospace" }}
                 >
                   {line.quantity} × {formatCurrency(line.priceCents)}
+                  {staffMember && (
+                    <span
+                      style={{ fontFamily: "'Epilogue', sans-serif" }}
+                    >
+                      {" "}· {staffMember.firstName}
+                    </span>
+                  )}
                 </span>
               </div>
             </div>
@@ -139,12 +154,10 @@ export function Receipt({ transaction }: ReceiptProps) {
 
       <Divider />
 
-      {/* Payment method */}
       <p className="text-[12px] text-gray-600">Card • Visa •••• 4242</p>
 
       <Divider />
 
-      {/* Thank you */}
       <p
         className="text-center text-[16px] text-gray-700"
         style={{

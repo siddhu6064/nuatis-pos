@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { CartLine } from "@/hooks/useCart";
+import type { CartLine, CartCustomer } from "@/hooks/useCart";
 
 export type CheckoutState =
   | "idle"
@@ -17,6 +17,7 @@ export interface Transaction {
   totalCents: number;
   paymentMethod: "card";
   completedAt: string;
+  customer: CartCustomer | null;
   receiptDelivery?: "print" | "email" | "sms" | "none";
   receiptDestination?: string;
 }
@@ -27,6 +28,7 @@ export interface ConfirmData {
   taxCents: number;
   tipCents: number;
   totalCents: number;
+  customer: CartCustomer | null;
 }
 
 const TRANSACTIONS_KEY = "nuatis-pos:transactions";
@@ -95,17 +97,19 @@ export function useCheckout(onComplete: () => void) {
         totalCents: data.totalCents,
         paymentMethod: "card",
         completedAt: new Date().toISOString(),
+        customer: data.customer,
       };
       setCompletedTx(tx);
       setState("receipt");
     }, 2000);
   }, []);
 
+  const attachCustomerPostSale = useCallback((c: CartCustomer) => {
+    setCompletedTx((prev) => (prev ? { ...prev, customer: c } : prev));
+  }, []);
+
   const completeDelivery = useCallback(
-    (
-      delivery: "print" | "email" | "sms" | "none",
-      destination?: string,
-    ) => {
+    (delivery: "print" | "email" | "sms" | "none", destination?: string) => {
       setCompletedTx((prev) => {
         if (!prev) return prev;
         const updated: Transaction = {
@@ -142,6 +146,7 @@ export function useCheckout(onComplete: () => void) {
     selectPreset,
     applyCustomTip,
     confirmCheckout,
+    attachCustomerPostSale,
     completeDelivery,
     completeSale,
   };

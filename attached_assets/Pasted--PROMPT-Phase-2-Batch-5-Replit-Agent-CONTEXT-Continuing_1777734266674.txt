@@ -1,0 +1,79 @@
+▶ PROMPT [Phase 2 · Batch 5 · Replit Agent]
+
+CONTEXT
+Continuing the throwaway UX prototype for Nuatis POS. Stack: React 18 + Vite + Tailwind v4. Batches 1-4 shipped: Replit Auth, register grid (12 salon services), right-side cart with quantity controls + 8.25% tax, in-place tip selection, simulated card reader, receipt panel + mock Print/Email/SMS delivery, transaction log at `nuatis-pos:transactions`.
+
+This batch adds customer attach (phone-first lookup, supports post-sale attach) and per-line staff attribution. Mock data only — 6 hardcoded customers, 3 hardcoded staff. The header gains a "Switch Staff" affordance — the active staff drives the default attribution for new cart lines. The iPad represents a shared front-desk device; the active staff is the operator currently ringing, not the device owner.
+
+GOAL
+Operator can pick the active staff from header, override staff per cart line, and attach a customer either before checkout (via cart pill) or after the sale (via Receipt screen). Customer attach is phone-first: enter phone, system auto-matches existing customer or offers inline create-new.
+
+SCOPE — BUILD THIS
+1. lib/staff.ts — hardcoded array of 3 staff: { id: 'staff_1', firstName: 'Maria', role: 'Stylist' }, { id: 'staff_2', firstName: 'James', role: 'Colorist' }, { id: 'staff_3', firstName: 'Lisa', role: 'Stylist' }. Export STAFF constant.
+2. lib/customers.ts — hardcoded array of 6 customers: { id, firstName, lastName, phone, lastVisit }. Use these exactly: Sarah Chen (512) 555-0142 last "Apr 12, 2026"; Marcus Rodriguez (512) 555-0177 last "Mar 28, 2026"; Priya Patel (512) 555-0118 last "Apr 22, 2026"; David Kim (512) 555-0193 last "Feb 15, 2026"; Emma Thompson (512) 555-0156 last "Apr 30, 2026"; Jordan Williams (512) 555-0124 last "Mar 05, 2026". Phone stored as digits only ("5125550142") for lookup; format on display via small util. Export CUSTOMERS as a mutable in-memory array (so "+ New" can push to it for the session).
+3. lib/phone.ts — `normalizePhone(input: string): string` strips non-digits; `formatPhone(digits: string): string` returns "(512) 555-0142" style.
+4. Active staff state via hooks/useActiveStaff.ts (or Context). Default: STAFF[0]. Persist active staff id to localStorage key `nuatis-pos:activeStaffId` so refresh keeps the same staff.
+5. Header redesign — right side now shows: active staff "<FirstName> · <Role>" (Epilogue 600 14px / Epilogue 400 12px muted) + small "Switch" text link. Replit user email + logout move into a small "Account" overflow at the far right (text link or "•••") that reveals a tiny dropdown — email + logout. Don't break existing logout.
+6. Switch Staff modal — components/StaffSwitcher.tsx — centered modal, dim backdrop rgba(0,0,0,0.4). Lists 3 staff as tappable rows: name + role. Tap → set active staff + dismiss. ESC or backdrop dismisses without changing.
+7. Cart line item shape extended — add `staffId: string`. New lines from tile tap stamp with current active staff id.
+8. Per-line staff override — each cart line shows a small label below qty controls: "→ <FirstName>" (Epilogue 400 12px muted, tappable). Tapping reveals an inline 3-row picker replacing the label; picking sets that line's staffId and reverts to label.
+9. Cart line dedupe rule: tile tap with same serviceId AND same active staffId → increment quantity. Same serviceId with different active staffId → append as new line (different staff = separate line for attribution).
+10. Customer pill — small "+ Customer" button at the very TOP of the cart panel, above the "Cart" header. When attached: shows "<FirstName> <LastInitial>." with ✕ to detach. Tapping the pill (when no customer attached) opens the customer search modal.
+11. Customer search modal — components/CustomerSearch.tsx — centered modal, dim backdrop. Phone-first UX:
+    - Top: single text input, placeholder "Phone or name", autofocus on open
+    - As operator types, normalize input — if input is mostly digits, treat as phone search (match against normalized phone digits, partial match by `startsWith`); else treat as name search (case-insensitive substring match against firstName + " " + lastName)
+    - Result list below input — each row: name (Epilogue 500 16px) + formatted phone (JetBrains Mono 400 14px muted) + "Last: <date>" (Epilogue 400 12px muted). Tap a row to attach + dismiss.
+    - When no results AND input has 10+ digits typed → show inline "Create new customer" affordance with First / Last / Phone (phone pre-filled from search input). First name required, phone must normalize to 10 digits. Save → push to CUSTOMERS array (in-memory only, lost on reload), attach to ticket, dismiss.
+    - Empty input shows all 6 customers + "+ New Customer" row at the bottom.
+12. Customer state lives on cart context — `customer: { id, firstName, lastName, phone } | null`. Detach (✕ on pill) sets null. Customer state clears on `clear()` (New Sale).
+13. POST-SALE ATTACH on Receipt screen — within the receipt overlay (state 'receipt'), if no customer is attached on the current transaction, render a small "+ Attach Customer" pill below the receipt panel header (or in the right column above the delivery buttons). Tapping opens the same CustomerSearch modal. On attach: update completedTx.customer immediately AND update the receipt render to show "Customer: <Name>" at the proper position. The transaction record written to `nuatis-pos:transactions` (which fires on `completeDelivery`) must include the customer if attached either pre- or post-sale.
+14. Customer + per-line staff propagate to:
+    - Receipt panel — below the Txn ID, add "Customer: <FirstName> <LastName>" (only if attached, else hide). Each line item row 2 appends "· <StaffFirstName>" after the qty × unit price.
+    - Transaction record — extend shape with `customer: { id, firstName, lastName, phone } | null` and per-line `staffId`. Saved into `nuatis-pos:transactions` on `completeDelivery`.
+
+SCOPE — DO NOT BUILD
+- No customer profile screen, purchase history view, or marketing opt-in checkbox.
+- No customer DB, no Supabase, no API call — hardcoded array only.
+- No staff PIN, no role-based permissions, no manager override.
+- No staff schedule, no clock-in/out.
+- No tip allocation across staff — tip stays on ticket as a whole.
+- No customer-facing display.
+- No persistence for "+ New" customers across reload (in-memory push to CUSTOMERS only).
+- No new npm dependencies.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind (current)
+- TypeScript strict: true
+- Phone normalize: strip everything except digits; valid = exactly 10 digits (US-only assumption fine for prototype)
+- Modal pattern: fixed inset-0 z-40 backdrop + centered card; ESC key listener via useEffect; backdrop click dismisses
+- File additions: lib/staff.ts, lib/customers.ts, lib/phone.ts, hooks/useActiveStaff.ts (or context), components/StaffSwitcher.tsx, components/CustomerSearch.tsx, components/CustomerPill.tsx (inline ok)
+- Cart context / state extended to hold customer + per-line staffId
+- useCheckout extended with `attachCustomerPostSale(customer)` that mutates completedTx.customer in place; ensure transaction write on `completeDelivery` reads the post-sale customer if set
+
+ACCEPTANCE
+1. Header right side shows active staff name + role + "Switch" link. Account dropdown still has logout.
+2. Switch modal lists 3 staff. Selecting changes the header. Page refresh keeps the same staff (via `nuatis-pos:activeStaffId`).
+3. Tile tap creates cart line with active staff stamped on it; "→ <FirstName>" label visible below qty controls.
+4. Tapping the staff label reveals inline 3-button picker; selecting updates the line's staffId.
+5. Same service + same staff = qty increment. Same service + different active staff = new line appended.
+6. "+ Customer" pill opens search modal with phone-first input.
+7. Typing "5550118" filters to Priya Patel. Typing "sarah" filters to Sarah Chen. Empty input shows all 6 + "+ New Customer".
+8. Typing a 10-digit phone with no match shows inline create form with phone pre-filled. Saving requires first name, attaches to ticket, pushes to CUSTOMERS in-memory.
+9. After save, the in-memory customer is gone after page refresh (expected).
+10. Attached pill shows "<FirstName> <LastInitial>."; ✕ detaches; new search re-attaches a different customer fine.
+11. POST-SALE: ring up a sale without attaching customer; on the receipt screen, "+ Attach Customer" pill appears; tap → search → attach Priya → receipt updates immediately to show "Customer: Priya Patel".
+12. Transaction in `nuatis-pos:transactions` includes the customer (whether pre- or post-sale attached) and per-line staffId.
+13. Receipt shows "Customer: <Name>" when attached, omits when not. Each line item shows "· <StaffFirstName>".
+14. New Sale clears: cart, attached customer, all per-line staff. Active staff in header REMAINS (operator setting, not per-ticket).
+15. No console errors, no React key warnings, no Tailwind compile errors.
+
+DO NOT TOUCH GIT
+The Replit Agent sandbox cannot run git. Do not attempt checkout, add, commit, or push. Sid runs git himself in the Shell tab after this batch is verified.
+
+HARD STOP
+After scope is built and acceptance passes, report:
+- Summary of what was built
+- Any errors encountered and how resolved
+- Any items skipped + reason
+- Open questions before next batch
+Then wait for the next prompt. Do NOT begin Batch 6 (Z report / recent sales view) on your own.

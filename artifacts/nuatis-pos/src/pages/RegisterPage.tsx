@@ -4,8 +4,11 @@ import { ServiceTile } from "@/components/ServiceTile";
 import { Header } from "@/components/Header";
 import { Cart } from "@/components/Cart";
 import { CheckoutOverlay } from "@/components/CheckoutOverlay";
+import { StaffSwitcher } from "@/components/StaffSwitcher";
+import { CustomerSearch } from "@/components/CustomerSearch";
 import { useCart } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
+import { useActiveStaff } from "@/hooks/useActiveStaff";
 import { calcSubtotal, calcTax, calcTotal } from "@/lib/cartMath";
 import type { AuthUser } from "@workspace/replit-auth-web";
 
@@ -15,15 +18,30 @@ interface RegisterPageProps {
 }
 
 export function RegisterPage({ user, onLogout }: RegisterPageProps) {
-  const { lines, addItem, increment, decrement, remove, clear } = useCart();
-  const [pulsingServiceId, setPulsingServiceId] = useState<string | null>(null);
-  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    lines,
+    customer,
+    addItem,
+    increment,
+    decrement,
+    remove,
+    changeStaff,
+    attachCustomer,
+    detachCustomer,
+    clear,
+  } = useCart();
 
+  const { activeStaff, setActiveStaff } = useActiveStaff();
   const checkout = useCheckout(clear);
+
+  const [pulsingServiceId, setPulsingServiceId] = useState<string | null>(null);
+  const [showStaffSwitcher, setShowStaffSwitcher] = useState(false);
+  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTileTap = useCallback(
     (service: Service) => {
-      addItem(service.id, service.name, service.priceCents);
+      addItem(service.id, service.name, service.priceCents, activeStaff.id);
 
       if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
       setPulsingServiceId(service.id);
@@ -31,7 +49,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         setPulsingServiceId(null);
       }, 200);
     },
-    [addItem],
+    [addItem, activeStaff.id],
   );
 
   const handleConfirmCharge = useCallback(() => {
@@ -44,15 +62,21 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       taxCents,
       tipCents: checkout.tipCents,
       totalCents,
+      customer,
     });
-  }, [lines, checkout]);
+  }, [lines, checkout, customer]);
 
   return (
     <div
       className="h-screen flex flex-col overflow-hidden"
       style={{ backgroundColor: "#F8F7F4" }}
     >
-      <Header user={user} onLogout={onLogout} />
+      <Header
+        user={user}
+        onLogout={onLogout}
+        activeStaff={activeStaff}
+        onSwitchStaff={() => setShowStaffSwitcher(true)}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-y-auto px-5 py-4 min-w-0">
@@ -75,6 +99,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             onDecrement={decrement}
             onRemove={remove}
             onClear={clear}
+            onStaffChange={changeStaff}
+            customer={customer}
+            onOpenCustomerSearch={() => setShowCustomerSearch(true)}
+            onDetachCustomer={detachCustomer}
             checkoutState={checkout.state}
             tipCents={checkout.tipCents}
             selectedPreset={checkout.selectedPreset}
@@ -92,8 +120,27 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         processingTotalCents={checkout.processingTotalCents}
         completedTx={checkout.completedTx}
         onCompleteDelivery={checkout.completeDelivery}
+        onAttachCustomerPostSale={checkout.attachCustomerPostSale}
         onNewSale={checkout.completeSale}
       />
+
+      {showStaffSwitcher && (
+        <StaffSwitcher
+          activeStaffId={activeStaff.id}
+          onSelect={setActiveStaff}
+          onClose={() => setShowStaffSwitcher(false)}
+        />
+      )}
+
+      {showCustomerSearch && (
+        <CustomerSearch
+          onAttach={(c) => {
+            attachCustomer(c);
+            setShowCustomerSearch(false);
+          }}
+          onClose={() => setShowCustomerSearch(false)}
+        />
+      )}
     </div>
   );
 }
