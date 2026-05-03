@@ -1,0 +1,63 @@
+▶ PROMPT [Phase 3 · Batch 24 · Replit Agent]
+
+CONTEXT
+Wrinkle framework closed at B23 (money/state/duration all validated). Split tender currently supports card + cash on a single transaction via the payments[] array, with mock-void disclaimer on cancel-after-card-charged. The N-leg shape has only been exercised at N=2 with mixed methods. This batch extends the split-tender modal to support multiple card legs (and any combination up to a sane cap), validating the remainder-state machine under stress. Production scenario: first card declines or has insufficient balance for the partial, customer hands over a second card to cover the gap.
+
+GOAL
+A single transaction can be settled across up to 5 payment legs in any combination of card + cash, with each card leg running its own simulated reader cycle and a running ledger of captured legs visible in the modal.
+
+SCOPE — BUILD THIS
+- Extend split-tender modal state machine: after a card leg captures, modal returns to leg-picker with running ledger visible; user can tap Card again or Cash again or Comp.
+- Running ledger UI inside split modal: each captured leg shown in capture order with method, amount, mock last4 (cards only). Format like "Card · $40.00 · ****4242" stacked vertically. Below the ledger: "Remaining: $XX.XX" line in the same JetBrains Mono / accent style as elsewhere.
+- payments[] array supports N entries with method='card' (validate this is currently structurally allowed; if any code paths assume max-one-card, fix them).
+- Each card leg runs the existing 2-second simulated reader animation independently (same component, re-triggered per leg).
+- Each cash leg runs the existing right-to-left cents-fill keypad independently, defaulting amount to current remainder.
+- Cap total legs at 5. Attempting a 6th leg shows toast "Maximum 5 split legs per transaction" and blocks. The remaining-amount input on the 5th leg should auto-fill to the full remainder so the 5-leg cap can always settle a transaction.
+- Cancel mid-flow after one or more card legs already captured: mock-void disclaimer modal lists every captured card leg by amount and last4, with text noting that in production all captured charges would be reversed via Stripe Terminal void API. Confirming cancel discards all captured legs and returns to cart.
+- Receipt rendering (Receipt.tsx): payments section lists each leg in capture order with method, amount, and mock last4 for cards. No structural change to the rest of the receipt.
+- Today's Sales receipt detail view: same leg ledger renders in the detail panel below the line items, in capture order.
+- Transaction list badge: existing SPLIT badge unchanged. Multi-card-only transactions still get SPLIT (no new badge).
+- Per-staff revenue math: unchanged. Line-level staff attribution drives the per-staff breakdown; the payment mix is independent of who gets credited.
+- Payment mix breakdown in Today's Sales totals: each card leg counts toward "Card" total, each cash leg toward "Cash" — N card legs aggregate cleanly into one card column.
+- Mock last4 generation: per-leg, generated at capture time, four random digits prefixed with **** for display. Stored on the leg, not regenerated on render.
+
+SCOPE — DO NOT BUILD
+- Real Stripe Terminal void API or any backend integration (mock disclaimer only).
+- Refund-to-specific-leg picker — existing line-level partial refund flow is unchanged; pick whatever default leg-targeting strategy is simplest and document the choice in the agent report.
+- Saved cards, customer payment methods, or any persistence of last4 across transactions.
+- Apple Pay / Google Pay / wallet differentiation — all card legs are generic method='card'.
+- Per-leg receipt printing or per-leg receipt re-delivery.
+- Decline simulation, retry flow, or partial-capture mock — each leg simulates success.
+- Tip allocation across legs. Tip is a whole-transaction value at the existing position in the flow; do not redistribute or per-leg-tip.
+- New transaction badges (no MULTI-CARD or DOUBLE-CARD badge).
+- README / replit.md updates — defer to a dedicated wrap batch.
+- Reports-by-booth-type or any per-subcategory reports breakdown (declined).
+- Operator clock-in, shift-start, shift state envelope (declined post-B23 re-evaluation).
+
+TECH CONSTRAINTS
+- payments[] array shape stays: each entry has method, amountCents, capturedAt, and optional mockLast4 (cards only). Add fields only if strictly required and document why.
+- Use the existing setTimeout-based 2-second reader simulation for each card leg. Do NOT introduce setInterval anywhere.
+- setInterval count in the codebase must remain exactly 1 (in hooks/useElapsedTick.ts only). Header useClock stays on setTimeout recursion.
+- Split-tender modal stays mutually exclusive with other header overlays per the existing rule.
+- TypeScript strict — no any in payments handling, no implicit any in leg ledger rendering.
+- React 18 + Vite + Tailwind v4, no new dependencies.
+
+ACCEPTANCE
+- Cart with services totaling $75. Tap Split. Tap Card, capture leg 1 at $40 — modal returns to leg picker showing "Card · $40.00 · ****XXXX" and "Remaining: $35.00".
+- Tap Card again, capture leg 2 at $25 — modal returns to leg picker showing two card legs in ledger, "Remaining: $10.00".
+- Tap Cash, keypad pre-fills with $10.00 remainder, confirm — transaction completes.
+- New cart $200. Attempt 6 legs of $35 each: 5th leg auto-fills full remainder, 6th leg attempt blocked by "Maximum 5 split legs per transaction" toast.
+- Cancel during a leg picker after 2 card legs captured: mock-void disclaimer lists both legs by amount and last4, mentions Stripe Terminal void API in the footnote text. Confirm cancel discards captured legs and returns to cart with line items intact.
+- Open Today's Sales, tap a multi-card transaction: leg ledger displays in capture order with last4 for each card leg.
+- Receipt for multi-card transaction shows each leg with method, amount, last4 (cards only).
+- Per-staff revenue math: 3-card-leg transaction with 2 different staff on lines splits per existing line attribution rules — verify no per-staff total skew from multi-leg payment shape.
+- Payment mix in Today's Sales totals: 2 card legs of $40 + $25 + 1 cash leg of $10 contributes $65 to Card column, $10 to Cash column.
+- Line-level partial refund on a multi-card transaction: refund flow unchanged, no regression.
+- TypeScript check clean. No console errors during HMR or in flow.
+- grep for setInterval in src/ returns exactly one match (useElapsedTick.ts).
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — REQUIRED — agent's response must include four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.

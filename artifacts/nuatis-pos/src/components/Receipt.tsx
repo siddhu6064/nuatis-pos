@@ -425,7 +425,7 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
                     <div className="flex justify-between text-[12px] text-gray-600">
                       <span>Card payment</span>
                       <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                        {formatCurrency(p.amountCents)} · Visa •••• 4242
+                        {formatCurrency(p.amountCents)} · ****{p.mockLast4 ?? "0000"}
                       </span>
                     </div>
                   ) : (

@@ -20,11 +20,13 @@ export interface RefundRecord {
   managerOverride: boolean;
 }
 
-// B20: Split-tender payment leg
+// B20: Split-tender payment leg (B24: mockLast4 added for card legs)
 export interface SplitPayment {
   method: "card" | "cash";
   amountCents: number;
   processedAt: number; // Date.now() at the moment that leg settled
+  // Card-only
+  mockLast4?: string;  // 4-digit string generated at capture time, stored on leg
   // Cash-only
   tenderedCents?: number;
   changeCents?: number;
