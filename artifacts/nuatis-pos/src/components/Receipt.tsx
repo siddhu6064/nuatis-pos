@@ -78,6 +78,10 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
   );
   const hasVaccinationOverrides = overriddenLines.length > 0;
 
+  // B32: pack-burn lines
+  const packBurnLines = transaction.lineItems.filter((l) => l.usedPackId);
+  const isPackBurn = packBurnLines.length > 0 && !isComped && !isDepositTx;
+
   return (
     <div
       className="text-gray-900 text-[13px] w-full relative"
@@ -101,6 +105,28 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
           }}
         >
           DEPOSIT
+        </div>
+      )}
+
+      {/* PACK REDEMPTION stamp */}
+      {isPackBurn && !hasAnyRefund && (
+        <div
+          style={{
+            position: "absolute",
+            top: "8px",
+            right: "4px",
+            fontFamily: "'Fraunces', serif",
+            fontSize: "12px",
+            fontWeight: 700,
+            color: "#16A34A",
+            transform: "rotate(-8deg)",
+            userSelect: "none",
+            pointerEvents: "none",
+            letterSpacing: "0.05em",
+            textAlign: "right",
+          }}
+        >
+          PACK REDEMPTION
         </div>
       )}
 
@@ -195,6 +221,14 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
               VACC OVERRIDE
             </span>
           )}
+          {isPackBurn && (
+            <span
+              className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
+              style={{ color: "#15803D", backgroundColor: "#DCFCE7", fontFamily: "'Epilogue', sans-serif" }}
+            >
+              PACK
+            </span>
+          )}
         </p>
         {transaction.customer && (
           <p className="text-[12px] text-gray-700 font-medium">
@@ -244,6 +278,20 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
                   {isSessionLine
                     ? `${line.name} · ${sessionMins}m session`
                     : line.name}
+                  {/* B32: pack burn badge */}
+                  {line.usedPackId && !isRefunded && (
+                    <span
+                      className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded"
+                      style={{
+                        fontFamily: "'Epilogue', sans-serif",
+                        color: "#15803D",
+                        backgroundColor: "#DCFCE7",
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      PACK CREDIT
+                    </span>
+                  )}
                   {/* B22: vacc override badge */}
                   {hasOverride && !isRefunded && (
                     <span
@@ -324,7 +372,22 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
       <Divider />
 
       {/* Math rows */}
-      {isDepositTx ? (
+      {isPackBurn ? (
+        <div className="space-y-1">
+          <div className="flex justify-between text-[15px] font-bold pt-1 border-t border-gray-200 mt-1">
+            <span style={{ fontFamily: "'Epilogue', sans-serif", color: "#374151" }}>Total</span>
+            <span
+              className="tabular-nums"
+              style={{ fontFamily: "'Fraunces', serif", color: "#16A34A" }}
+            >
+              $0.00
+            </span>
+          </div>
+          <p className="text-[12px] pt-0.5" style={{ color: "#15803D" }}>
+            No charge — pack credit applied
+          </p>
+        </div>
+      ) : isDepositTx ? (
         <div className="space-y-1">
           <div className="flex justify-between text-[15px] font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
             <span style={{ fontFamily: "'Epilogue', sans-serif" }}>Deposit</span>
@@ -498,6 +561,30 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
 
       <Divider />
 
+      {/* B32: Pack redemption footnote */}
+      {isPackBurn && (
+        <div
+          className="mb-2 px-2 py-1.5 rounded-lg"
+          style={{ backgroundColor: "#F0FDF4", border: "1px solid #BBF7D0" }}
+        >
+          <p
+            className="text-[10px] font-semibold mb-0.5"
+            style={{ color: "#15803D", fontFamily: "'Epilogue', sans-serif" }}
+          >
+            PACK REDEMPTION
+          </p>
+          {packBurnLines.map((line) => (
+            <p
+              key={line.lineId}
+              className="text-[10px]"
+              style={{ color: "#16A34A", fontFamily: "'Epilogue', sans-serif" }}
+            >
+              {line.name}: 1 session deducted from {line.usedPackName ?? "class pack"}
+            </p>
+          ))}
+        </div>
+      )}
+
       {/* Linked deposit footnote */}
       {hasDepositCredit && linkedDepositTx && (
         <p className="text-[11px] text-gray-400 mb-2">
@@ -539,15 +626,17 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
       )}
 
       <p className="text-[12px] text-gray-600">
-        {isDepositTx
-          ? "Deposit received — balance due at service"
-          : isComped
-            ? "No charge — comped"
-            : isSplit
-              ? "Split tender — card + cash"
-              : isCash
-                ? "Cash payment"
-                : "Card · Visa •••• 4242"}
+        {isPackBurn
+          ? "No charge — pack credit"
+          : isDepositTx
+            ? "Deposit received — balance due at service"
+            : isComped
+              ? "No charge — comped"
+              : isSplit
+                ? "Split tender — card + cash"
+                : isCash
+                  ? "Cash payment"
+                  : "Card · Visa •••• 4242"}
       </p>
 
       <Divider />

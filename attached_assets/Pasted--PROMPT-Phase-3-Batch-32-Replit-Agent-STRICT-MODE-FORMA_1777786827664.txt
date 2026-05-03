@@ -1,0 +1,97 @@
+▶ PROMPT [Phase 3 · Batch 32 · Replit Agent · STRICT MODE]
+
+FORMAT CONTRACT — NON-NEGOTIABLE
+Your response will contain exactly four top-level sections in this exact order with these exact headings:
+
+WHAT WAS BUILT
+ERRORS ENCOUNTERED
+ITEMS SKIPPED
+OPEN QUESTIONS
+
+The first line of WHAT WAS BUILT is "Format contract acknowledged."
+
+No preamble. No fifth section. No closing pitch. The phrase "Next, I can add" must not appear in your response. The phrase "Would you like me to" must not appear in your response. No suggestion of follow-on work in any form.
+
+Evidence over claims: where the spec asks you to paste command output, paste the literal output. Do not paraphrase. Self-corrections during this batch are reported in ERRORS ENCOUNTERED with verbatim before/after, not buried in narrative.
+
+CONTEXT
+The day's architectural axes: service-line wrinkles (money/state/duration validated B19/B22/B23), ticket-lifecycle (same_visit/drop_off via workflow flag, B27), cardinality (1:1/1:N customer-to-slot via classEnabled flag, B29 + B31 fix), shift envelope (B26), multi-leg split tender (N=5, B24). All payment paths validated to date are forms of money: card, cash, card+cash split, comp (free, no payment). MVP §16.6 calls out class packages / 10-class punch cards as a Tier 5 feature explicitly distinct from per-class transactions, and §16.5 notes the pack pattern is reused from Tier 1 packages — meaning it's a foundation pattern across multiple tiers. This batch validates a fundamentally new payment shape: prepaid credit ledger. Customer buys a pack of N entitlements upfront for $X; subsequent bookings consume one entitlement instead of paying cash/card; balance tracked on customer record; receipt distinguishes pack-purchase from pack-burn transactions; revenue books at purchase, not at burn. This is the third payment shape category alongside money (card/cash/split) and value-trade (comp).
+
+GOAL
+Yoga_pilates gains a class-pack service (one-time $200 purchase for 10 classes). Customers who own a pack with applicable remaining balance see a "Use class pack (N remaining)" radio option at class-slot booking confirmation; selecting it deducts from balance and books the class at $0. Receipt indicates pack burn. Revenue books at purchase, not at burn. Pack-burn refund restores balance.
+
+SCOPE — BUILD THIS
+- Type extension on Service interface (lib/services.ts): optional packageDef field with shape { sessionCount: number, validForServiceIds: string[], expiryDays?: number }. Existing fields untouched. expiryDays is defined for future use but not enforced this batch.
+- New service in lib/yoga-services.ts: "10-Class Pack" priced $200, packageDef: { sessionCount: 10, validForServiceIds: [list of all 9 isClass-true yoga services in the catalog] }, isClass: false (the pack itself is sold via register tile-tap, not bookable as a class slot).
+- Type extension on Customer (wherever customer types live): optional packBalances field of shape { [packBalanceId: string]: PackBalance }. PackBalance: { id, packServiceId, packServiceName, sessionsRemaining, sessionsTotal, purchasedAt, transactionId, expiresAt? }.
+- Pack purchase flow (existing register flow, gated): tile-tap "10-Class Pack" adds a $200 line. Standard Charge / Card / Cash / Split path. Pack purchase requires customer attached — if no customer at Charge, toast "Customer required for pack purchase" and block (parallel to laundry drop-off customer-required gate). On checkout success, write a PackBalance entry to the attached customer's packBalances object with sessionsRemaining = sessionsTotal = packageDef.sessionCount and transactionId = the completed transaction. transaction record gains packPurchaseId field set to the new PackBalance.id.
+- Pack-burn at class booking: in the ClassesOverlay → CustomerSearch → confirmation flow (B29), AFTER customer is selected and BEFORE the enrollment commit, check whether the selected customer has any pack with sessionsRemaining > 0 AND packServiceId.validForServiceIds includes the class slot's serviceId. If yes, render a two-option radio in the confirmation step: "Pay normal ($X)" (default selected) and "Use class pack (N remaining)". When multiple applicable packs exist (customer bought two 10-packs over time), show one radio per pack stacked, most-recently-purchased first.
+- On pack-burn radio confirm: re-check sessionsRemaining > 0 (capacity-race-style guard from B29) — if filled to 0 in the interim, toast "Pack balance updated; please re-confirm" and reset radio to default. On commit: set line.priceCents = 0, set line.usedPackId = the chosen PackBalance.id, decrement that PackBalance.sessionsRemaining by 1, write back to customer record. Cart hydrates with the $0 line plus pack burn metadata; standard Charge / Card / Cash / Split flow runs but on $0 totals — completed transaction has totalPaid: 0 and the line carries usedPackId.
+- Receipt rendering (components/Receipt.tsx): pack-purchase line displays normally with the package count in the line description ("10-Class Pack · 10 sessions"). Pack-burn line displays as the class service name with $0 price; a footnote line below the line items reads "Class pack used · {N} sessions remaining" using the post-decrement count. When the entire transaction is pack-only (no cash/card collected, totalPaid = 0, all lines are pack burns), receipt header label changes from "Sale" to "Pack Redemption" and the payment block reads "No charge — pack credit" with totals at $0.
+- Today's Sales (components/ReportsOverlay.tsx): two new transaction badges with distinct colors from existing badges. PACK PURCHASE on transactions whose lines include a pack-purchase service. PACK USED on transactions where any line has usedPackId set. Both badges reuse existing badge component shell with new color states.
+- Revenue accounting in Today's Sales gross totals: pack-purchase transactions count at full $200 in their actual Card/Cash/Split payment-mix bucket. Pack-burn transactions do NOT count toward gross revenue (revenue was already booked at purchase). Per-staff revenue rule for pack-burn lines: credit the line's attributed staff at the amortized per-session pack value ($200 / 10 = $20 per burn) so staff don't lose credit for serving pack customers. This is a deliberate revenue-accounting choice — document it explicitly in the agent's WHAT WAS BUILT.
+- Pack-burn refund: line-level partial refund on a $0 pack-burn line via existing Today's Sales receipt detail flow. On refund commit, the pack balance is RESTORED (sessionsRemaining + 1) on the pack the burn was attributed to (via the line.usedPackId). Receipt shows existing REFUNDED badge. Subsequent booking confirmation for the same customer shows the restored count.
+
+SCOPE — DO NOT BUILD
+- Pack expiry enforcement or auto-reminder toasts (expiryDays field defined for future use but not enforced).
+- Pack transfer between customers, pack share / family pack.
+- Pack bundles, multi-pack purchase discounts, pack auto-refill at depletion.
+- Customer profile / purchase history surface.
+- Settings tab for pack CRUD or pack management.
+- Pack reports, per-pack utilization breakdown, pack-specific Today's Sales filters.
+- Recurring monthly memberships ($150/mo unlimited). Separate subscription pattern, weak prototype fit.
+- Pack purchase via gift card, loyalty points, external store, or any non-cart path.
+- Multi-vertical pack (one pack valid across yoga + spa).
+- Pack purchase from web admin or customer self-service.
+- Operator-attention notification when pack low (declined umbrella).
+- Stripe-backed actual prepaid balance accounting (real-backend).
+- README / replit.md updates (defer to a wrap batch).
+- Decorative animations on pack-burn moment.
+- Class wait-list with auto-promote-on-cancel (declined umbrella).
+- 9th vertical of any tier.
+- Reports overlay surface extensions (declined umbrella).
+- Pack redemption from a different customer than the pack owner.
+- Audit log viewer for pack burns (declined list-view content extension).
+- Manager PIN gate on pack burns (no role-based authorization).
+- Refund of the pack-purchase transaction itself (partial refund of one of 10 sessions worth on the original purchase). Refund flow targets pack burns only in this batch; pack-purchase refunds and what they should do to the balance is OPEN — leave for a future batch and document in OPEN QUESTIONS if it surfaces.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4. No new dependencies.
+- setInterval count must remain exactly 1 (in src/hooks/useElapsedTick.ts only).
+- TypeScript strict. PackBalance, packageDef, usedPackId, packPurchaseId fully typed; localStorage hydration of customer.packBalances handled without any.
+- Customer type extension applied at the central Customer type definition; existing per-vertical customer sources (salon-customers, spa-customers, etc.) are not modified beyond hydration if they directly construct Customer literals.
+- ClassesOverlay → CustomerSearch → confirmation flow respects 6-way mutual-exclusivity unchanged.
+- Capacity-race-style guard at pack-burn commit: re-read sessionsRemaining at the moment of confirmation, not at radio render time.
+- Receipt rendering reuses existing footnote pattern from B22 vaccinationOverride and B19 deposit-applied lines. New badges reuse existing badge component shell with new color mappings; do not create a new badge component.
+- Per-staff revenue math change: pack-burn lines must be amortized at packageDef.priceCents / packageDef.sessionCount per burn for staff attribution. Document the calculation explicitly.
+
+ACCEPTANCE
+- Switch to yoga_pilates with no customer attached. Tap 10-Class Pack tile; cart shows $200 line. Tap Charge → toast "Customer required for pack purchase"; no advance.
+- Attach a customer (use existing yoga customer source). Tap Charge → standard Card flow → success. Inspect localStorage: the attached customer record now has a packBalances entry with sessionsRemaining: 10, packServiceId matches the pack service, transactionId matches the just-completed transaction. Inspect the transaction record: packPurchaseId equals the new PackBalance.id.
+- Tap Classes pill → ClassesOverlay → Book on 12pm Power Yoga → CustomerSearch → select the same customer → confirmation step shows TWO radio options: "Pay normal ($25)" (default selected) and "Use class pack (10 remaining)".
+- Select "Use class pack" → confirm → cart hydrates with Power Yoga line at $0; line metadata includes usedPackId; "Class booking · 12:00 · Power Yoga" banner present. Standard Charge → completed transaction has totalPaid: 0; the only line has priceCents: 0 with usedPackId set.
+- Receipt for the burn transaction: header reads "Pack Redemption" not "Sale"; totals show $0; payment block reads "No charge — pack credit"; footnote reads "Class pack used · 9 sessions remaining".
+- Re-read the customer in localStorage: the burned pack now has sessionsRemaining: 9.
+- Today's Sales: pack-purchase transaction shows PACK PURCHASE badge; pack-burn transaction shows PACK USED badge.
+- Today's Sales gross revenue line: includes the full $200 from the pack purchase; does NOT include any amount from the burn transaction (which has totalPaid: 0).
+- Today's Sales per-staff revenue: the staff attributed on the burn line is credited at $20 (= $200 / 10), not $0.
+- Book a second class (6pm Vinyasa Flow) for the same customer; confirmation now shows "Use class pack (9 remaining)" reflecting the post-burn count.
+- Refund the burn-transaction line via Today's Sales receipt detail → REFUNDED badge appears on the burn transaction; the customer's pack balance restores to sessionsRemaining: 10. Subsequent booking confirmation for that customer reads "(10 remaining)" again.
+- Edge cases: customer with no pack → confirmation shows only "Pay normal" (no radio). Customer with pack but the class slot's service is NOT in validForServiceIds → no radio. Customer with pack at sessionsRemaining: 0 → no radio.
+- Multi-pack scenario: have the customer buy a second 10-Class Pack → confirmation now shows three rows: "Pay normal ($25)", "Use class pack (10 remaining)" most-recent-first, "Use class pack (10 remaining)" the older one second. Selecting one burns from THAT specific pack.
+- Run `grep -rn "setInterval" src/` and paste the literal output in WHAT WAS BUILT. Expected: exactly 1 actual call site in src/hooks/useElapsedTick.ts; comment references in other files are acceptable.
+- TypeScript check clean. No console errors during HMR or any flow.
+- Run `git diff --name-only HEAD` at end of batch and paste the literal output in WHAT WAS BUILT. The list will include the files you actually modified — no spec-locked path constraint this batch since the changes touch multiple components, but every file in the diff must be justified in WHAT WAS BUILT (one line per file describing why it was touched).
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — STRICT MODE
+Four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+First line of WHAT WAS BUILT is "Format contract acknowledged."
+No preamble. No fifth section. No closing pitch. The phrase "Next, I can add" must not appear. The phrase "Would you like me to" must not appear.
+Self-corrections during this batch are reported in ERRORS ENCOUNTERED with verbatim before/after.
+ITEMS SKIPPED enumerates each explicit DO NOT BUILD item that was confirmed not done — at minimum: pack expiry enforcement, pack transfer, pack bundles, customer profile surface, Settings pack tab, pack reports, recurring memberships, README/replit.md updates, 9th vertical, Reports overlay extensions, manager PIN gate on burns, audit log for burns, decorative animations on pack burn, pack-purchase refund handling.
+OPEN QUESTIONS lists genuine ambiguity. The pack-purchase refund question (what should happen to the balance if the original $200 purchase is refunded?) belongs here — flag it as an explicit open question for a future batch.
+Run `grep -rn "setInterval" src/` and `git diff --name-only HEAD` at end of batch; include literal output in WHAT WAS BUILT.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.

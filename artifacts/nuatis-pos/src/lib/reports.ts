@@ -77,6 +77,10 @@ export function calcPerStaffSummary(
           .filter((line) => line.staffId === staff.id)
           .reduce((s, line) => {
             if (refundedLineIds.has(line.lineId)) return s;
+            // B32: pack-burn lines have priceCents=0; credit amortized value instead
+            if (line.usedPackId && line.usedPackAmortizedCents !== undefined) {
+              return s + line.usedPackAmortizedCents;
+            }
             return s + calcLineTotalCents(line);
           }, 0)
       );

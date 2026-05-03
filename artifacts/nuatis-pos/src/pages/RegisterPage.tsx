@@ -54,6 +54,9 @@ import {
 import type { Pet } from "@/lib/customers";
 import { checkServiceRequirements } from "@/lib/vaccinations";
 import type { VaccinationRequirement } from "@/lib/vaccinations";
+import { getApplicablePacks, writePackBalance, decrementPackBalance } from "@/lib/packBalances";
+import type { PackBalance } from "@/lib/packBalances";
+import { ClassPackConfirmModal } from "@/components/ClassPackConfirmModal";
 
 interface RegisterPageProps {
   user: AuthUser;
@@ -82,6 +85,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     depositApplied,
     addItem,
     addSessionItem,
+    addPackBurnItem,
     stopSession,
     increment,
     decrement,
@@ -153,6 +157,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   // B29: classes overlay state
   const [showClasses, setShowClasses] = useState(false);
   const [pendingBookSlotId, setPendingBookSlotId] = useState<string | null>(null);
+  // B32: pack confirm state
+  const [pendingBookCustomer, setPendingBookCustomer] = useState<CartCustomer | null>(null);
+  const [showPackConfirm, setShowPackConfirm] = useState(false);
+  const [applicablePacksForConfirm, setApplicablePacksForConfirm] = useState<PackBalance[]>([]);
   const [classBookingContext, setClassBookingContext] = useState<{
     slotId: string;
     enrollmentId: string;
@@ -268,35 +276,24 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
   const handleAttachCustomer = useCallback(
     (c: CartCustomer) => {
-      // B29: yoga class booking flow — triggered when pendingBookSlotId is set
+      // B29/B32: yoga class booking flow — triggered when pendingBookSlotId is set
       if (pendingBookSlotId !== null) {
         const slotId = pendingBookSlotId;
-        setPendingBookSlotId(null);
         setShowCustomerSearch(false);
         if (classSlots.checkSlotFull(slotId)) {
+          setPendingBookSlotId(null);
           if (smsToastTimerRef.current) clearTimeout(smsToastTimerRef.current);
           setSmsToast("Class is full — booking cancelled");
           smsToastTimerRef.current = setTimeout(() => setSmsToast(null), 2000);
           return;
         }
         const slot = classSlots.slots.find((s) => s.id === slotId);
-        if (!slot) return;
-        const customerName = `${c.firstName} ${c.lastName}`.trim();
-        const enrollment = classSlots.enrollCustomer(slotId, c.id, customerName);
-        if (!enrollment) return;
-        const svcConfig = config.services.find((s) => s.id === slot.serviceId);
-        const priceCents = svcConfig?.priceCents ?? 0;
-        attachCustomer(c);
-        addItem(slot.serviceId, slot.serviceName, priceCents, activeStaff.id);
-        if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
-        setPulsingServiceId(slot.serviceId);
-        pulseTimerRef.current = setTimeout(() => setPulsingServiceId(null), 200);
-        setClassBookingContext({
-          slotId,
-          enrollmentId: enrollment.id,
-          scheduledAt: slot.scheduledAt,
-          serviceName: slot.serviceName,
-        });
+        if (!slot) { setPendingBookSlotId(null); return; }
+        // B32: show pack confirm modal (always — operator picks pay mode)
+        const applicable = getApplicablePacks(activeVerticalId, c.id, slot.serviceId);
+        setPendingBookCustomer(c);
+        setApplicablePacksForConfirm(applicable);
+        setShowPackConfirm(true);
         return;
       }
       // Normal flow
@@ -310,6 +307,89 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     },
     [attachCustomer, pendingService, activeVerticalId, runVaccinationGateCheck, pendingBookSlotId, classSlots, config.services, activeStaff.id, addItem],
   );
+
+  // B32: pack confirm modal — operator chose pay mode (null = normal price, string = packId)
+  const handlePackConfirm = useCallback(
+    (selectedPackId: string | null) => {
+      setShowPackConfirm(false);
+      const slotId = pendingBookSlotId;
+      const c = pendingBookCustomer;
+      if (!slotId || !c) {
+        setPendingBookSlotId(null);
+        setPendingBookCustomer(null);
+        setApplicablePacksForConfirm([]);
+        return;
+      }
+      setPendingBookSlotId(null);
+      setPendingBookCustomer(null);
+      setApplicablePacksForConfirm([]);
+
+      if (classSlots.checkSlotFull(slotId)) {
+        if (smsToastTimerRef.current) clearTimeout(smsToastTimerRef.current);
+        setSmsToast("Class is full — booking cancelled");
+        smsToastTimerRef.current = setTimeout(() => setSmsToast(null), 2000);
+        return;
+      }
+      const slot = classSlots.slots.find((s) => s.id === slotId);
+      if (!slot) return;
+
+      const customerName = `${c.firstName} ${c.lastName}`.trim();
+      const enrollment = classSlots.enrollCustomer(slotId, c.id, customerName);
+      if (!enrollment) return;
+
+      attachCustomer(c);
+
+      if (selectedPackId !== null) {
+        const pack = applicablePacksForConfirm.find((p) => p.id === selectedPackId);
+        if (pack) {
+          decrementPackBalance(activeVerticalId, c.id, selectedPackId);
+          addPackBurnItem(
+            slot.serviceId,
+            slot.serviceName,
+            activeStaff.id,
+            pack.id,
+            pack.packServiceName,
+            pack.amortizedCents,
+          );
+        } else {
+          const svcConfig = config.services.find((s) => s.id === slot.serviceId);
+          addItem(slot.serviceId, slot.serviceName, svcConfig?.priceCents ?? 0, activeStaff.id);
+        }
+      } else {
+        const svcConfig = config.services.find((s) => s.id === slot.serviceId);
+        addItem(slot.serviceId, slot.serviceName, svcConfig?.priceCents ?? 0, activeStaff.id);
+      }
+
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+      setPulsingServiceId(slot.serviceId);
+      pulseTimerRef.current = setTimeout(() => setPulsingServiceId(null), 200);
+      setClassBookingContext({
+        slotId,
+        enrollmentId: enrollment.id,
+        scheduledAt: slot.scheduledAt,
+        serviceName: slot.serviceName,
+      });
+    },
+    [
+      pendingBookSlotId,
+      pendingBookCustomer,
+      applicablePacksForConfirm,
+      classSlots,
+      attachCustomer,
+      addItem,
+      addPackBurnItem,
+      activeStaff.id,
+      config.services,
+      activeVerticalId,
+    ],
+  );
+
+  const handlePackCancel = useCallback(() => {
+    setShowPackConfirm(false);
+    setPendingBookSlotId(null);
+    setPendingBookCustomer(null);
+    setApplicablePacksForConfirm([]);
+  }, []);
 
   // B29: book request from ClassesOverlay — opens CustomerSearch in yoga mode
   const handleBookRequest = useCallback((slotId: string) => {
@@ -337,6 +417,22 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     setVaccinationGate(null);
   }, []);
 
+  // ── B32: Pack purchase customer gate ──────────────────────────────────────
+
+  const handleStartCheckout = useCallback(() => {
+    const hasPackLine = lines.some((l) => {
+      const svc = config.services.find((s) => s.id === l.serviceId);
+      return svc?.packageDef != null;
+    });
+    if (hasPackLine && !customer) {
+      if (smsToastTimerRef.current) clearTimeout(smsToastTimerRef.current);
+      setSmsToast("Customer required for pack purchase");
+      smsToastTimerRef.current = setTimeout(() => setSmsToast(null), 2000);
+      return;
+    }
+    checkout.startCheckout();
+  }, [lines, config.services, customer, checkout]);
+
   // ── Cart totals ───────────────────────────────────────────────────────────
 
   const buildCartTotals = useCallback(() => {
@@ -353,6 +449,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
   const handleConfirmCard = useCallback(() => {
     const { subtotalCents, taxCents, tipCents, totalCents } = buildCartTotals();
+    const packLine = lines.find((l) => config.services.find((s) => s.id === l.serviceId)?.packageDef);
+    const packPurchaseId = packLine && customer ? crypto.randomUUID() : undefined;
     checkout.confirmCheckout({
       lineItems: lines,
       subtotalCents,
@@ -368,8 +466,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       ...(currentShift ? { shiftId: currentShift.id } : {}),
       ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
       ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
+      ...(packPurchaseId ? { packPurchaseId } : {}),
     });
-  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext]);
+  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services]);
 
   const handleOpenCash = useCallback(() => {
     setShowCashModal(true);
@@ -380,6 +479,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       const { subtotalCents, taxCents, tipCents, totalCents } = buildCartTotals();
       const balanceCents = compApplied ? 0 : Math.max(0, totalCents - depositApplied);
       const changeGiven = Math.max(0, tenderedCents - balanceCents);
+      const packLine = lines.find((l) => config.services.find((s) => s.id === l.serviceId)?.packageDef);
+      const packPurchaseId = packLine && customer ? crypto.randomUUID() : undefined;
       setShowCashModal(false);
       checkout.confirmCheckout({
         lineItems: lines,
@@ -398,12 +499,13 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(currentShift ? { shiftId: currentShift.id } : {}),
         ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
         ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
+        ...(packPurchaseId ? { packPurchaseId } : {}),
       });
       if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
       setCashDrawerToast(true);
       cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services],
   );
 
   const handleOpenSplit = useCallback(() => {
@@ -413,6 +515,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const handleConfirmSplit = useCallback(
     (payments: SplitPayment[]) => {
       const { subtotalCents, taxCents, tipCents, totalCents } = buildCartTotals();
+      const packLine = lines.find((l) => config.services.find((s) => s.id === l.serviceId)?.packageDef);
+      const packPurchaseId = packLine && customer ? crypto.randomUUID() : undefined;
       setShowSplitModal(false);
       checkout.confirmCheckout({
         lineItems: lines,
@@ -430,6 +534,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(currentShift ? { shiftId: currentShift.id } : {}),
         ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
         ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
+        ...(packPurchaseId ? { packPurchaseId } : {}),
       });
       if (payments.some((p) => p.method === "cash")) {
         if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
@@ -437,7 +542,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
       }
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services],
   );
 
   const handleHold = useCallback(() => {
@@ -555,8 +660,34 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       );
       setClassBookingContext(null);
     }
+    // B32: write pack balance if this was a pack purchase transaction
+    if (checkout.completedTx?.packPurchaseId && checkout.completedTx.customer) {
+      const tx = checkout.completedTx;
+      const packLine = tx.lineItems.find((l) => {
+        const svc = config.services.find((s) => s.id === l.serviceId);
+        return svc?.packageDef != null;
+      });
+      if (packLine) {
+        const svc = config.services.find((s) => s.id === packLine.serviceId);
+        const pkgDef = svc?.packageDef;
+        if (pkgDef && svc) {
+          const pack: PackBalance = {
+            id: tx.packPurchaseId!,
+            packServiceId: packLine.serviceId,
+            packServiceName: packLine.name,
+            validForServiceIds: pkgDef.validForServiceIds,
+            sessionsRemaining: pkgDef.sessionCount,
+            sessionsTotal: pkgDef.sessionCount,
+            amortizedCents: Math.round(svc.priceCents / pkgDef.sessionCount),
+            purchasedAt: Date.now(),
+            transactionId: tx.id,
+          };
+          writePackBalance(activeVerticalId, tx.customer!.id, pack);
+        }
+      }
+    }
     checkout.completeSale();
-  }, [pickupTicketId, checkout, openTicketsHook, classBookingContext, classSlots]);
+  }, [pickupTicketId, checkout, openTicketsHook, classBookingContext, classSlots, config.services, activeVerticalId]);
 
   const handleStartWalkIn = useCallback(
     (entry: WaitlistEntry) => {
@@ -718,7 +849,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             checkoutState={checkout.state}
             tipCents={checkout.tipCents}
             selectedPreset={checkout.selectedPreset}
-            onStartCheckout={checkout.startCheckout}
+            onStartCheckout={handleStartCheckout}
             onCancelCheckout={checkout.cancelCheckout}
             onConfirmCard={handleConfirmCard}
             onOpenCash={handleOpenCash}
@@ -869,6 +1000,24 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           onClose={() => setShowOpenTickets(false)}
         />
       )}
+
+      {/* B32: Class pack confirm modal */}
+      {showPackConfirm && pendingBookCustomer && (() => {
+        const slot = pendingBookSlotId ? classSlots.slots.find((s) => s.id === pendingBookSlotId) : null;
+        if (!slot) return null;
+        const svcConfig = config.services.find((s) => s.id === slot.serviceId);
+        return (
+          <ClassPackConfirmModal
+            serviceName={slot.serviceName}
+            scheduledAt={slot.scheduledAt}
+            normalPriceCents={svcConfig?.priceCents ?? 0}
+            customer={pendingBookCustomer}
+            applicablePacks={applicablePacksForConfirm}
+            onConfirm={handlePackConfirm}
+            onCancel={handlePackCancel}
+          />
+        );
+      })()}
 
       {/* B29: Classes overlay */}
       {showClasses && (

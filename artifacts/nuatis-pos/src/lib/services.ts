@@ -24,6 +24,12 @@ export interface SessionPricingTier {
 
 export type SessionPricing = SessionPricingMinute | SessionPricingTier;
 
+export interface PackageDef {
+  sessionCount: number;
+  validForServiceIds: string[];
+  expiryDays?: number;
+}
+
 export interface Service {
   id: string;
   name: string;
@@ -37,6 +43,8 @@ export interface Service {
   pricing?: SessionPricing;
   // B29: optional — true for yoga_pilates class-style services
   isClass?: boolean;
+  // B32: optional — true for class-pack purchasable services
+  packageDef?: PackageDef;
 }
 
 export const SERVICES: Service[] = [

@@ -27,6 +27,10 @@ export interface CartLine {
   sessionStartedAt?: number;  // epoch ms; defined = session started
   sessionEndedAt?: number;    // epoch ms; defined = session locked
   sessionPricing?: SessionPricing; // stored for price recomputation
+  // B32: class-pack burn lines (priceCents = 0 for these)
+  usedPackId?: string;
+  usedPackName?: string;
+  usedPackAmortizedCents?: number;
 }
 
 export type { CartCustomer };
@@ -63,6 +67,9 @@ function loadCart(verticalId: string): CartLine[] {
         ...(typeof l.sessionStartedAt === "number" ? { sessionStartedAt: l.sessionStartedAt } : {}),
         ...(typeof l.sessionEndedAt === "number" ? { sessionEndedAt: l.sessionEndedAt } : {}),
         ...(l.sessionPricing ? { sessionPricing: l.sessionPricing as SessionPricing } : {}),
+        ...(typeof l.usedPackId === "string" ? { usedPackId: l.usedPackId } : {}),
+        ...(typeof l.usedPackName === "string" ? { usedPackName: l.usedPackName } : {}),
+        ...(typeof l.usedPackAmortizedCents === "number" ? { usedPackAmortizedCents: l.usedPackAmortizedCents } : {}),
       }));
   } catch {
     return [];
@@ -207,6 +214,44 @@ export function useCart() {
             discountPercent: 0,
             sessionStartedAt: Date.now(),
             sessionPricing,
+          },
+        ];
+        saveCart(next);
+        return next;
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  /**
+   * addPackBurnItem — adds a $0 class line that consumes one session from a pack.
+   * Always creates a new line (no dedup). priceCents = 0.
+   */
+  const addPackBurnItem = useCallback(
+    (
+      serviceId: string,
+      name: string,
+      staffId: string,
+      usedPackId: string,
+      usedPackName: string,
+      usedPackAmortizedCents: number,
+    ) => {
+      setLines((prev) => {
+        const next: CartLine[] = [
+          ...prev,
+          {
+            lineId: crypto.randomUUID(),
+            serviceId,
+            name,
+            priceCents: 0,
+            quantity: 1,
+            staffId,
+            modifiers: [],
+            discountPercent: 0,
+            usedPackId,
+            usedPackName,
+            usedPackAmortizedCents,
           },
         ];
         saveCart(next);
@@ -393,6 +438,7 @@ export function useCart() {
     depositApplied,
     addItem,
     addSessionItem,
+    addPackBurnItem,
     stopSession,
     increment,
     decrement,

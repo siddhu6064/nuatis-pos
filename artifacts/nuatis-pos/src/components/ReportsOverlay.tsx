@@ -6,6 +6,7 @@ import { calcDailySummary, calcPerStaffSummary } from "@/lib/reports";
 import { calcLineTotalCents } from "@/lib/cartMath";
 import { transactionsKey } from "@/lib/storage";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
+import { incrementPackBalance } from "@/lib/packBalances";
 import { Receipt } from "./Receipt";
 import { RefundPicker } from "./RefundPicker";
 import { Toast } from "./Toast";
@@ -86,6 +87,7 @@ function ReceiptDetail({
   onSelectTx,
 }: ReceiptDetailProps) {
   const { requestManagerOverride } = useManagerOverride();
+  const { activeVerticalId } = useActiveVertical();
   const [expandedInput, setExpandedInput] = useState<"email" | "sms" | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [smsInput, setSmsInput] = useState("");
@@ -107,7 +109,8 @@ function ReceiptDetail({
   const refundStatus = txRefundStatus(tx);
   const isFullyRefunded = refundStatus === "full";
   const isDepositTx = (tx.type ?? "service") === "deposit";
-  const canRefund = tx.totalCents > 0 && !isFullyRefunded && !isDepositTx;
+  const hasPackBurnLine = tx.lineItems.some((l) => l.usedPackId);
+  const canRefund = (tx.totalCents > 0 || hasPackBurnLine) && !isFullyRefunded && !isDepositTx;
 
   // Linked transaction (deposit ↔ service)
   const linkedTx = isDepositTx && tx.appointmentRef
@@ -158,6 +161,15 @@ function ReceiptDetail({
     };
 
     onUpdateTransaction(updated);
+    // B32: restore pack session for any pack-burn lines being refunded
+    if (tx.customer) {
+      for (const lineId of selectedLineIds) {
+        const line = tx.lineItems.find((l) => l.lineId === lineId);
+        if (line?.usedPackId) {
+          incrementPackBalance(activeVerticalId, tx.customer.id, line.usedPackId);
+        }
+      }
+    }
     setInRefundPicker(false);
     showToast("Refund processed (mock)");
   }
@@ -761,6 +773,30 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                                   }}
                                 >
                                   DEPOSIT
+                                </span>
+                              )}
+                              {tx.packPurchaseId && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#15803D",
+                                    backgroundColor: "#DCFCE7",
+                                  }}
+                                >
+                                  PACK PURCHASE
+                                </span>
+                              )}
+                              {!tx.packPurchaseId && tx.lineItems.some((l) => l.usedPackId) && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#0369A1",
+                                    backgroundColor: "#E0F2FE",
+                                  }}
+                                >
+                                  PACK USED
                                 </span>
                               )}
                               {(tx.paymentMethod ?? "card") === "split" && (

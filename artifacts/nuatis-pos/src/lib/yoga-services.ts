@@ -13,6 +13,27 @@ export const YOGA_SERVICES: Service[] = [
   { id: "yoga_private", name: "Private Session 60min", priceCents: 9000, durationMinutes: 60, category: "extras" },
   { id: "yoga_mat_rental", name: "Mat Rental", priceCents: 300, durationMinutes: 0, category: "extras" },
   { id: "yoga_towel_rental", name: "Towel Rental", priceCents: 200, durationMinutes: 0, category: "extras" },
+  {
+    id: "yoga_class_pack_10",
+    name: "10-Class Pack",
+    priceCents: 20000,
+    durationMinutes: 0,
+    category: "extras",
+    packageDef: {
+      sessionCount: 10,
+      validForServiceIds: [
+        "yoga_vinyasa",
+        "yoga_power",
+        "yoga_yin",
+        "yoga_restorative",
+        "yoga_hot",
+        "yoga_aerial",
+        "yoga_acro",
+        "yoga_beginner",
+        "yoga_workshop",
+      ],
+    },
+  },
 ];
 
 export const YOGA_CATEGORY_COLORS: Record<string, string> = {

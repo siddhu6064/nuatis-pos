@@ -64,6 +64,8 @@ export interface Transaction {
   openTicketId?: string;
   // B29: class slot link — id of the ClassSlot booked in this transaction
   classSlotId?: string;
+  // B32: pack purchase — id of the PackBalance created by this transaction
+  packPurchaseId?: string;
 }
 
 export interface ConfirmData {
@@ -88,6 +90,8 @@ export interface ConfirmData {
   openTicketId?: string;
   // B29: class slot link
   classSlotId?: string;
+  // B32: pack purchase id to stamp on transaction
+  packPurchaseId?: string;
 }
 
 function appendTransaction(tx: Transaction, verticalId: string): void {
@@ -184,6 +188,7 @@ export function useCheckout(onComplete: () => void) {
         ...(data.shiftId && { shiftId: data.shiftId }),
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
         ...(data.classSlotId && { classSlotId: data.classSlotId }),
+        ...(data.packPurchaseId && { packPurchaseId: data.packPurchaseId }),
       };
       setProcessingTotalCents(tx.totalPaid ?? totalPaid);
       setCompletedTx(tx);
@@ -213,6 +218,7 @@ export function useCheckout(onComplete: () => void) {
         ...(data.shiftId && { shiftId: data.shiftId }),
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
         ...(data.classSlotId && { classSlotId: data.classSlotId }),
+        ...(data.packPurchaseId && { packPurchaseId: data.packPurchaseId }),
       };
       setCompletedTx(tx);
       setState("receipt");
@@ -243,6 +249,7 @@ export function useCheckout(onComplete: () => void) {
         ...(data.shiftId && { shiftId: data.shiftId }),
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
         ...(data.classSlotId && { classSlotId: data.classSlotId }),
+        ...(data.packPurchaseId && { packPurchaseId: data.packPurchaseId }),
       };
       setCompletedTx(tx);
       setState("receipt");
