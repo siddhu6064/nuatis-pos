@@ -1,0 +1,56 @@
+▶ PROMPT [Phase 3 · Batch 25 · Replit Agent · WRAP]
+
+CONTEXT
+Wrinkle framework closed at B23 (money/state/duration validated across tattoo/pet_grooming/tanning). Multi-leg split tender validated at B24. README and replit.md were last refreshed at v4 around B19 — many features have shipped since (B20 ReportsOverlay refinements, B21 wrap, B22 vaccination state-shape, B23 tanning duration-shape, B24 multi-leg split). This batch is a pure docs wrap to lock the day's artifact for capture-and-pause. No source code changes.
+
+GOAL
+README.md v5 + replit.md v5 reflect every feature shipped through B24, screenshots directory scaffolded with a capture checklist, package.json version bumped.
+
+SCOPE — BUILD THIS
+- README.md → v5. Refresh these sections, preserving existing tone:
+  - Top header / version stamp updated to v0.0.7-prototype
+  - "What's Built" feature inventory expanded to cover all 6 verticals (salon, spa, nail_bar, tattoo, pet_grooming, tanning), all overlay surfaces (Waitlist, Appointments, Today's Sales, Owner Settings), and the wrinkle category framework with one bullet each: money-shape (tattoo deposits → two-phase transactions, totalPaid revenue truth), state-shape (pet_grooming vaccination gate → blocked/warning/clear paths, manager PIN override, line-level vaccinationOverride field), duration-shape (tanning timed sessions → open-ended session lines, live elapsed display, lock-on-stop, scoped setInterval)
+  - Payment shapes section: cash, card, split tender (up to 5 legs in any combination of card + cash, mock-void disclaimer on cancel with last4 ledger)
+  - "Stack Deviations from Production" block: React 18 + Vite (not Next.js 14), Tailwind v4 (not v3), @import url() fonts (not next/font/google), Replit OIDC (not Supabase Auth), setTimeout-based card reader simulation (not real Stripe Terminal). Add a line confirming the codebase has exactly 1 setInterval (in hooks/useElapsedTick.ts only) and that Header useClock was migrated to setTimeout-recursion in B23 to maintain that invariant.
+  - "What's NOT Built" section listing the major declined items: cross-vertical reporting, Z-tape / cash drawer reconciliation, scheduled tab on waitlist, real backend / real Stripe / real auth swap, file uploads, offline mode + sync queue, customer-facing display, multi-station real-time sync.
+  - "Screenshots" section pointing at /screenshots/ paths even if files don't exist yet.
+- replit.md → v5. Refresh these sections:
+  - Architecture quick-ref: per-vertical namespacing pattern (nuatis-pos:{verticalId}:{key} with ~7 keys per vertical + 2 shared, ~37 keys total at 6 verticals), transaction shape (payments[] array, type='service'|'deposit', totalPaid as revenue truth, appointmentRef cross-record linking, line-level vaccinationOverride and session fields), wrinkle types (money/state/duration).
+  - Engine generalization summary — one paragraph noting that the config-driven vertical engine generalizes beyond uniform service catalogs and accommodates all three wrinkle categories.
+  - Batch history table B1 through B24, one row each: batch number, one-line demo-able outcome.
+  - Tag history table: v0.0.1 (B8), v0.0.2 (B12), v0.0.3 (B15), v0.0.4 (B19), v0.0.5 (B21), v0.0.6 (B23).
+- /screenshots/ directory created with /screenshots/README.md inside, listing intended capture surfaces in checklist form: register grid per vertical (×6), cart with active session line (tanning), split modal mid-flow with running ledger (3+ legs), vaccination blocked path with PIN override prompt, vaccination warning path, Today's Sales overlay with per-staff breakdown, Owner Settings overlay (each of 3 tabs), appointment hydrate from Upcoming tab, walk-in queue header pill, refund detail view in Today's Sales receipt panel.
+- package.json version field bumped to "0.0.7-prototype".
+
+SCOPE — DO NOT BUILD
+- Actual screenshot PNG files (manual capture step, not for Replit Agent).
+- Any source code changes — pure docs batch.
+- Production roadmap content; Master Plan PRD/MVP/Checklist are the source of truth for production, not the prototype README.
+- Suite cross-references or any mention of Suite repo, Suite stack, or Suite scope.
+- Architecture recommendations for production. Stack deviations are documented as deviations, not as proposals.
+- New vertical, new feature, new flow.
+- Refund routing per-leg attribution (carry the simple-default Card-bucket-deduction note into replit.md's known-limitations bullet, no code change).
+- README rewrite from scratch — refresh in place, preserve existing voice.
+
+TECH CONSTRAINTS
+- Markdown only. No new dependencies, no package installs.
+- Both files must be valid GitHub-flavored Markdown.
+- No edits to any file under src/.
+- No edits to any config file other than package.json (version field only).
+
+ACCEPTANCE
+- README.md "What's Built" inventory mentions tanning + duration-shape, multi-leg split tender (up to 5 legs), vaccination gate (state-shape), tattoo deposits (money-shape).
+- README.md stack-deviation block confirms exactly 1 setInterval in the codebase, located in hooks/useElapsedTick.ts, and notes the B23 Header useClock migration.
+- replit.md batch history runs B1 through B24, each row with a demo-able outcome.
+- replit.md tag history lists v0.0.1 through v0.0.6 with the batch each maps to.
+- replit.md known-limitations section includes a bullet on multi-card split refund routing simple-default.
+- /screenshots/README.md exists with ~10+ checklist items for intended captures.
+- package.json shows "version": "0.0.7-prototype".
+- git diff shows no files under src/ modified.
+- TypeScript check still clean (sanity, even though no TS changed).
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — REQUIRED — agent's response must include four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.
