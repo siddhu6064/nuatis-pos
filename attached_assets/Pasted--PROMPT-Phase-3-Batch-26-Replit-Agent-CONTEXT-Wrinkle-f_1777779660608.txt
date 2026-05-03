@@ -1,0 +1,62 @@
+▶ PROMPT [Phase 3 · Batch 26 · Replit Agent]
+
+CONTEXT
+Wrinkle framework closed at B23 (money/state/duration). Multi-leg split tender closed at B24. Docs wrapped at B25 (v0.0.7-prototype). This batch validates shift-state as a wrapping envelope around register transactions — a new mental model: the register has a per-vertical "open shift" state distinct from device session (OIDC) and operator identity (active staff). Transactions during a shift get a shiftId stamp. Starting cash float is captured at open without entering Z-tape / drawer reconciliation territory (declined, hardware-dependent).
+
+GOAL
+Operator must open a shift before checkout; shift state visible in header with live duration; transactions stamped with shiftId; End Shift modal summarizes the shift before closing.
+
+SCOPE — BUILD THIS
+- New lib/shifts.ts: Shift type { id, verticalId, openedByStaffId, openedByStaffName, startedAt, endedAt?, startingCashCents } plus localStorage helpers. Two new keys per vertical: nuatis-pos:{verticalId}:currentShift (single open shift, may be null) and nuatis-pos:{verticalId}:shifts (closed shift history array, append-only).
+- New useShift hook (single hook, no provider — same pattern as useCart): openShift(staff, startingCashCents), closeShift() returning a summary object, currentShift state, isShiftOpen boolean. Hook hydrates currentShift from localStorage on mount; persists on every mutation.
+- Header shift pill rendered next to existing header pills: when open, "Shift · {staffName} · {duration}" using formatElapsed-style render-on-pull (NOT setInterval). When closed, "No shift open" with reduced opacity. Respects mutual-exclusivity with other header overlays.
+- Account dropdown gains two conditional items: "Start Shift" visible only when no shift open; "End Shift" visible only when shift open.
+- StartShiftModal: active staff preselected as opener (small swap link uses existing Switch Staff pattern); reuses the existing cash keypad component for starting cash entry (do not duplicate); "Skip starting cash" button stores 0; Confirm opens shift; Cancel closes modal.
+- EndShiftModal: shows opened at HH:MM, closed at HH:MM (computed at modal open), duration, opener staff name, count of transactions during shift, gross revenue during shift (sum of totalPaid for shift-scoped service+deposit transactions, refund-aware), payment mix breakdown by leg method for shift-scoped transactions only. Confirm closes shift and writes to history; Cancel reopens dropdown.
+- Register-level checkout gate: Charge button (idle state) plus Card / Cash / Split / Comp buttons (tip state) all disabled with tooltip "Open a shift to transact" when no current shift. Tile taps still allowed (cart can be built; only checkout actions gated).
+- Transaction stamp: every completed transaction (service or deposit) carries shiftId === currentShift.id at write time. Pre-B26 transactions without shiftId tolerated by read-side code (no migration script).
+- Per-vertical scoping: switching verticals to one with no open shift shows "No shift open" pill and gates checkout independently. Each vertical has its own currentShift slot.
+- Vertical switcher gate unchanged: existing cart-state and checkout-state gate stands; shift state does NOT independently block switching (open shift in vertical A is fine when switching to vertical B).
+- Optional Transaction.shiftId field on the Transaction type. Read paths that compute payment mix or per-staff totals do NOT filter by shift unless inside the EndShiftModal summary.
+
+SCOPE — DO NOT BUILD
+- Z-tape / drawer reconciliation, expected-drawer math, variance / over-short calculation, cash-in-drawer counter (declined umbrella, hardware-dependent).
+- Shift history viewer or shifts list surface — closed shifts persist in localStorage but no UI walks the array.
+- Shift edit, editable start/end timestamps, shift deletion, undo close.
+- Multiple concurrent shifts per vertical.
+- Shift transfer or hand-off between operators mid-shift.
+- Auto-close shift on logout / OIDC session expiry.
+- Operator-attention nudges around shifts ("idle shift" warnings, "end-of-day" prompts, "you forgot to clock out" banners) — declined umbrella.
+- Manager PIN gate on opening or closing — any active staff can open and close.
+- Reports filtered by shift outside the EndShiftModal summary.
+- Date-range filtering on Today's Sales (previously declined diminishing-returns).
+- Cross-vertical shift aggregation (declined umbrella).
+- Service-level free-text notes (declined).
+- README / replit.md updates — defer to a future wrap batch.
+- Settings tab edits to anything shift-related.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4. No new dependencies.
+- setInterval count in src/ MUST remain exactly 1 (in hooks/useElapsedTick.ts only). Shift duration display uses render-on-pull pattern matching existing waitlist wait-time and appointment time labels — duration computed during render from Date.now() - startedAt, no live tick.
+- TypeScript strict. Shift type fully typed; no any in localStorage hydration; hook return types explicit.
+- Per-vertical localStorage namespacing follows existing nuatis-pos:{verticalId}:{key} pattern. Add the two new keys to the constant or array that enumerates per-vertical keys (so the migration / clear logic stays consistent).
+- StartShiftModal and EndShiftModal respect mutual-exclusivity rule with the four existing header overlays (Waitlist / Appointments / Today's Sales / Settings).
+- Reuse existing cash keypad component for starting cash entry — do not fork or duplicate keypad logic.
+- Reuse existing modal shell, backdrop, dimmer pattern. Modals are NOT manager-elevated context (no dimmer-darkening signal).
+
+ACCEPTANCE
+- Fresh state, no shift on active vertical: header pill renders "No shift open" with reduced opacity; Account dropdown shows Start Shift only; cart with line items has Charge disabled with the tooltip.
+- Account → Start Shift → Skip starting cash → Confirm: pill updates to "Shift · {activeStaffName} · just now"; Charge enabled; localStorage shows currentShift populated for the vertical.
+- Build cart with one $50 service line, charge with card, complete: localStorage transaction record has shiftId matching currentShift.id.
+- Switch verticals to a fresh one: pill flips to "No shift open"; Charge disabled. Switch back: pill resumes "Shift · {staffName} · {N}m" with N reflecting actual elapsed.
+- Open Account → End Shift: modal shows the opened-at, closed-at, duration, opener name, 1 transaction, $50 gross (or post-tax total per existing rule), card payment mix. Confirm: pill reverts to "No shift open"; localStorage shifts array gains one entry; currentShift cleared.
+- Refund a line on a shift-stamped transaction, then End Shift: gross revenue line in the modal reflects refund deduction (refund-aware aggregation).
+- Vertical switch with cart items: existing cart-state gate still fires (shift state does not block switching independently).
+- grep -r "setInterval" src/ returns exactly 1 match (useElapsedTick.ts).
+- TypeScript check clean. No console errors during HMR or in any flow.
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — REQUIRED — agent's response must include four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.

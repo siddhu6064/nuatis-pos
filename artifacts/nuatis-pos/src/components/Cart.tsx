@@ -41,9 +41,12 @@ interface CartProps {
   // B23: session support
   elapsedTick: number;
   stopSession: (lineId: string) => void;
+  // B26: shift gate
+  isShiftOpen: boolean;
 }
 
 const SESSION_GATE_TOOLTIP = "Stop all sessions before checkout";
+const SHIFT_GATE_TOOLTIP = "Open a shift to transact";
 
 export function Cart({
   lines,
@@ -76,6 +79,7 @@ export function Cart({
   depositApplied = 0,
   elapsedTick,
   stopSession,
+  isShiftOpen,
 }: CartProps) {
   const { settings } = useVerticalSettings();
   const [showCompModal, setShowCompModal] = useState(false);
@@ -366,16 +370,16 @@ export function Cart({
                 </button>
               </div>
             ) : (
-              /* Comp button gated while sessions active */
+              /* Comp button gated while sessions active or no open shift */
               <button
-                onClick={hasActiveSessions ? undefined : () => setShowCompModal(true)}
-                disabled={hasActiveSessions}
-                title={hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
+                onClick={hasActiveSessions || !isShiftOpen ? undefined : () => setShowCompModal(true)}
+                disabled={hasActiveSessions || !isShiftOpen}
+                title={!isShiftOpen ? SHIFT_GATE_TOOLTIP : hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
                 className="text-[12px] font-medium transition-colors duration-100"
                 style={{
                   fontFamily: "'Epilogue', sans-serif",
-                  color: hasActiveSessions ? "#D1D5DB" : "#9CA3AF",
-                  cursor: hasActiveSessions ? "not-allowed" : "pointer",
+                  color: hasActiveSessions || !isShiftOpen ? "#D1D5DB" : "#9CA3AF",
+                  cursor: hasActiveSessions || !isShiftOpen ? "not-allowed" : "pointer",
                 }}
               >
                 Comp Ticket
@@ -417,11 +421,14 @@ export function Cart({
         {inTipState ? (
           compApplied ? (
             <button
-              onClick={onConfirmCard}
+              onClick={!isShiftOpen ? undefined : onConfirmCard}
+              disabled={!isShiftOpen}
+              title={!isShiftOpen ? SHIFT_GATE_TOOLTIP : undefined}
               className="w-full h-[56px] rounded-lg text-[17px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
               style={{
                 fontFamily: "'Epilogue', sans-serif",
-                backgroundColor: "#E84A00",
+                backgroundColor: !isShiftOpen ? "#D1D5DB" : "#E84A00",
+                cursor: !isShiftOpen ? "not-allowed" : "pointer",
               }}
             >
               Confirm Comp ($0.00)
@@ -429,47 +436,47 @@ export function Cart({
           ) : (
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
-                {/* Card — gated on active sessions */}
+                {/* Card — gated on active sessions and shift */}
                 <button
-                  onClick={hasActiveSessions ? undefined : onConfirmCard}
-                  disabled={hasActiveSessions}
-                  title={hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
+                  onClick={hasActiveSessions || !isShiftOpen ? undefined : onConfirmCard}
+                  disabled={hasActiveSessions || !isShiftOpen}
+                  title={!isShiftOpen ? SHIFT_GATE_TOOLTIP : hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
                   className="flex-1 h-[52px] rounded-lg text-[15px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
                   style={{
                     fontFamily: "'Epilogue', sans-serif",
-                    backgroundColor: hasActiveSessions ? "#D1D5DB" : "#E84A00",
-                    cursor: hasActiveSessions ? "not-allowed" : "pointer",
+                    backgroundColor: hasActiveSessions || !isShiftOpen ? "#D1D5DB" : "#E84A00",
+                    cursor: hasActiveSessions || !isShiftOpen ? "not-allowed" : "pointer",
                   }}
                 >
                   Card {formatCurrency(buttonAmount)}
                 </button>
-                {/* Cash — gated on active sessions */}
+                {/* Cash — gated on active sessions and shift */}
                 <button
-                  onClick={hasActiveSessions ? undefined : onOpenCash}
-                  disabled={hasActiveSessions}
-                  title={hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
+                  onClick={hasActiveSessions || !isShiftOpen ? undefined : onOpenCash}
+                  disabled={hasActiveSessions || !isShiftOpen}
+                  title={!isShiftOpen ? SHIFT_GATE_TOOLTIP : hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
                   className="flex-1 h-[52px] rounded-lg text-[15px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
                   style={{
                     fontFamily: "'Epilogue', sans-serif",
-                    backgroundColor: hasActiveSessions ? "#D1D5DB" : "#E84A00",
-                    cursor: hasActiveSessions ? "not-allowed" : "pointer",
+                    backgroundColor: hasActiveSessions || !isShiftOpen ? "#D1D5DB" : "#E84A00",
+                    cursor: hasActiveSessions || !isShiftOpen ? "not-allowed" : "pointer",
                   }}
                 >
                   Cash {formatCurrency(buttonAmount)}
                 </button>
               </div>
-              {/* Split — gated on active sessions too */}
+              {/* Split — gated on active sessions and shift */}
               <button
-                onClick={splitDisabled || hasActiveSessions ? undefined : onOpenSplit}
-                disabled={splitDisabled || hasActiveSessions}
-                title={hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
+                onClick={splitDisabled || hasActiveSessions || !isShiftOpen ? undefined : onOpenSplit}
+                disabled={splitDisabled || hasActiveSessions || !isShiftOpen}
+                title={!isShiftOpen ? SHIFT_GATE_TOOLTIP : hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
                 className="w-full h-[40px] rounded-lg text-[13px] font-semibold transition-all duration-150 active:scale-[0.98]"
                 style={{
                   fontFamily: "'Epilogue', sans-serif",
-                  color: splitDisabled || hasActiveSessions ? "#9CA3AF" : "#E84A00",
+                  color: splitDisabled || hasActiveSessions || !isShiftOpen ? "#9CA3AF" : "#E84A00",
                   backgroundColor: "white",
-                  border: `2px solid ${splitDisabled || hasActiveSessions ? "#E5E7EB" : "#E84A00"}`,
-                  cursor: splitDisabled || hasActiveSessions ? "not-allowed" : "pointer",
+                  border: `2px solid ${splitDisabled || hasActiveSessions || !isShiftOpen ? "#E5E7EB" : "#E84A00"}`,
+                  cursor: splitDisabled || hasActiveSessions || !isShiftOpen ? "not-allowed" : "pointer",
                 }}
               >
                 Split Card + Cash
@@ -477,19 +484,19 @@ export function Cart({
             </div>
           )
         ) : (
-          // Idle: Charge button — gated on active sessions
+          // Idle: Charge button — gated on active sessions and shift
           <button
-            onClick={isEmpty || hasActiveSessions ? undefined : onStartCheckout}
-            disabled={isEmpty || hasActiveSessions}
-            title={hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
+            onClick={isEmpty || hasActiveSessions || !isShiftOpen ? undefined : onStartCheckout}
+            disabled={isEmpty || hasActiveSessions || !isShiftOpen}
+            title={!isShiftOpen ? SHIFT_GATE_TOOLTIP : hasActiveSessions ? SESSION_GATE_TOOLTIP : undefined}
             className="w-full h-[56px] rounded-lg text-[18px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
             style={{
               fontFamily: "'Epilogue', sans-serif",
-              backgroundColor: isEmpty || hasActiveSessions ? "#D1D5DB" : "#E84A00",
-              cursor: isEmpty || hasActiveSessions ? "not-allowed" : "pointer",
+              backgroundColor: isEmpty || hasActiveSessions || !isShiftOpen ? "#D1D5DB" : "#E84A00",
+              cursor: isEmpty || hasActiveSessions || !isShiftOpen ? "not-allowed" : "pointer",
             }}
           >
-            {hasActiveSessions ? "Stop session to charge" : "Charge"}
+            {!isShiftOpen ? "Open a shift to charge" : hasActiveSessions ? "Stop session to charge" : "Charge"}
           </button>
         )}
       </div>

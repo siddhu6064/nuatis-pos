@@ -16,6 +16,8 @@ import { CashTenderModal } from "@/components/CashTenderModal";
 import { SplitTenderModal } from "@/components/SplitTenderModal";
 import { VaccinationGateModal } from "@/components/VaccinationGateModal";
 import { Toast } from "@/components/Toast";
+import { StartShiftModal } from "@/components/StartShiftModal";
+import { EndShiftModal } from "@/components/EndShiftModal";
 import { useCart } from "@/hooks/useCart";
 import type { CartCustomer } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
@@ -26,6 +28,7 @@ import { useVerticalSettings } from "@/hooks/useVerticalSettings";
 import { useWaitlist } from "@/hooks/useWaitlist";
 import { useAppointments } from "@/hooks/useAppointments";
 import { useElapsedTick } from "@/hooks/useElapsedTick";
+import { useShift } from "@/hooks/useShift";
 import { calcSubtotal, calcTaxWithRate, calcTotal } from "@/lib/cartMath";
 import {
   getHeldTickets,
@@ -101,6 +104,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     takeDeposit,
   } = useAppointments();
 
+  // B26: shift-state (no provider — reads activeVerticalId internally)
+  const { currentShift, isShiftOpen, openShift, closeShift } = useShift();
+
   // B23: useElapsedTick — ONLY setInterval in the codebase
   const hasActiveSessions = lines.some(
     (l) => l.sessionStartedAt !== undefined && l.sessionEndedAt === undefined,
@@ -118,6 +124,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const [showAppointments, setShowAppointments] = useState(false);
   const [showCashModal, setShowCashModal] = useState(false);
   const [showSplitModal, setShowSplitModal] = useState(false);
+  // B26: shift modal state
+  const [showStartShift, setShowStartShift] = useState(false);
+  const [showEndShift, setShowEndShift] = useState(false);
   const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() =>
     getHeldTickets(activeVerticalId),
   );
@@ -287,8 +296,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       paymentMethod: "card",
       ...(depositApplied > 0 ? { depositApplied } : {}),
       ...(appointmentRef ? { appointmentRef } : {}),
+      ...(currentShift ? { shiftId: currentShift.id } : {}),
     });
-  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef]);
+  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift]);
 
   const handleOpenCash = useCallback(() => {
     setShowCashModal(true);
@@ -314,12 +324,13 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         changeGiven,
         ...(depositApplied > 0 ? { depositApplied } : {}),
         ...(appointmentRef ? { appointmentRef } : {}),
+        ...(currentShift ? { shiftId: currentShift.id } : {}),
       });
       if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
       setCashDrawerToast(true);
       cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift],
   );
 
   const handleOpenSplit = useCallback(() => {
@@ -343,6 +354,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         splitPayments: payments,
         ...(depositApplied > 0 ? { depositApplied } : {}),
         ...(appointmentRef ? { appointmentRef } : {}),
+        ...(currentShift ? { shiftId: currentShift.id } : {}),
       });
       if (payments.some((p) => p.method === "cash")) {
         if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
@@ -350,7 +362,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
       }
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift],
   );
 
   const handleHold = useCallback(() => {
@@ -501,6 +513,11 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         switcherDisabled={switcherDisabled}
         onOpenVerticalSwitcher={() => setShowVerticalSwitcher(true)}
         onOpenSettings={() => setShowSettings(true)}
+        isShiftOpen={isShiftOpen}
+        currentShiftStaffName={currentShift?.openedByStaffName}
+        currentShiftStartedAt={currentShift?.startedAt}
+        onStartShift={() => setShowStartShift(true)}
+        onEndShift={() => setShowEndShift(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -549,6 +566,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             depositApplied={depositApplied}
             elapsedTick={elapsedTick}
             stopSession={stopSession}
+            isShiftOpen={isShiftOpen}
           />
         </aside>
       </div>
@@ -658,6 +676,30 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           onTakeDeposit={takeDeposit}
           cartIsIdle={cartIsIdle}
           onClose={() => setShowAppointments(false)}
+          currentShiftId={currentShift?.id}
+        />
+      )}
+
+      {/* B26: Shift modals */}
+      {showStartShift && (
+        <StartShiftModal
+          activeStaff={activeStaff}
+          onConfirm={(staffId, staffName, startingCashCents) => {
+            openShift(staffId, staffName, startingCashCents);
+            setShowStartShift(false);
+          }}
+          onClose={() => setShowStartShift(false)}
+        />
+      )}
+
+      {showEndShift && currentShift && (
+        <EndShiftModal
+          shift={currentShift}
+          onConfirm={() => {
+            closeShift();
+            setShowEndShift(false);
+          }}
+          onCancel={() => setShowEndShift(false)}
         />
       )}
     </div>

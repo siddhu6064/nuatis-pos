@@ -22,6 +22,13 @@ export const cartMetaKey = (verticalId: string): string =>
 export const ACTIVE_STAFF_KEY = "nuatis-pos:activeStaffId";
 export const ACTIVE_VERTICAL_KEY = "nuatis-pos:activeVerticalId";
 
+// B26: shift-state keys
+export const currentShiftKey = (verticalId: string): string =>
+  `nuatis-pos:${verticalId}:currentShift`;
+
+export const shiftsHistoryKey = (verticalId: string): string =>
+  `nuatis-pos:${verticalId}:shifts`;
+
 // Legacy (pre-vertical) keys
 const LEGACY_CART_KEY = "nuatis-pos:cart";
 const LEGACY_TX_KEY = "nuatis-pos:transactions";

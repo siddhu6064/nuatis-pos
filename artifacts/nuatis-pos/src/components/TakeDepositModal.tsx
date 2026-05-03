@@ -11,11 +11,13 @@ interface TakeDepositModalProps {
   verticalId: string;
   onDepositCaptured: (txId: string) => void;
   onClose: () => void;
+  shiftId?: string;
 }
 
 function buildDepositTx(
   appt: Appointment,
   method: "card" | "cash",
+  shiftId?: string,
   amountTendered?: number,
   changeGiven?: number,
 ): Transaction {
@@ -55,6 +57,7 @@ function buildDepositTx(
     totalPaid: amount,
     appointmentRef: appt.id,
     depositBalanceDueCents: balance,
+    ...(shiftId ? { shiftId } : {}),
   };
 }
 
@@ -63,6 +66,7 @@ export function TakeDepositModal({
   verticalId,
   onDepositCaptured,
   onClose,
+  shiftId,
 }: TakeDepositModalProps) {
   const [processing, setProcessing] = useState(false);
   const [showCash, setShowCash] = useState(false);
@@ -71,7 +75,7 @@ export function TakeDepositModal({
   function handleCardDeposit() {
     setProcessing(true);
     setTimeout(() => {
-      const tx = buildDepositTx(appointment, "card");
+      const tx = buildDepositTx(appointment, "card", shiftId);
       addTransactionDirect(verticalId, tx);
       onDepositCaptured(tx.id);
     }, 2000);
@@ -79,7 +83,7 @@ export function TakeDepositModal({
 
   function handleCashDeposit(amountTendered: number) {
     const changeGiven = Math.max(0, amountTendered - depositAmount);
-    const tx = buildDepositTx(appointment, "cash", amountTendered, changeGiven);
+    const tx = buildDepositTx(appointment, "cash", shiftId, amountTendered, changeGiven);
     addTransactionDirect(verticalId, tx);
     setShowCash(false);
     onDepositCaptured(tx.id);

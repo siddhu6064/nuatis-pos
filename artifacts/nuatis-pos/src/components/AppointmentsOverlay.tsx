@@ -14,6 +14,7 @@ interface AppointmentsOverlayProps {
   onTakeDeposit: (id: string, txId: string) => void;
   cartIsIdle: boolean;
   onClose: () => void;
+  currentShiftId?: string;
 }
 
 type ConfirmState = { id: string; type: "no_show" | "undo" } | null;
@@ -58,6 +59,7 @@ export function AppointmentsOverlay({
   onTakeDeposit,
   cartIsIdle,
   onClose,
+  currentShiftId,
 }: AppointmentsOverlayProps) {
   const { config, activeVerticalId } = useActiveVertical();
   const [activeTab, setActiveTab] = useState<"upcoming" | "history">("upcoming");
@@ -466,6 +468,7 @@ export function AppointmentsOverlay({
             showToast("Deposit accepted · receipt available in Today's Sales");
           }}
           onClose={() => setDepositApptId(null)}
+          shiftId={currentShiftId}
         />
       )}
     </>

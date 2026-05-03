@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import type { AuthUser } from "@workspace/replit-auth-web";
 import type { Staff } from "@/lib/staff";
 import type { CheckoutState } from "@/hooks/useCheckout";
+import { formatElapsed } from "@/lib/shifts";
 
 interface HeaderProps {
   user: AuthUser;
@@ -20,6 +21,12 @@ interface HeaderProps {
   switcherDisabled: boolean;
   onOpenVerticalSwitcher: () => void;
   onOpenSettings: () => void;
+  // B26: shift state
+  isShiftOpen: boolean;
+  currentShiftStaffName?: string;
+  currentShiftStartedAt?: number;
+  onStartShift: () => void;
+  onEndShift: () => void;
 }
 
 function useClock() {
@@ -63,8 +70,16 @@ export function Header({
   switcherDisabled,
   onOpenVerticalSwitcher,
   onOpenSettings,
+  isShiftOpen,
+  currentShiftStaffName,
+  currentShiftStartedAt,
+  onStartShift,
+  onEndShift,
 }: HeaderProps) {
   const clock = useClock();
+  // Render-on-pull: computed during each render so useClock's second-tick keeps it live
+  const shiftDuration =
+    currentShiftStartedAt !== undefined ? formatElapsed(currentShiftStartedAt) : null;
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
 
@@ -178,6 +193,20 @@ export function Header({
         >
           Today's Sales
         </button>
+
+        {/* B26: Shift pill — only when a shift is open */}
+        {isShiftOpen && shiftDuration !== null && (
+          <div
+            className="h-[22px] px-2.5 rounded-full text-[11px] font-semibold flex items-center"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              backgroundColor: "#DCFCE7",
+              color: "#15803D",
+            }}
+          >
+            Shift · {currentShiftStaffName} · {shiftDuration}
+          </div>
+        )}
       </div>
 
       {/* Center: clock */}
@@ -245,6 +274,31 @@ export function Header({
               >
                 Settings
               </button>
+              <div className="h-px mx-3 bg-gray-100" />
+              {/* B26: Start / End Shift */}
+              {!isShiftOpen ? (
+                <button
+                  onClick={() => {
+                    setAccountOpen(false);
+                    onStartShift();
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-[14px] font-medium hover:bg-gray-50 transition-colors"
+                  style={{ fontFamily: "'Epilogue', sans-serif", color: "#15803D" }}
+                >
+                  Start Shift
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setAccountOpen(false);
+                    onEndShift();
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-[14px] font-medium hover:bg-gray-50 transition-colors"
+                  style={{ fontFamily: "'Epilogue', sans-serif", color: "#DC2626" }}
+                >
+                  End Shift
+                </button>
+              )}
               <div className="h-px mx-3 bg-gray-100" />
               <button
                 onClick={() => {

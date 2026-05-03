@@ -58,6 +58,8 @@ export interface Transaction {
   appointmentRef?: string;            // links to appointment.id
   totalPaid?: number;                 // actual cash that changed hands
   depositBalanceDueCents?: number;    // only on type='deposit': servicePriceCents - depositAmountCents
+  // B26: shift stamp — shiftId of the open shift at transaction write time
+  shiftId?: string;
 }
 
 export interface ConfirmData {
@@ -76,6 +78,8 @@ export interface ConfirmData {
   appointmentRef?: string;
   // B20: split-tender
   splitPayments?: SplitPayment[];
+  // B26: shift stamp
+  shiftId?: string;
 }
 
 function appendTransaction(tx: Transaction, verticalId: string): void {
@@ -169,6 +173,7 @@ export function useCheckout(onComplete: () => void) {
         totalPaid: depositApplied > 0 ? splitTotalPaid : totalPaid,
         ...(depositApplied > 0 && { depositApplied }),
         ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
+        ...(data.shiftId && { shiftId: data.shiftId }),
       };
       setProcessingTotalCents(tx.totalPaid ?? totalPaid);
       setCompletedTx(tx);
@@ -195,6 +200,7 @@ export function useCheckout(onComplete: () => void) {
         totalPaid,
         ...(depositApplied > 0 && { depositApplied }),
         ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
+        ...(data.shiftId && { shiftId: data.shiftId }),
       };
       setCompletedTx(tx);
       setState("receipt");
@@ -222,6 +228,7 @@ export function useCheckout(onComplete: () => void) {
         totalPaid,
         ...(depositApplied > 0 && { depositApplied }),
         ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
+        ...(data.shiftId && { shiftId: data.shiftId }),
       };
       setCompletedTx(tx);
       setState("receipt");
