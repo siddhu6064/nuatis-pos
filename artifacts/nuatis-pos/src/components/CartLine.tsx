@@ -59,6 +59,7 @@ export function CartLine({
   const hasApplicableMods = applicableMods.length > 0;
   const hasDiscount = line.discountPercent > 0;
   const isManagerDiscount = line.discountPercent > MANAGER_DISCOUNT_THRESHOLD;
+  const hasVaccinationOverride = Boolean(line.vaccinationOverride);
 
   const stagedValue = parseInt(customRaw, 10);
   const stagedNeedsManager =
@@ -102,6 +103,23 @@ export function CartLine({
           {formatCurrency(lineTotal)}
         </span>
       </div>
+
+      {/* B22: Vaccination override badge */}
+      {hasVaccinationOverride && (
+        <div className="flex items-center gap-1 mb-1">
+          <span
+            className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              color: "#92400E",
+              backgroundColor: "#FEF3C7",
+              border: "1px solid #D97706",
+            }}
+          >
+            VACC OVERRIDE
+          </span>
+        </div>
+      )}
 
       {/* Discount amount sub-row */}
       {hasDiscount && (

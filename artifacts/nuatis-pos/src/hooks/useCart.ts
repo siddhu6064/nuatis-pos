@@ -5,6 +5,11 @@ import type { Modifier } from "@/lib/modifiers";
 import { cartKey, cartMetaKey } from "@/lib/storage";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
 
+export interface VaccinationOverride {
+  overriddenAt: number;   // epoch ms when manager approved
+  blockers: string[];     // human-readable blocker strings at time of override
+}
+
 export interface CartLine {
   lineId: string;
   serviceId: string;
@@ -14,6 +19,8 @@ export interface CartLine {
   staffId: string;
   modifiers: Modifier[];
   discountPercent: number;
+  // B22: present only on pet_grooming lines added via manager PIN override
+  vaccinationOverride?: VaccinationOverride;
 }
 
 export type { CartCustomer };
@@ -45,6 +52,7 @@ function loadCart(verticalId: string): CartLine[] {
         staffId: l.staffId ?? STAFF[0].id,
         modifiers: l.modifiers ?? [],
         discountPercent: l.discountPercent ?? 0,
+        ...(l.vaccinationOverride ? { vaccinationOverride: l.vaccinationOverride as VaccinationOverride } : {}),
       }));
   } catch {
     return [];
@@ -105,16 +113,32 @@ export function useCart() {
     localStorage.setItem(cartKey(verticalIdRef.current), JSON.stringify(next));
   }
 
+  /**
+   * addItem — adds a service line to the cart.
+   * If vaccinationOverride is provided, always creates a new line (no dedup).
+   * If vaccinationOverride is absent, deduplicates with matching lines that
+   * also have no override, incrementing quantity.
+   */
   const addItem = useCallback(
-    (serviceId: string, name: string, priceCents: number, staffId: string) => {
+    (
+      serviceId: string,
+      name: string,
+      priceCents: number,
+      staffId: string,
+      vaccinationOverride?: VaccinationOverride,
+    ) => {
       setLines((prev) => {
-        const existing = prev.find(
-          (l) =>
-            l.serviceId === serviceId &&
-            l.staffId === staffId &&
-            l.modifiers.length === 0 &&
-            l.discountPercent === 0,
-        );
+        // Only dedup when neither the new add nor the existing line has an override
+        const existing = vaccinationOverride
+          ? undefined
+          : prev.find(
+              (l) =>
+                l.serviceId === serviceId &&
+                l.staffId === staffId &&
+                l.modifiers.length === 0 &&
+                l.discountPercent === 0 &&
+                !l.vaccinationOverride,
+            );
         let next: CartLine[];
         if (existing) {
           next = prev.map((l) =>
@@ -134,6 +158,7 @@ export function useCart() {
               staffId,
               modifiers: [],
               discountPercent: 0,
+              ...(vaccinationOverride ? { vaccinationOverride } : {}),
             },
           ];
         }

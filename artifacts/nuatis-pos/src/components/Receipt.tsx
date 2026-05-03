@@ -72,6 +72,12 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
   // Split payment legs (defensive: treat missing payments as empty)
   const splitPayments = isSplit ? (transaction.payments ?? []) : [];
 
+  // B22: count vaccination-overridden lines for footnote
+  const overriddenLines = transaction.lineItems.filter(
+    (l) => l.vaccinationOverride,
+  );
+  const hasVaccinationOverrides = overriddenLines.length > 0;
+
   return (
     <div
       className="text-gray-900 text-[13px] w-full relative"
@@ -181,6 +187,14 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
               SPLIT
             </span>
           )}
+          {hasVaccinationOverrides && (
+            <span
+              className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded"
+              style={{ color: "#92400E", backgroundColor: "#FEF3C7", fontFamily: "'Epilogue', sans-serif" }}
+            >
+              VACC OVERRIDE
+            </span>
+          )}
         </p>
         {transaction.customer && (
           <p className="text-[12px] text-gray-700 font-medium">
@@ -204,6 +218,7 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
           const discountCents = calcLineDiscountCents(line);
           const staffMember = line.staffId ? STAFF.find((s) => s.id === line.staffId) : undefined;
           const isRefunded = allRefundedLineIds.has(line.lineId);
+          const hasOverride = Boolean(line.vaccinationOverride);
 
           return (
             <div key={line.lineId} style={{ opacity: isRefunded ? 0.5 : 1 }}>
@@ -217,6 +232,20 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
                   }
                 >
                   {line.name}
+                  {/* B22: inline VACC OVERRIDE badge per line */}
+                  {hasOverride && !isRefunded && (
+                    <span
+                      className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded"
+                      style={{
+                        fontFamily: "'Epilogue', sans-serif",
+                        color: "#92400E",
+                        backgroundColor: "#FEF3C7",
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      VACC OVERRIDE
+                    </span>
+                  )}
                 </span>
                 <span
                   className="text-[13px] font-medium tabular-nums ml-4"
@@ -492,6 +521,37 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
           {formatShortDatetime(linkedDepositTx.completedAt)} · Txn #
           {linkedDepositTx.id.slice(-8).toUpperCase()}
         </p>
+      )}
+
+      {/* B22: Vaccination override footnote */}
+      {hasVaccinationOverrides && (
+        <div
+          className="mb-2 px-2 py-1.5 rounded-lg"
+          style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}
+        >
+          <p
+            className="text-[10px] font-semibold text-amber-700 mb-0.5"
+            style={{ fontFamily: "'Epilogue', sans-serif" }}
+          >
+            VACCINATION OVERRIDE
+          </p>
+          {overriddenLines.map((line) => (
+            <p
+              key={line.lineId}
+              className="text-[10px] text-amber-600"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              {line.name}: {line.vaccinationOverride!.blockers.join("; ")} — mgr approved{" "}
+              {new Intl.DateTimeFormat("en-US", {
+                month: "short",
+                day: "2-digit",
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+              }).format(new Date(line.vaccinationOverride!.overriddenAt))}
+            </p>
+          ))}
+        </div>
       )}
 
       <p className="text-[12px] text-gray-600">

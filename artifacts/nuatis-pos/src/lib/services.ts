@@ -1,11 +1,16 @@
 export type Category = "cuts" | "color" | "treatments" | "styling";
 
+export type VaccinationRequirement = "rabies" | "bordetella";
+
 export interface Service {
   id: string;
   name: string;
   priceCents: number;
   durationMinutes: number;
   category: string;
+  // Optional — present only on pet_grooming services. Absent on all other verticals.
+  // checkServiceRequirements treats undefined as [].
+  requiresVaccinations?: VaccinationRequirement[];
 }
 
 export const SERVICES: Service[] = [

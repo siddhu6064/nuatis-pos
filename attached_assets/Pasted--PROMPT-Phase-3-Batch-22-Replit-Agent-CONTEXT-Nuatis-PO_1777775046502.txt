@@ -1,0 +1,134 @@
+▶ PROMPT [Phase 3 · Batch 22 · Replit Agent]
+
+CONTEXT
+Nuatis POS prototype, prototype/replit-day-1 branch. 21 batches shipped clean today, v0.0.5-prototype tagged at B21 docs wrap. Four verticals live: salon, spa, nail_bar, tattoo. Tattoo carries the first vertical-specific wrinkle: the deposit pattern (money-shape). Per-vertical isolation, two-phase transactions, totalPaid revenue math, payment mix routing, split tender, walk-in queue, appointment-aware register all proven.
+
+This batch validates the SECOND wrinkle category: state-shape. Pet grooming carries vaccination requirements — services that involve close contact require valid rabies, services that approach boarding-adjacent (heavy bath / day stay) also require bordetella. The customer record (which is now actually a pet+owner record) carries vaccination status with expiry dates. Tile-tap on a service runs the check BEFORE adding to cart and blocks the add when requirements are missing or expired, with a manager-PIN-overridable bypass for owner discretion. New mental model: pre-add gate. Different from B19's money-shape (deposits get applied post-build) and different from B7's modifier-shape (modifiers attach after add).
+
+Pet grooming is a Tier 2 vertical per the Master Plan — not in the launch cohort. Building it here validates engine extension into a different wrinkle category, not launch readiness.
+
+GOAL
+Operator taps a service tile in pet grooming, the engine checks the active customer's vaccination status against that service's requirements, and either (a) adds the line normally, (b) adds with a soft warning if vaccinations are valid but expiring within 30 days, or (c) blocks the add with a modal showing what's missing/expired and a manager-PIN-overridable "Add anyway" path.
+
+SCOPE — BUILD THIS
+
+1. New pet grooming vertical config in the verticals config directory, following the same shape as the existing four. Includes: vertical id "pet_grooming", display name "Pet Grooming", business identity defaults (shop name like "Paws & Claws Grooming", address, phone, tax rate 8.25%), tip presets matching the global default, color theme distinct from the other four (suggested green/teal palette), 12 services in the catalog with prices ranging from $25 (nail trim) to $120 (full groom large breed). Services categorized by contact level — at least 8 require rabies (any close-contact service), at least 3 require bordetella in addition (heavy bath, full groom, de-shed treatment). At least 2 services require neither (e.g., curbside nail trim, teeth-brush only — quick services where the pet stays leashed and minimally handled). 3 seed staff (groomers with realistic names), 4 seed customers — but customers in pet grooming are pet+owner pairs, see #2.
+
+2. Customer record extension for pet grooming: each customer in this vertical has the standard fields (name, phone) PLUS a pet sub-object: { petName, species ('dog' | 'cat' | 'other'), breed (string), vaccinations: { rabies?: { expiresAt: epoch ms }, bordetella?: { expiresAt: epoch ms } } }. Existing four verticals keep their current customer shape unchanged. The 4 seeded pet grooming customers have a deliberate mix:
+   - Customer 1: rabies valid, bordetella valid (clear path)
+   - Customer 2: rabies valid, bordetella missing (blocked from boarding-adjacent only)
+   - Customer 3: rabies expired 60 days ago, bordetella valid (blocked from any close-contact)
+   - Customer 4: rabies valid but expiring in 14 days, bordetella valid (soft warning)
+   
+   Defensive read: any non-pet-grooming customer record reading via this vertical's hooks treats vaccinations as undefined — gracefully falls back to "no record on file" (which gates the same as missing).
+
+3. New lib/vaccinations.ts module:
+   - VaccinationStatus = 'valid' | 'expiring_soon' | 'expired' | 'missing'. Pure function: getVaccinationStatus(vaccination: { expiresAt: epoch } | undefined, nowMs: number) returning the status.
+   - getVaccinationStatus rules: undefined → 'missing'; expiresAt < now → 'expired'; expiresAt < now + 30 days → 'expiring_soon'; else → 'valid'.
+   - checkServiceRequirements(service, customer, nowMs): returns { allowed: boolean, blockers: string[], warnings: string[] }. Iterates the service's required vaccinations (rabies and/or bordetella), evaluates each against the customer's record, classifies. Missing or expired → blocker. Expiring soon → warning. No requirement → no entry. Allowed = blockers.length === 0. Pure function, no localStorage reads.
+   - formatVaccinationStatus(status, expiresAt, nowMs): returns human-readable string like "Rabies expired 2 months ago" or "Bordetella expires in 14 days" — used by the modal.
+
+4. Service config extension for pet grooming services: each service in lib/pet-grooming-services.ts has a requiresVaccinations: ('rabies' | 'bordetella')[] field. Empty array for the no-requirement services. Defensive read: existing four verticals' services have this field as undefined — checkServiceRequirements treats undefined as empty array. Universal pattern that doesn't break other verticals.
+
+5. New components/VaccinationGateModal.tsx (z-50, full-screen overlay matching CashTenderModal panel style):
+   - Top: "Vaccination check required · {petName}" title (or "{customerName}'s pet" if pet name not present), close ✕.
+   - Service summary panel: service name + price, customer name + pet name + breed.
+   - Status panel: lists each required vaccination with its status icon and human-readable text. Blockers in red/destructive treatment, warnings in amber, valid entries in green.
+   - Two action paths at the bottom:
+     - When BLOCKED (any blocker): "Cancel" button (left, neutral) + "Override with Manager PIN" button (right, destructive treatment, accent color matching existing manager-PIN flows).
+     - When WARNING ONLY (no blockers, just expiring_soon): "Cancel" + "Add anyway" (right, primary — no PIN required, just an acknowledgment tap).
+     - When CLEAR: modal does not open in the first place; tile-tap adds line normally.
+   - Tapping "Override with Manager PIN" opens the existing ManagerPINModal (B10). On successful PIN entry, modal closes the gate, line adds to cart, both modals close. On cancel of PIN modal, returns to VaccinationGateModal.
+   - Tapping "Add anyway" on warning-only path: closes the modal, adds line to cart. No PIN.
+   - Tapping "Cancel" on either path: closes modal, no line added.
+
+6. Tile-tap flow integration in pet grooming register:
+   - Active customer must be set BEFORE tapping a service tile in pet grooming. If no customer is attached, tapping a tile prompts the existing customer-attach modal first (existing pattern from B5). After customer attached, the tile-tap flow continues. (For verticals without vaccination requirements, this prompt does NOT fire — the customer-first requirement is pet-grooming-specific.)
+   - Once customer attached, tile-tap calls checkServiceRequirements. If allowed (clear or warning-only with operator-mode tolerance):
+     - Clear: add line normally.
+     - Warning-only: open VaccinationGateModal in warning mode.
+   - If blocked: open VaccinationGateModal in blocker mode.
+   - Quick-add tiles (the existing 4×3 grid) behave the same — every service tile in pet grooming runs the check.
+
+7. Cart line annotation for vaccination-gated services: when a line was added via override (manager PIN bypass), tag the cart line with a vaccinationOverride: { overriddenAt: epoch, blockers: string[] } field. Display a small badge on the cart line: "VACC OVERRIDE" (amber, distinct from existing badges). Display the blocker reason on hover/tooltip and on the receipt. The override field flows through to the transaction record.
+
+8. Receipt rendering for vaccination overrides: in the line item area, vaccination-overridden lines show a small "Vaccination override" footnote below the line, with the blocker reason ("rabies expired 60 days ago"). For lines added via warning acknowledgment (not full override), no footnote — warnings are operator-information-only and don't carry into the transaction.
+
+9. Customer-attach modal extension for pet grooming: when adding a NEW customer in pet grooming (not an existing lookup match), the modal includes additional fields: pet name (required), species (radio: dog/cat/other, defaults dog), breed (text, optional), rabies expiry (date input or "Not on file" checkbox), bordetella expiry (date input or "Not on file" checkbox). Save creates the customer with the pet sub-object populated. For existing-customer lookup match, the modal shows the existing pet info as read-only with a small "(edit in Settings)" link that opens the Settings overlay (existing B14 — but Settings does NOT need a new vaccinations editor in this batch; the link opens Settings to its current state, this is just signaling the path). For other verticals, the modal stays exactly as it was.
+
+10. Settings overlay: NO changes this batch. Vaccination editing in Settings is a follow-on if pursued; pet info is set at customer creation only for now. Document this gap explicitly in the agent report.
+
+11. Today's Sales overlay: vaccination override is visible in the receipt detail view (per #8 footnote). No new badge on the transaction list row — overrides are line-level, not transaction-level. Per-staff math, payment mix, etc. all unchanged.
+
+12. Per-vertical isolation verified: pet grooming customers don't appear in salon's customer lookup, vaccination logic doesn't run in non-pet-grooming verticals, switching to pet_grooming loads its own seed customers, switching back to salon shows salon's customers unchanged.
+
+13. Defensive scenarios verified:
+    - Customer record loaded from a vertical that doesn't have pet info → vaccination check treats vaccinations as undefined, all required vaccinations show as 'missing', service blocks (correct behavior — operator must attach a pet-grooming-shaped customer).
+    - Service with empty/undefined requiresVaccinations → checkServiceRequirements returns allowed: true with no blockers/warnings. No modal opens.
+    - Tile tap before any customer attached → customer-attach prompt opens FIRST, the gate check happens after.
+
+SCOPE — DO NOT BUILD
+- Vaccination editing in Settings overlay (out of scope; pet info is set at customer creation only this batch)
+- Vaccination certificate file upload / proof attachment (no file storage in prototype — and even production won't validate certs; honor system)
+- Multiple pets per customer (one pet per customer record this batch — if owner has multiple pets, they create multiple customer records)
+- Species-specific requirements (e.g., feline-specific FVRCP) — rabies + bordetella covers the validation pattern
+- Breed-based weight tier pricing (different topic; flat per-service price stands)
+- Reminder/notification system for expiring vaccinations (no SMS, no email, no toast — operator sees the warning at tile-tap time, that's the validation)
+- Vaccination history / log of past status (current expiry only)
+- Editing existing customer's pet info from the customer-attach modal (read-only on lookup match — full edit is a Settings concern)
+- Cross-vertical customer linking (pet grooming customer is its own record, doesn't see salon history)
+- Auto-expire calendar (no scheduled jobs, no live tick — status computes on render)
+- Compound override audit log (vaccinationOverride field on the line is the audit trail; no separate log)
+- "Override expires in X days" reminder UX
+- Vaccination override on warning-only services (warnings just tap-acknowledge, no PIN — already in scope #5)
+- README/replit.md updates this batch (next wrap will cover pet_grooming)
+- New verticals beyond pet_grooming
+- Operator-attention nudge UI (declined pattern category — no banners, no toasts on customer arrival with expired vacc)
+- Real backend, real anything
+
+OPEN QUESTIONS section in your report is for clarifying questions about THIS batch's scope. Do NOT use it to suggest follow-on features.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4, no new dependencies
+- VaccinationGateModal at z-50; ManagerPINModal stacks at z-60 when invoked from gate (existing pattern from B17 cash sub-flow approach but inverted — gate opens PIN modal, not reverse)
+- Pure functions for status math; called at render time, no setInterval
+- Vaccination expiry stored as epoch ms (consistent with appointmentsAt, transactions, etc.)
+- Customer record shape extension is additive — pet field is optional on the base type, present on pet_grooming customers, absent on others
+- Service config extension: requiresVaccinations is optional (defaults to empty); existing four verticals' services unaffected
+- localStorage keys for pet_grooming follow the existing namespacing convention exactly: nuatis-pos:pet_grooming:cart, :transactions, :heldTickets, :settings, :waitlist, :appointments, :cartMeta
+- Customer-attach modal path branching: detect activeVerticalId === 'pet_grooming' to render the extended fields. No vertical-config-driven dynamic field system this batch — pragmatic if-check is fine, customer field shape is config-locked for prototype
+- Tile-tap handler in pet grooming register checks active customer presence first, then runs checkServiceRequirements, then dispatches to add or modal
+
+ACCEPTANCE
+- Vertical switcher shows 5 options. Switch to pet_grooming → register grid loads with 12 services + pet grooming theming + 3 staff + 4 seed customers.
+- With NO customer attached, tap any service tile → customer-attach modal opens FIRST. Cancel the attach → no line added, register idle. (Verify other verticals' tile-tap doesn't prompt this way.)
+- Attach Customer 1 (rabies valid, bordetella valid). Tap a service requiring both → line adds normally, no modal, no badge.
+- Attach Customer 2 (rabies valid, bordetella missing). Tap a service requiring rabies only → line adds normally. Tap a service requiring rabies + bordetella → VaccinationGateModal opens in BLOCKED mode. Status panel shows: Rabies — Valid (green), Bordetella — Not on file (red). Two buttons: Cancel + Override with Manager PIN.
+- Tap Override with Manager PIN → ManagerPINModal opens at z-60. Type any 4 digits → confirm → both modals close, line adds with VACC OVERRIDE badge. Hover badge → tooltip shows "Bordetella not on file". Cart total updates.
+- Attach Customer 3 (rabies expired 60 days ago, bordetella valid). Tap any rabies-required service → modal opens BLOCKED, status shows "Rabies expired 2 months ago" red. Override flow same.
+- Attach Customer 4 (rabies expiring in 14 days, bordetella valid). Tap any rabies-required service → modal opens in WARNING mode. Status shows "Rabies expires in 14 days" amber. Two buttons: Cancel + Add anyway. Tap Add anyway → line adds normally, NO badge (warning-only doesn't override).
+- Verify two no-requirement services (nail trim, teeth brush) work for ALL customers, even Customer 2 with missing vacc and Customer 3 with expired rabies — no modal, line adds normally.
+- New customer flow in pet grooming: tap "+ Customer", enter new name + phone, modal expands with pet fields. Enter pet name + species (default dog) + breed + rabies expiry (date) + bordetella expiry (date) → save → customer created with pet sub-object → tile-tap then runs the gate check on the new record.
+- New customer with "Not on file" checked for both vaccinations → save → tile-tap → modal blocks (both missing). Override path works.
+- Existing-customer lookup match in pet grooming → modal shows pet info as read-only with "(edit in Settings)" link.
+- Switch to salon (or any other vertical) → tile-tap on a salon service from any salon customer adds normally, no vaccination check fires anywhere. No regression.
+- Add a vaccination-overridden line, complete checkout (card or cash) → receipt shows the line with "Vaccination override · Bordetella not on file" footnote. No footnote on warning-acknowledged lines or non-overridden lines.
+- Open Today's Sales → transaction in list, badges display normally (no transaction-level vaccination badge — line-level only). Open receipt detail → footnote visible.
+- Reload page → all customers persist with their vaccination data. Tile-tap flow re-runs the same check, same gating behavior.
+- Customer record from another vertical (e.g., a salon customer) is NOT visible in pet grooming's customer lookup — per-vertical isolation holds.
+- Edge: manually edit a customer in localStorage to have vaccinations: { rabies: { expiresAt: 0 } } (epoch zero = always expired) → tile-tap blocks correctly with "Rabies expired" message. Defensive read doesn't crash.
+
+DO NOT TOUCH GIT
+Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab after this batch lands.
+
+REPORT FORMAT — REQUIRED
+Agent's response must include four sections in this order:
+- WHAT WAS BUILT
+- ERRORS ENCOUNTERED
+- ITEMS SKIPPED
+- OPEN QUESTIONS
+
+OPEN QUESTIONS is for clarifying questions about THIS scope only. Do not propose follow-on features.
+
+HARD STOP
+Stop after the scope above. Do not begin a next batch. Wait for the next prompt.

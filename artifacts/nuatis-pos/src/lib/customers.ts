@@ -1,9 +1,24 @@
+export interface PetVaccination {
+  expiresAt: number; // epoch ms
+}
+
+export interface Pet {
+  petName: string;
+  species: "dog" | "cat" | "other";
+  breed: string;
+  vaccinations: {
+    rabies?: PetVaccination;
+    bordetella?: PetVaccination;
+  };
+}
+
 export interface Customer {
   id: string;
   firstName: string;
   lastName: string;
   phone: string; // digits only, e.g. "5125550142"
   lastVisit: string;
+  pet?: Pet; // present on pet_grooming customers; absent on all other verticals
 }
 
 export type CartCustomer = Pick<

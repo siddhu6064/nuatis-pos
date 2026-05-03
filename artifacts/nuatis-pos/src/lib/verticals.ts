@@ -3,8 +3,13 @@ import type { Modifier } from "@/lib/modifiers";
 import { SERVICES, CATEGORY_COLORS } from "@/lib/services";
 import { MODIFIERS_BY_SERVICE } from "@/lib/modifiers";
 import { TATTOO_SERVICES, TATTOO_MODIFIERS_BY_SERVICE, TATTOO_CATEGORY_COLORS } from "@/lib/tattoo-services";
+import {
+  PET_GROOMING_SERVICES,
+  PET_GROOMING_MODIFIERS_BY_SERVICE,
+  PET_GROOMING_CATEGORY_COLORS,
+} from "@/lib/pet-grooming-services";
 
-export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo";
+export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming";
 
 export interface BusinessInfo {
   name: string;
@@ -179,6 +184,19 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     services: TATTOO_SERVICES,
     modifiersByService: TATTOO_MODIFIERS_BY_SERVICE,
     categoryColors: TATTOO_CATEGORY_COLORS,
+  },
+  pet_grooming: {
+    id: "pet_grooming",
+    displayName: "Pet Grooming",
+    tagline: "Grooming, bathing, and spa services for pets",
+    business: {
+      name: "Paws & Claws Grooming",
+      address: "555 Bark Ave, Austin, TX 78703",
+      phone: "(512) 555-0500",
+    },
+    services: PET_GROOMING_SERVICES,
+    modifiersByService: PET_GROOMING_MODIFIERS_BY_SERVICE,
+    categoryColors: PET_GROOMING_CATEGORY_COLORS,
   },
 };
 

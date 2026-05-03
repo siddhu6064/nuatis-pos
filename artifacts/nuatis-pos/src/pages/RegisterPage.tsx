@@ -14,8 +14,10 @@ import { WaitlistOverlay } from "@/components/WaitlistOverlay";
 import { AppointmentsOverlay } from "@/components/AppointmentsOverlay";
 import { CashTenderModal } from "@/components/CashTenderModal";
 import { SplitTenderModal } from "@/components/SplitTenderModal";
+import { VaccinationGateModal } from "@/components/VaccinationGateModal";
 import { Toast } from "@/components/Toast";
 import { useCart } from "@/hooks/useCart";
+import type { CartCustomer } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
 import type { SplitPayment } from "@/hooks/useCheckout";
 import { useActiveStaff } from "@/hooks/useActiveStaff";
@@ -35,10 +37,27 @@ import type { Appointment } from "@/lib/appointments";
 import type { WaitlistEntry } from "@/lib/waitlist";
 import type { VerticalId } from "@/lib/verticals";
 import type { AuthUser } from "@workspace/replit-auth-web";
+import {
+  PET_GROOMING_CUSTOMERS,
+  type PetCustomer,
+} from "@/lib/pet-grooming-customers";
+import type { Pet } from "@/lib/customers";
+import { checkServiceRequirements } from "@/lib/vaccinations";
+import type { VaccinationRequirement } from "@/lib/vaccinations";
 
 interface RegisterPageProps {
   user: AuthUser;
   onLogout: () => void;
+}
+
+/** State for a pending vaccination gate check */
+interface VaccinationGateState {
+  service: Service;
+  petInfo: Pet | undefined;
+  requiresVaccinations: VaccinationRequirement[];
+  customerVaccinations: PetCustomer["pet"]["vaccinations"] | undefined;
+  blockers: string[];
+  warnings: string[];
 }
 
 export function RegisterPage({ user, onLogout }: RegisterPageProps) {
@@ -96,6 +115,13 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   );
   const [holdToast, setHoldToast] = useState(false);
   const [cashDrawerToast, setCashDrawerToast] = useState(false);
+
+  // B22: Pet grooming — pending service (when tile tapped before customer attached)
+  const [pendingService, setPendingService] = useState<Service | null>(null);
+  // B22: Vaccination gate modal state
+  const [vaccinationGate, setVaccinationGate] =
+    useState<VaccinationGateState | null>(null);
+
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const holdToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cashToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,15 +148,112 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     setHeldTickets(getHeldTickets(activeVerticalId));
   }, [activeVerticalId]);
 
+  // ── B22: Vaccination gate check ──────────────────────────────────────────
+
+  /**
+   * Runs the vaccination gate check for a service against the attached customer.
+   * - Clear path → addItem directly.
+   * - Blockers or warnings → opens VaccinationGateModal.
+   * Accepts the customer directly (not from state) so it can be called
+   * immediately after attachCustomer before the state update propagates.
+   */
+  const runVaccinationGateCheck = useCallback(
+    (service: Service, attachedCustomer: CartCustomer) => {
+      const fullCustomer = PET_GROOMING_CUSTOMERS.find(
+        (c) => c.id === attachedCustomer.id,
+      ) as PetCustomer | undefined;
+      const pet = fullCustomer?.pet;
+      const requirements =
+        (service.requiresVaccinations as VaccinationRequirement[] | undefined) ?? [];
+      const nowMs = Date.now();
+      const result = checkServiceRequirements(
+        { requiresVaccinations: requirements },
+        { vaccinations: pet?.vaccinations },
+        nowMs,
+      );
+
+      if (result.blockers.length === 0 && result.warnings.length === 0) {
+        // Clear path — add directly and pulse
+        addItem(service.id, service.name, service.priceCents, activeStaff.id);
+        if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+        setPulsingServiceId(service.id);
+        pulseTimerRef.current = setTimeout(() => setPulsingServiceId(null), 200);
+        return;
+      }
+
+      // Blockers or warnings — open gate modal
+      setVaccinationGate({
+        service,
+        petInfo: pet,
+        requiresVaccinations: requirements,
+        customerVaccinations: pet?.vaccinations,
+        blockers: result.blockers,
+        warnings: result.warnings,
+      });
+    },
+    [addItem, activeStaff.id],
+  );
+
+  // ── Tile tap handlers ─────────────────────────────────────────────────────
+
   const handleTileTap = useCallback(
     (service: Service) => {
+      if (activeVerticalId === "pet_grooming") {
+        if (!customer) {
+          // Customer must be attached first in pet_grooming — save the pending service
+          setPendingService(service);
+          setShowCustomerSearch(true);
+          return;
+        }
+        runVaccinationGateCheck(service, customer);
+        return;
+      }
+      // All other verticals: add immediately
       addItem(service.id, service.name, service.priceCents, activeStaff.id);
       if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
       setPulsingServiceId(service.id);
       pulseTimerRef.current = setTimeout(() => setPulsingServiceId(null), 200);
     },
-    [addItem, activeStaff.id],
+    [activeVerticalId, customer, addItem, activeStaff.id, runVaccinationGateCheck],
   );
+
+  // ── Customer attach (with pending-service continuation for pet_grooming) ──
+
+  const handleAttachCustomer = useCallback(
+    (c: CartCustomer) => {
+      attachCustomer(c);
+      setShowCustomerSearch(false);
+      // If a service was pending (tile tapped before customer was attached in pet_grooming),
+      // run the gate check now using the just-attached customer directly.
+      if (pendingService !== null && activeVerticalId === "pet_grooming") {
+        const svc = pendingService;
+        setPendingService(null);
+        runVaccinationGateCheck(svc, c);
+      }
+    },
+    [attachCustomer, pendingService, activeVerticalId, runVaccinationGateCheck],
+  );
+
+  // ── Vaccination gate modal callbacks ──────────────────────────────────────
+
+  const handleVaccinationAdd = useCallback(
+    (override?: { overriddenAt: number; blockers: string[] }) => {
+      if (!vaccinationGate) return;
+      const { service } = vaccinationGate;
+      addItem(service.id, service.name, service.priceCents, activeStaff.id, override);
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+      setPulsingServiceId(service.id);
+      pulseTimerRef.current = setTimeout(() => setPulsingServiceId(null), 200);
+      setVaccinationGate(null);
+    },
+    [vaccinationGate, addItem, activeStaff.id],
+  );
+
+  const handleVaccinationCancel = useCallback(() => {
+    setVaccinationGate(null);
+  }, []);
+
+  // ── Cart totals ───────────────────────────────────────────────────────────
 
   const buildCartTotals = useCallback(() => {
     const subtotalCents = calcSubtotal(lines);
@@ -215,7 +338,6 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(depositApplied > 0 ? { depositApplied } : {}),
         ...(appointmentRef ? { appointmentRef } : {}),
       });
-      // Fire cash drawer toast if cash was part of the split
       if (payments.some((p) => p.method === "cash")) {
         if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
         setCashDrawerToast(true);
@@ -323,7 +445,8 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [attachCustomer, addItem, settings.staff, setActiveStaff, startAppointment, setDepositContext, clearDepositContext],
   );
 
-  // Compute cash modal total — tip-inclusive, post-comp, post-deposit
+  // ── Derived values ────────────────────────────────────────────────────────
+
   const cashSubtotal = calcSubtotal(lines);
   const cashTax = compApplied ? 0 : calcTaxWithRate(cashSubtotal, settings.taxRatePercent);
   const cashTotalCents = compApplied ? 0 : calcTotal(cashSubtotal, cashTax, checkout.tipCents);
@@ -336,6 +459,11 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   const switcherDisabled = lines.length > 0 || checkout.state !== "idle";
   const cartIsIdle = lines.length === 0 && checkout.state === "idle";
   const activeStaffList = settings.staff.filter((s) => s.active);
+
+  // Derived customer name for vaccination gate display
+  const customerName = customer
+    ? `${customer.firstName} ${customer.lastName}`.trim()
+    : "";
 
   return (
     <div
@@ -454,11 +582,31 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
       {showCustomerSearch && (
         <CustomerSearch
-          onAttach={(c) => {
-            attachCustomer(c);
+          onAttach={handleAttachCustomer}
+          onClose={() => {
             setShowCustomerSearch(false);
+            // If customer search was opened for a pending service and user cancels, clear pending
+            setPendingService(null);
           }}
-          onClose={() => setShowCustomerSearch(false)}
+          verticalId={activeVerticalId}
+        />
+      )}
+
+      {/* B22: Vaccination gate modal — z-50; PinModal inside stacks at z-60 */}
+      {vaccinationGate && (
+        <VaccinationGateModal
+          serviceName={vaccinationGate.service.name}
+          servicePriceCents={vaccinationGate.service.priceCents}
+          customerName={customerName}
+          petName={vaccinationGate.petInfo?.petName}
+          petBreed={vaccinationGate.petInfo?.breed}
+          petSpecies={vaccinationGate.petInfo?.species}
+          requiresVaccinations={vaccinationGate.requiresVaccinations}
+          customerVaccinations={vaccinationGate.customerVaccinations}
+          blockers={vaccinationGate.blockers}
+          warnings={vaccinationGate.warnings}
+          onAdd={handleVaccinationAdd}
+          onCancel={handleVaccinationCancel}
         />
       )}
 
