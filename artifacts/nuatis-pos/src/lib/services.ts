@@ -2,15 +2,39 @@ export type Category = "cuts" | "color" | "treatments" | "styling";
 
 export type VaccinationRequirement = "rabies" | "bordetella";
 
+// B23: Session-based pricing shapes
+export interface SessionPricingTierItem {
+  upToMinutes: number;
+  priceCents: number;
+}
+
+export interface SessionPricingMinute {
+  type: "session";
+  roundingMode: "minute";
+  perMinuteCents: number;
+  minMinutes: number;
+  maxMinutes: number;
+}
+
+export interface SessionPricingTier {
+  type: "session";
+  roundingMode: "tier";
+  tiers: SessionPricingTierItem[];
+}
+
+export type SessionPricing = SessionPricingMinute | SessionPricingTier;
+
 export interface Service {
   id: string;
   name: string;
+  /** 0 for session-based services (price computed on stop); real cents for fixed-price. */
   priceCents: number;
   durationMinutes: number;
   category: string;
-  // Optional — present only on pet_grooming services. Absent on all other verticals.
-  // checkServiceRequirements treats undefined as [].
+  // B22: optional — present only on pet_grooming services
   requiresVaccinations?: VaccinationRequirement[];
+  // B23: optional — present only on tanning session-based services
+  pricing?: SessionPricing;
 }
 
 export const SERVICES: Service[] = [

@@ -1,0 +1,126 @@
+▶ PROMPT [Phase 3 · Batch 23 · Replit Agent]
+
+CONTEXT
+Nuatis POS prototype, prototype/replit-day-1 branch. 22 batches shipped clean today, v0.0.5-prototype tagged at B21 docs wrap. Five verticals live: salon, spa, nail_bar, tattoo, pet_grooming. Tattoo carries the money-shape wrinkle (deposits, B19). Pet grooming carries the state-shape wrinkle (vaccination gate, B22). Per-vertical isolation, transaction shape extensions, payment mix, split tender all stable.
+
+This batch validates the THIRD wrinkle category: duration-shape. Tanning sessions are priced per-minute (or per-tier-of-minutes) and have an OPEN-ENDED state — operator starts the session when the customer enters the booth, the line shows live elapsed time, operator stops the session when the customer exits, the line locks at that elapsed-derived price and proceeds to normal checkout. New mental model: cart can hold an in-progress line that's not yet final-priced. Different from anything else in the prototype: cart lines have always been fixed-price-on-add (modifiers, deposits, vaccination overrides — all fixed at add time).
+
+Tanning is in the Tier 1 cohort per the Master Plan. This is a genuinely production-relevant validation, not a Tier 2+ exploration like pet_grooming was.
+
+GOAL
+Operator taps a tanning service tile, the engine starts an active session line in the cart with live elapsed-time display, operator taps "Stop Session" on that line which locks it at the elapsed-derived price, and then the cart proceeds through normal checkout (tip, payment method, receipt) with the final price reflecting the actual session duration.
+
+SCOPE — BUILD THIS
+
+1. New tanning vertical config in the verticals config directory, following the same shape as the existing five. Includes: vertical id "tanning", display name "Tanning", business identity defaults (shop name like "Sun Studio", address, phone, tax rate 8.25%), tip presets matching the global default, color theme distinct from the other five (suggested warm gold/bronze palette), 12 services in the catalog with a MIX of session-based and fixed-price:
+   - 8 SESSION-BASED services (booth tiers): UV Level 1 / Level 2 / Level 3 / Level 4 / Spray Tan Express / Spray Tan Premium / Red Light Therapy / Hybrid Bed. These have priceCents replaced with a pricing field of shape: { type: 'session', perMinuteCents, minMinutes (default 1), maxMinutes (default 30), roundingMode: 'minute' | 'tier' }. Most use 'minute' rounding (round elapsed seconds up to next minute, charge perMinuteCents × minutes). At least 2 use 'tier' rounding with a tiers array: [{ upToMinutes, priceCents }, ...] — e.g., [{ upToMinutes: 5, priceCents: 800 }, { upToMinutes: 10, priceCents: 1500 }, { upToMinutes: 15, priceCents: 2000 }, { upToMinutes: 20, priceCents: 2500 }] — operator session resolves to the smallest tier whose upToMinutes is ≥ elapsed minutes (tier rounding always rounds UP to the next available tier).
+   - 4 FIXED-PRICE services: Lotion (retail-style), Eye Protection (retail-style), Booth Cleaning Kit (retail-style), Membership Top-up. These keep the existing priceCents shape. Mixing fixed and session-based in the same catalog validates the engine's ability to handle heterogeneous service types within one vertical.
+   - 3 seed staff (attendants), 4 seed customers (no special record extensions like pet_grooming had).
+
+2. Service config extension: each service has either priceCents (fixed) OR pricing (session-based discriminated by pricing.type). Defensive: services from the existing five verticals all have priceCents undefined-on-pricing-field, treated as fixed. New helper getServiceFinalPriceCents(service, sessionElapsedMs?) in lib/pricing.ts:
+   - Fixed-price service: returns priceCents.
+   - Session-based service with sessionElapsedMs undefined: returns 0 (active session in progress, no final price yet).
+   - Session-based with sessionElapsedMs defined and rounding 'minute': returns Math.ceil(elapsedMs / 60000) × perMinuteCents, clamped to [minMinutes × perMinuteCents, maxMinutes × perMinuteCents].
+   - Session-based with sessionElapsedMs defined and rounding 'tier': finds smallest tier with upToMinutes ≥ Math.ceil(elapsedMs / 60000); if elapsed exceeds the largest tier, uses the largest tier's price (don't error, cap).
+   - Pure function. Called from render and from stop-session handler.
+
+3. New cart line state for active sessions. Extend CartLine type with two optional fields: sessionStartedAt (epoch ms, set when session line is added), sessionEndedAt (epoch ms, set when operator stops the session). Both undefined for fixed-price lines. Both present means session is locked at sessionEndedAt - sessionStartedAt elapsed. sessionStartedAt set + sessionEndedAt undefined means session is ACTIVE.
+
+4. Tile-tap behavior in tanning register:
+   - Fixed-price service tile: existing add-line behavior, no changes.
+   - Session-based service tile: adds a NEW line to cart with sessionStartedAt = Date.now(), sessionEndedAt undefined, qty: 1, the snapshotted service config. Multiple session-based lines can coexist in one cart (e.g., customer does Level 2 then Level 3 in same visit — two active sessions allowed sequentially, but two simultaneously also allowed since one operator can't physically be in two booths but the cart shouldn't enforce that).
+   - Tile-tap on a session-based service while the SAME service already has an active line in the cart: still adds a new line (operator may legitimately be running two booths in parallel). Don't block.
+
+5. Cart line rendering for session-based lines:
+   - Active state (sessionStartedAt set, sessionEndedAt undefined): line shows service name, "ACTIVE · Xm Ys elapsed" badge (JetBrains Mono, accent color), no price displayed (or "—" placeholder). A prominent "Stop Session" button replaces the qty controls. Backend math: elapsed = Date.now() - sessionStartedAt, formatted as Xm Ys (e.g., "12m 34s"). Re-render driven by — see #11.
+   - Locked state (both timestamps set): line shows service name, "SESSION · Xm" badge (final elapsed minutes), final price (computed via getServiceFinalPriceCents), normal qty controls (qty 1, no increment for sessions), normal remove button. Behaves like a regular line for tip/discount/checkout math.
+
+6. Stop Session handler: sets sessionEndedAt = Date.now() on that line, computes the final priceCents using getServiceFinalPriceCents, locks it on the line. The line becomes a normal closeable line.
+
+7. Active session blockers on checkout: the existing Card / Cash / Split / Comp buttons in the cart footer are GATED while any cart line is in active session state. Tooltip: "Stop all sessions before checkout". Visual: buttons disabled with the existing disabled treatment. As soon as all sessions are stopped (or all active-session lines removed via Remove), buttons re-enable.
+
+8. Session line removal: a Remove button is available on active session lines (small, secondary treatment, with confirm). Removing an active session before stopping is allowed — represents an aborted session (customer changed mind, no service rendered, no charge). No record kept.
+
+9. Hold/Resume compatibility: a held ticket containing active session lines preserves sessionStartedAt timestamps. On resume, elapsed time picks up from the original sessionStartedAt — meaning if a ticket was held for 30 minutes mid-session, the resumed line shows 30+ minutes elapsed. THIS IS THE INTENDED BEHAVIOR for prototype; production might want to pause-on-hold but that's a policy decision for later. Operator can stop the session immediately on resume if the elapsed is wrong, which discards the over-elapsed time and locks at whatever elapsed actually was. (Not a special "discard" path — just stop and accept the price; if the price is too high, operator can manually discount the line via existing % discount picker.)
+
+10. Discount and comp behavior on session lines: same as fixed-price lines once locked. % discount picker works on locked session lines normally. Comp on a ticket with active sessions: prevented (gated alongside checkout buttons in #7) — comp requires all sessions stopped first.
+
+11. Live elapsed re-render: avoid setInterval at module level. Implement a single setInterval in a useElapsedTick hook that ticks once per second AT THE PAGE LEVEL only when at least one cart line has an active session. The hook's value is an incrementing counter; cart line components read it as a dependency to re-render. When all sessions are locked or cart is empty, the interval clears. This is the FIRST setInterval in the prototype — narrow, scoped, tied to active sessions only. Document in the file's top comment why this exception was made (operator-visible time elapsed during active service is the only UX where pure render-on-pull falls short). All OTHER elapsed displays in the codebase (waitlist wait time, appointment time labels) continue to be render-on-pull — do NOT migrate them to use this hook.
+
+12. Receipt rendering for session-based lines: the line shows service name with a session detail suffix: "Spray Tan Express · 8m session" with the final price next to it. No live elapsed on receipts — sessions are locked by the time a receipt renders. Receipt-level math is unchanged otherwise; tax, tip, discount, deposit, split tender all work on locked session totals.
+
+13. Today's Sales rendering: transaction list shows session-based lines with the same suffix. Per-staff revenue, payment mix, refund flow all work on the locked prices — sessions are just lines once locked, all existing math applies.
+
+14. Defensive scenarios:
+    - sessionStartedAt > Date.now() (clock skew or seeded test data): elapsed clamps to 0, displays "ACTIVE · 0m 0s elapsed", price computes at minMinutes (or first tier).
+    - Service config with pricing.type='session' but missing perMinuteCents AND missing tiers: getServiceFinalPriceCents returns 0, line locks at $0. Don't crash.
+    - Reload page mid-active-session: localStorage persists sessionStartedAt as it was; on restore, elapsed continues counting from original sessionStartedAt (may show large elapsed if reload happened minutes later — operator stops and accepts or removes).
+
+15. Per-vertical isolation: tanning sessions don't leak into other verticals; switching to salon shows zero session-based UI; switching back to tanning restores any active sessions held in localStorage cart.
+
+SCOPE — DO NOT BUILD
+- Booth/room assignment UI (no "which booth is occupied" tracking — single-cart prototype, operator manages physical assignment off-system)
+- Auto-stop on time limit (sessions don't auto-end at maxMinutes — they cap PRICE at maxMinutes but elapsed display continues; operator must explicitly stop)
+- Session pause/resume (a session is either active or locked; no third state)
+- Multi-customer parallel sessions visualized as separate "tickets" — single cart, single ticket; multiple session lines in one ticket is the supported pattern
+- Membership/package deduction at session start (membership is one of the fixed-price services; no entitlement system)
+- Real-time price ticking on the line (the "elapsed" display ticks; the price preview does NOT — operator gets a precise charge only on stop, which avoids partial-minute confusion)
+- Manager PIN gate for manual override of session price (not a new pattern; if operator wants a different price, % discount handles it)
+- Settings overlay edits to session pricing (config-locked)
+- Background session expiry warnings ("session running 30+ minutes" toast) — declined operator-attention nudge category
+- Tanning-specific reports (session minute totals, average session length per staff) — known reporting pattern, no new validation
+- README/replit.md updates this batch (next wrap covers tanning + pet_grooming together)
+- Cross-vertical session linking
+- Real backend, real anything
+
+OPEN QUESTIONS section in your report is for clarifying questions about THIS batch's scope. Do NOT use it to suggest follow-on features.
+
+REPORT FORMAT REMINDER: prior batch report skipped the four required sections. This batch's report MUST include all four sections labeled exactly: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4, no new dependencies
+- New useElapsedTick hook is the ONLY place setInterval is used in the codebase (verify by search)
+- Interval cleanup on unmount and on transition to zero-active-sessions is mandatory — leaked intervals are a regression
+- Pure functions for price math; the hook only returns a tick counter, not formatted strings
+- Integer cents math throughout; minute conversions use Math.ceil for 'minute' rounding (always round up partial minutes)
+- localStorage cart persistence already handles arbitrary CartLine fields; sessionStartedAt and sessionEndedAt as numeric epochs serialize natively
+- Session line UI in cart inherits existing line styling; the active-state badge and "Stop Session" button are the only new visual elements
+- Service.pricing field is optional; existing five verticals' service configs unaffected (no migration)
+
+ACCEPTANCE
+- Vertical switcher shows 6 options. Switch to tanning → register grid loads with 12 services in tanning theming + 3 staff + 4 seed customers.
+- Tap a fixed-price service tile (e.g., Lotion) → line adds normally with priceCents, qty controls visible, can complete checkout normally without any session UX showing.
+- Tap a session-based service tile (e.g., UV Level 2 at 100¢/min) → line appears in cart with "ACTIVE · 0m 0s elapsed", price area shows "—", "Stop Session" button visible.
+- Wait 5 seconds, observe elapsed display ticks every ~1 second. After 5+ seconds → still 0m 5s+ elapsed.
+- Card / Cash / Split / Comp buttons disabled while session active. Tooltip shows "Stop all sessions before checkout".
+- Tap Stop Session after ~70 seconds elapsed → line locks at "SESSION · 2m" (rounded up from 1m 10s) and price = 2 × 100¢ = $2.00. Stop Session button replaced by qty controls + remove button. Card/Cash/Split/Comp buttons re-enable.
+- Tap a tier-rounded session tile (e.g., Spray Tan Express tiers 5/10/15/20 min at $8/$15/$20/$25) → line active with elapsed ticking. Stop after ~7 minutes elapsed (or scrub localStorage to fake it for testing — set sessionStartedAt to Date.now() - 7*60*1000) → line locks at the next tier-up, "SESSION · 10m" with $15.00 price.
+- Two active sessions in same cart at once: tap UV Level 2, then immediately tap UV Level 3. Both lines show ACTIVE with their own elapsed. Stop one → locks. Other still ticks. Stop second → locks. Card button enables.
+- Add a fixed-price line (Lotion) alongside an active session: fixed line shows price normally, session line shows ACTIVE, checkout buttons stay disabled because of the session. Stop session → all enable.
+- Remove an active session via the Remove button (with confirm) → line gone, no record, no charge. If it was the only active session, checkout buttons enable.
+- Hold a ticket with one active session (Held: 1 pill increments). Wait 1 minute. Resume the held ticket → session line shows elapsed 1m+ (continuing from original sessionStartedAt — by design). Operator can stop and accept or apply % discount.
+- Reload mid-session: refresh browser, restore cart from localStorage → session line shows ACTIVE with continuing elapsed time from original timestamp. setInterval re-attaches.
+- Stop session → checkout normally (Card or Cash or Split). Receipt shows "UV Level 2 · 2m session" with $2.00. Tax, tip, etc. all compute correctly on the locked total.
+- Today's Sales: transaction shows session-based lines with "Xm session" suffix. Total revenue, per-staff math, payment mix all behave normally.
+- % discount picker on a locked session line works (e.g., 10% off the $2 → $1.80). Discount math correct.
+- Comp the entire ticket post-session-stop: works normally, COMPED stamp, $0 total.
+- Switch vertical from tanning back to salon → salon cart restored, salon services load, no session UI in salon. Switch back to tanning → tanning cart restored, any active sessions still ticking from their original timestamps.
+- DevTools: search the codebase for setInterval. Result is ONE occurrence in useElapsedTick.ts. No other intervals exist.
+- DevTools: while no sessions are active, the interval handle in useElapsedTick is null/cleared (verify via React DevTools or a console.log in the hook during dev).
+- Defensive: edit a cart line in localStorage to have sessionStartedAt = Date.now() + 999999 (future timestamp) → reload → line shows "ACTIVE · 0m 0s elapsed" (clamped, not negative).
+- Defensive: a tanning service config with pricing.type='session' but no perMinuteCents and no tiers → stop session locks at $0.00, no crash.
+
+DO NOT TOUCH GIT
+Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab after this batch lands.
+
+REPORT FORMAT — REQUIRED
+Agent's response must include four sections in this order with exact headings:
+- WHAT WAS BUILT
+- ERRORS ENCOUNTERED
+- ITEMS SKIPPED
+- OPEN QUESTIONS
+
+OPEN QUESTIONS is for clarifying questions about THIS scope only. Do not propose follow-on features.
+
+HARD STOP
+Stop after the scope above. Do not begin a next batch. Wait for the next prompt.

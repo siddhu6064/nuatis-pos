@@ -2,8 +2,10 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { STAFF } from "@/lib/staff";
 import type { CartCustomer } from "@/lib/customers";
 import type { Modifier } from "@/lib/modifiers";
+import type { SessionPricing } from "@/lib/services";
 import { cartKey, cartMetaKey } from "@/lib/storage";
 import { useActiveVertical } from "@/hooks/useActiveVertical";
+import { getServiceFinalPriceCents } from "@/lib/pricing";
 
 export interface VaccinationOverride {
   overriddenAt: number;   // epoch ms when manager approved
@@ -21,6 +23,10 @@ export interface CartLine {
   discountPercent: number;
   // B22: present only on pet_grooming lines added via manager PIN override
   vaccinationOverride?: VaccinationOverride;
+  // B23: session-based tanning lines
+  sessionStartedAt?: number;  // epoch ms; defined = session started
+  sessionEndedAt?: number;    // epoch ms; defined = session locked
+  sessionPricing?: SessionPricing; // stored for price recomputation
 }
 
 export type { CartCustomer };
@@ -53,6 +59,10 @@ function loadCart(verticalId: string): CartLine[] {
         modifiers: l.modifiers ?? [],
         discountPercent: l.discountPercent ?? 0,
         ...(l.vaccinationOverride ? { vaccinationOverride: l.vaccinationOverride as VaccinationOverride } : {}),
+        // B23: restore session fields
+        ...(typeof l.sessionStartedAt === "number" ? { sessionStartedAt: l.sessionStartedAt } : {}),
+        ...(typeof l.sessionEndedAt === "number" ? { sessionEndedAt: l.sessionEndedAt } : {}),
+        ...(l.sessionPricing ? { sessionPricing: l.sessionPricing as SessionPricing } : {}),
       }));
   } catch {
     return [];
@@ -114,10 +124,10 @@ export function useCart() {
   }
 
   /**
-   * addItem — adds a service line to the cart.
+   * addItem — adds a fixed-price service line to the cart.
    * If vaccinationOverride is provided, always creates a new line (no dedup).
    * If vaccinationOverride is absent, deduplicates with matching lines that
-   * also have no override, incrementing quantity.
+   * also have no override and are not session lines.
    */
   const addItem = useCallback(
     (
@@ -128,7 +138,7 @@ export function useCart() {
       vaccinationOverride?: VaccinationOverride,
     ) => {
       setLines((prev) => {
-        // Only dedup when neither the new add nor the existing line has an override
+        // Only dedup fixed-price lines with no override and no session fields
         const existing = vaccinationOverride
           ? undefined
           : prev.find(
@@ -137,7 +147,8 @@ export function useCart() {
                 l.staffId === staffId &&
                 l.modifiers.length === 0 &&
                 l.discountPercent === 0 &&
-                !l.vaccinationOverride,
+                !l.vaccinationOverride &&
+                l.sessionStartedAt === undefined,
             );
         let next: CartLine[];
         if (existing) {
@@ -169,6 +180,71 @@ export function useCart() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+
+  /**
+   * addSessionItem — adds a session-based service line (B23 tanning).
+   * Always creates a new line (no dedup; parallel sessions are allowed).
+   * Sets sessionStartedAt = Date.now(), priceCents = 0 (computed on stop).
+   */
+  const addSessionItem = useCallback(
+    (
+      serviceId: string,
+      name: string,
+      sessionPricing: SessionPricing,
+      staffId: string,
+    ) => {
+      setLines((prev) => {
+        const next: CartLine[] = [
+          ...prev,
+          {
+            lineId: crypto.randomUUID(),
+            serviceId,
+            name,
+            priceCents: 0,
+            quantity: 1,
+            staffId,
+            modifiers: [],
+            discountPercent: 0,
+            sessionStartedAt: Date.now(),
+            sessionPricing,
+          },
+        ];
+        saveCart(next);
+        return next;
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  /**
+   * stopSession — locks a session line at the computed final price.
+   * Sets sessionEndedAt = Date.now() and computes priceCents via getServiceFinalPriceCents.
+   */
+  const stopSession = useCallback((lineId: string) => {
+    setLines((prev) => {
+      const line = prev.find((l) => l.lineId === lineId);
+      if (!line || line.sessionEndedAt !== undefined) return prev;
+
+      const endedAt = Date.now();
+      const startedAt = line.sessionStartedAt ?? endedAt;
+      const elapsedMs = Math.max(0, endedAt - startedAt);
+
+      const finalPriceCents = getServiceFinalPriceCents(
+        { pricing: line.sessionPricing, priceCents: 0 },
+        elapsedMs,
+      );
+
+      const next = prev.map((l) =>
+        l.lineId === lineId
+          ? { ...l, sessionEndedAt: endedAt, priceCents: finalPriceCents }
+          : l,
+      );
+      saveCart(next);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const increment = useCallback((lineId: string) => {
     setLines((prev) => {
@@ -287,7 +363,6 @@ export function useCart() {
       setCustomer(heldCustomer);
       setCompApplied(heldCompApplied);
       setCompReason(heldCompReason);
-      // Clear deposit context when resuming a held ticket
       setAppointmentRefState(null);
       setDepositAppliedState(0);
       saveCartMeta(verticalIdRef.current, { appointmentRef: null, depositApplied: 0 });
@@ -317,6 +392,8 @@ export function useCart() {
     appointmentRef,
     depositApplied,
     addItem,
+    addSessionItem,
+    stopSession,
     increment,
     decrement,
     remove,

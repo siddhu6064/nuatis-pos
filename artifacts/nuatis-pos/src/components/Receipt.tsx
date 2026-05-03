@@ -2,6 +2,7 @@ import type { Transaction } from "@/hooks/useCheckout";
 import { STAFF } from "@/lib/staff";
 import { formatCurrency } from "@/lib/currency";
 import { calcLineDiscountCents, calcLineTotalCents } from "@/lib/cartMath";
+import { elapsedMinutes } from "@/lib/pricing";
 import { useVerticalSettings } from "@/hooks/useVerticalSettings";
 
 interface ReceiptProps {
@@ -69,10 +70,9 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
   const refundedTotalCents = transaction.refundedTotalCents ?? 0;
   const netCents = transaction.totalCents - refundedTotalCents;
 
-  // Split payment legs (defensive: treat missing payments as empty)
   const splitPayments = isSplit ? (transaction.payments ?? []) : [];
 
-  // B22: count vaccination-overridden lines for footnote
+  // B22: vaccination override lines
   const overriddenLines = transaction.lineItems.filter(
     (l) => l.vaccinationOverride,
   );
@@ -220,6 +220,15 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
           const isRefunded = allRefundedLineIds.has(line.lineId);
           const hasOverride = Boolean(line.vaccinationOverride);
 
+          // B23: session suffix
+          const isSessionLine =
+            line.sessionStartedAt !== undefined && line.sessionEndedAt !== undefined;
+          const sessionMins = isSessionLine
+            ? elapsedMinutes(
+                Math.max(0, (line.sessionEndedAt ?? line.sessionStartedAt!) - line.sessionStartedAt!),
+              )
+            : 0;
+
           return (
             <div key={line.lineId} style={{ opacity: isRefunded ? 0.5 : 1 }}>
               <div className="flex justify-between items-baseline">
@@ -231,8 +240,11 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
                       : {}
                   }
                 >
-                  {line.name}
-                  {/* B22: inline VACC OVERRIDE badge per line */}
+                  {/* B23: session suffix */}
+                  {isSessionLine
+                    ? `${line.name} · ${sessionMins}m session`
+                    : line.name}
+                  {/* B22: vacc override badge */}
                   {hasOverride && !isRefunded && (
                     <span
                       className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded"
@@ -263,7 +275,9 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
                   className="text-[11px] text-gray-400 pl-2 tabular-nums"
                   style={{ fontFamily: "'JetBrains Mono', monospace" }}
                 >
-                  {line.quantity} × {formatCurrency(line.priceCents)}
+                  {isSessionLine
+                    ? `${sessionMins}m session`
+                    : `${line.quantity} × ${formatCurrency(line.priceCents)}`}
                   {staffMember && (
                     <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
                       {" "}
@@ -277,9 +291,7 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
                   key={mod.id}
                   className="flex justify-between items-baseline pl-4 mt-0.5"
                 >
-                  <span className="text-[12px] text-gray-400">
-                    + {mod.name}
-                  </span>
+                  <span className="text-[12px] text-gray-400">+ {mod.name}</span>
                   <span
                     className="text-[12px] text-gray-400 tabular-nums"
                     style={{ fontFamily: "'JetBrains Mono', monospace" }}
@@ -313,7 +325,6 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
 
       {/* Math rows */}
       {isDepositTx ? (
-        /* ── Deposit transaction ─────────────────────────────────────────── */
         <div className="space-y-1">
           <div className="flex justify-between text-[15px] font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
             <span style={{ fontFamily: "'Epilogue', sans-serif" }}>Deposit</span>
@@ -327,10 +338,7 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
           {(transaction.depositBalanceDueCents ?? 0) > 0 && (
             <div className="flex justify-between text-[12px] text-gray-500 pt-1">
               <span>Balance due at service</span>
-              <span
-                className="tabular-nums"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
+              <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                 {formatCurrency(transaction.depositBalanceDueCents!)}
               </span>
             </div>
@@ -359,7 +367,6 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
           )}
         </div>
       ) : (
-        /* ── Service transaction ─────────────────────────────────────────── */
         <div className="space-y-1">
           <div className="flex justify-between text-[12px] text-gray-600">
             <span>Subtotal</span>
@@ -382,7 +389,6 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
             </div>
           )}
 
-          {/* Deposit credit row */}
           {hasDepositCredit && (
             <div className="flex justify-between text-[12px]" style={{ color: "#15803D" }}>
               <span>Deposit applied</span>
@@ -392,7 +398,6 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
             </div>
           )}
 
-          {/* Total / Balance paid row */}
           <div className="flex justify-between text-[15px] font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
             <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
               {hasDepositCredit ? "Balance paid" : "Total"}
@@ -412,29 +417,21 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
             </span>
           </div>
 
-          {/* Payment rows — single-method or split */}
           {isSplit ? (
-            /* Split-tender payment legs */
             <div className="space-y-1 pt-0.5">
               {splitPayments.map((p, i) => (
                 <div key={i}>
                   {p.method === "card" ? (
                     <div className="flex justify-between text-[12px] text-gray-600">
                       <span>Card payment</span>
-                      <span
-                        className="tabular-nums"
-                        style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                      >
+                      <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                         {formatCurrency(p.amountCents)} · Visa •••• 4242
                       </span>
                     </div>
                   ) : (
                     <div className="flex justify-between text-[12px] text-gray-600">
                       <span>Cash payment</span>
-                      <span
-                        className="tabular-nums"
-                        style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                      >
+                      <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
                         {formatCurrency(p.amountCents)} · Tndr{" "}
                         {formatCurrency(p.tenderedCents ?? p.amountCents)} · Chg{" "}
                         {formatCurrency(p.changeCents ?? 0)}
@@ -445,18 +442,12 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
               ))}
               <div className="flex justify-between text-[13px] font-semibold text-gray-800 pt-0.5">
                 <span style={{ fontFamily: "'Epilogue', sans-serif" }}>Total paid</span>
-                <span
-                  className="tabular-nums"
-                  style={{ fontFamily: "'Fraunces', serif" }}
-                >
-                  {formatCurrency(
-                    splitPayments.reduce((s, p) => s + p.amountCents, 0),
-                  )}
+                <span className="tabular-nums" style={{ fontFamily: "'Fraunces', serif" }}>
+                  {formatCurrency(splitPayments.reduce((s, p) => s + p.amountCents, 0))}
                 </span>
               </div>
             </div>
           ) : (
-            /* Single-method payment */
             <>
               <div className="flex justify-between text-[12px] text-gray-600 pt-0.5">
                 <span>Payment</span>
@@ -483,13 +474,8 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
             </>
           )}
 
-          {/* Refunds */}
           {(transaction.refunds ?? []).map((refund, i) => (
-            <div
-              key={refund.id}
-              className="flex justify-between text-[12px] pt-0.5"
-              style={{ color: "#DC2626" }}
-            >
+            <div key={refund.id} className="flex justify-between text-[12px] pt-0.5" style={{ color: "#DC2626" }}>
               <span style={{ fontFamily: "'Epilogue', sans-serif" }}>
                 Refund #{i + 1} · {formatShortDatetime(refund.refundedAt)}
               </span>
@@ -501,9 +487,7 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
 
           {hasAnyRefund && (
             <div className="flex justify-between text-[13px] font-semibold pt-1 border-t border-gray-200">
-              <span style={{ fontFamily: "'Epilogue', sans-serif", color: "#374151" }}>
-                Net
-              </span>
+              <span style={{ fontFamily: "'Epilogue', sans-serif", color: "#374151" }}>Net</span>
               <span className="tabular-nums" style={{ fontFamily: "'Fraunces', serif", color: "#374151" }}>
                 {formatCurrency(netCents)}
               </span>

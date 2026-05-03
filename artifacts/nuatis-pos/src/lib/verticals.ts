@@ -8,8 +8,13 @@ import {
   PET_GROOMING_MODIFIERS_BY_SERVICE,
   PET_GROOMING_CATEGORY_COLORS,
 } from "@/lib/pet-grooming-services";
+import {
+  TANNING_SERVICES,
+  TANNING_MODIFIERS_BY_SERVICE,
+  TANNING_CATEGORY_COLORS,
+} from "@/lib/tanning-services";
 
-export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming";
+export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming" | "tanning";
 
 export interface BusinessInfo {
   name: string;
@@ -114,15 +119,11 @@ const NAIL_BAR_MODIFIERS_BY_SERVICE: Record<string, Modifier[]> = {
   ],
 };
 
-// Nail bar category colors — visually distinct from all 8 salon + spa colors:
-// Salon:   cuts #FBCFE8, color #FEF3C7, treatments #E9D5FF, styling #FED7AA
-// Spa:     massages #A7F3D0, facials #FECDD3, body #FDE68A, wellness #BAE6FD
-// Nail bar uses softer pink, soft violet, light rose, pale lemon — no hex reuse
 const NAIL_BAR_CATEGORY_COLORS: Record<string, string> = {
-  manicures: "#FCE7F3",   // softer pink   (≠ salon cuts #FBCFE8)
-  pedicures: "#DDD6FE",   // soft violet   (≠ salon treatments #E9D5FF)
-  enhancements: "#FFE4E6", // light rose    (≠ spa facials #FECDD3)
-  art_addons: "#FEF9C3",  // pale lemon    (≠ spa body #FDE68A)
+  manicures: "#FCE7F3",
+  pedicures: "#DDD6FE",
+  enhancements: "#FFE4E6",
+  art_addons: "#FEF9C3",
 };
 
 // ── Vertical registry ─────────────────────────────────────────────────────────
@@ -197,6 +198,19 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     services: PET_GROOMING_SERVICES,
     modifiersByService: PET_GROOMING_MODIFIERS_BY_SERVICE,
     categoryColors: PET_GROOMING_CATEGORY_COLORS,
+  },
+  tanning: {
+    id: "tanning",
+    displayName: "Tanning",
+    tagline: "UV beds, spray tan, red light therapy",
+    business: {
+      name: "Sun Studio",
+      address: "100 Bronze Blvd, Austin, TX 78706",
+      phone: "(512) 555-0600",
+    },
+    services: TANNING_SERVICES,
+    modifiersByService: TANNING_MODIFIERS_BY_SERVICE,
+    categoryColors: TANNING_CATEGORY_COLORS,
   },
 };
 

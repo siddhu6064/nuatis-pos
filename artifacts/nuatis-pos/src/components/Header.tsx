@@ -25,8 +25,18 @@ interface HeaderProps {
 function useClock() {
   const [time, setTime] = useState(() => new Date());
   useEffect(() => {
-    const id = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(id);
+    let cancelled = false;
+    function tick() {
+      if (cancelled) return;
+      setTime(new Date());
+      const delay = 1000 - (Date.now() % 1000);
+      setTimeout(tick, delay);
+    }
+    const id = setTimeout(tick, 1000 - (Date.now() % 1000));
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
   }, []);
   return time.toLocaleTimeString("en-US", {
     hour: "2-digit",
