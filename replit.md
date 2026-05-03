@@ -2,7 +2,7 @@
 
 > Throwaway UX prototype (May 2, 2026). All state in localStorage. No backend required beyond Replit Auth. See README.md for the full context.
 >
-> **v5 — through Batch 24 (multi-leg split tender). Tag: v0.0.7-prototype.**
+> **v6 — through Batch 27 (laundry vertical + drop-off/pickup lifecycle). Tag: v0.0.9-prototype.**
 
 ---
 
@@ -49,15 +49,21 @@ App.tsx
 │               │   ├── "Held: N" pill   — per-vertical held count, gated on idle
 │               │   ├── "Waitlist: N"    — opens WaitlistOverlay, gated on idle
 │               │   ├── "Appts: N"       — opens AppointmentsOverlay, gated on idle
+│               │   ├── "Open: N"        — opens OpenTicketsOverlay (drop-off verticals)
+│               │   ├── shift pill        — elapsed duration when shift open; "No shift open" otherwise
 │               │   ├── "Today's Sales"  — opens ReportsOverlay, gated on idle
 │               │   ├── live clock (useClock — setTimeout-recursion only, no setInterval)
 │               │   ├── active staff + Switch — opens StaffSwitcher
 │               │   └── Account dropdown — "Settings" + logout
+│               ├── StartShiftModal       — active staff selector + starting cash float keypad
+│               ├── EndShiftModal         — shift summary (gross, payment mix, tx count) + close confirm
 │               ├── ServiceTile  (×12)   — grid from active vertical config
 │               ├── Cart                 — useVerticalSettings for taxRatePercent + tipPresets
 │               │   ├── customer pill    — opens CustomerSearch / detach
 │               │   ├── deposit banner   — shown when appointmentRef + depositApplied > 0
 │               │   ├── vaccination gate banner — shown on pet_grooming with blocked/warning status
+│               │   ├── drop-off mode label — shown when workflow === 'drop_off'
+│               │   ├── pickup mode banner — shown when cart loaded from open ticket; includes "Return to In Progress" button
 │               │   ├── CartLine  (×N)   — useVerticalSettings for active staff list
 │               │   │   ├── qty controls
 │               │   │   ├── staff picker — inline chips from settings.staff (active only)
@@ -67,12 +73,13 @@ App.tsx
 │               │   │   └── vaccination override flag — set when manager PIN unlocks blocked gate
 │               │   ├── CompModal        — 6-reason comp picker
 │               │   ├── TipPicker        — presets from settings.tipPresets + custom input
-│               │   └── Charge / Card / Cash / Split buttons
+│               │   └── Charge / Card / Cash / Split / Drop Off buttons
 │               ├── CheckoutOverlay      — full-screen, processing + receipt states
 │               │   ├── processing spinner  (card path only; split skips this)
 │               │   ├── Receipt          — useVerticalSettings for business identity
 │               │   ├── delivery buttons — print / email / sms / none
 │               │   └── CustomerSearch (post-sale attach)
+│               ├── DropOffSuccessOverlay — tag number prominent display + service summary
 │               ├── CashTenderModal      — z-50, right-to-left keypad, quick-tender row
 │               ├── SplitTenderModal     — z-50, N-leg sequential state machine (up to 5 legs)
 │               │   ├── leg-picker mode  — amount keypad + Card/Cash action buttons
@@ -88,7 +95,8 @@ App.tsx
 │               ├── HeldTicketsModal     — per-vertical held ticket list
 │               ├── WaitlistOverlay      — FIFO queue, cap 10, AddWalkInModal, promote-to-ticket
 │               ├── AppointmentsOverlay  — Upcoming/History tabs, status state machine, TakeDepositModal
-│               ├── VerticalSwitcher     — modal, all 6 verticals, gated when cart has items
+│               ├── OpenTicketsOverlay   — IN PROGRESS (amber) + READY (green) tickets; Mark Ready + Pick Up actions; switch-confirmation banner on pickup
+│               ├── VerticalSwitcher     — modal, all 7 verticals, gated when cart has items
 │               ├── SettingsOverlay      — owner UX; 3 tabs: Business / Tax & Tips / Staff
 │               │   ├── Business tab     — name/address/phone inputs + live receipt preview
 │               │   ├── Tax & Tips tab   — tax rate input + tip preset CRUD
@@ -96,6 +104,8 @@ App.tsx
 │               ├── PinModal             — 4-box auto-advance, any 4 digits accepted (mock)
 │               └── Toast                — fixed top-right, 1500ms auto-dismiss
 ```
+
+The five overlay surfaces (WaitlistOverlay, AppointmentsOverlay, ReportsOverlay, SettingsOverlay, OpenTicketsOverlay) participate in a **5-way mutex**: only one can be open at a time. Opening any overlay closes any other that is open.
 
 ---
 
@@ -112,6 +122,8 @@ App.tsx
 | `useWaitlist` | `hooks/useWaitlist.ts` | Per-vertical walk-in queue (FIFO, cap 10); persists to `nuatis-pos:{verticalId}:waitlist` |
 | `useAppointments` | `hooks/useAppointments.ts` | Per-vertical appointment list; seed-on-first-load; status state machine (scheduled → started / no_show); `takeDeposit(id, txId)` writes depositStatus + txId |
 | `useElapsedTick` | `hooks/useElapsedTick.ts` | **Only `setInterval` in the codebase.** Drives the elapsed-time counter on active tanning session cart lines. Cleans up on unmount. |
+| `useShift` | `hooks/useShift.ts` | Per-vertical open-shift envelope. Hydrates from `nuatis-pos:{v}:currentShift` on mount. Exposes `openShift(staffId, startingCashCents)`, `closeShift()`, and the current `shift` record. No React provider — used as a direct hook. `shiftId` flows into `useCheckout` for transaction stamping. |
+| `useOpenTickets` | `hooks/useOpenTickets.ts` | Per-vertical open-ticket list for drop-off verticals. Reads/writes `nuatis-pos:{v}:openTickets` and `nuatis-pos:{v}:closedTickets`. Exposes `createTicket`, `markReady`, `closeTicket`, and the `openTickets` array. |
 
 ---
 
@@ -122,13 +134,16 @@ The codebase contains exactly **one** `setInterval`, located in `hooks/useElapse
 - `Header`'s `useClock` was originally implemented with `setInterval` and was migrated to a `setTimeout`-recursion pattern in **Batch 23** to preserve this invariant.
 - `SplitTenderModal`'s 2-second card-reader simulation uses `setTimeout` only (documented in a comment at the call site).
 - Any future timer added to the codebase must use `setTimeout`-recursion or `requestAnimationFrame` — never a bare `setInterval`.
+- **Shift pill duration display**: the shift pill's elapsed-duration label rides `useClock`'s re-renders rather than maintaining its own timer. This is a pragmatic prototype shortcut — production should compute duration purely from `shift.startedAt` on each render without depending on upstream re-renders.
 
 ---
 
 ## State Architecture
 
 - **`useCart`** — owns `lines: CartLine[]`, `customer`, `compApplied`, `compReason`, `appointmentRef`, `depositApplied`. Every mutation immediately writes to `nuatis-pos:{verticalId}:cart`. Deposit context (`appointmentRef` + `depositApplied`) is persisted to `nuatis-pos:{verticalId}:cartMeta` separately — written by `setDepositContext(apptId, depositCents)` when hydrating from an appointment, cleared by `clearDepositContext()` on checkout completion or cart clear. Reloads from new namespace when `activeVerticalId` changes.
-- **`useCheckout`** — owns checkout state machine and in-flight/completed transaction. Three `confirmCheckout` paths: `card` (2-sec sim → processing → receipt), `cash` (skips processing → receipt directly), `split` (card already settled in SplitTenderModal → skips processing → receipt directly). Appends to `nuatis-pos:{verticalId}:transactions` (capped at 50) on delivery confirmation. Exports `addTransactionDirect(verticalId, tx)` for deposit transactions written outside the normal checkout flow.
+- **`useCheckout`** — owns checkout state machine and in-flight/completed transaction. Three `confirmCheckout` paths: `card` (2-sec sim → processing → receipt), `cash` (skips processing → receipt directly), `split` (card already settled in SplitTenderModal → skips processing → receipt directly). Appends to `nuatis-pos:{verticalId}:transactions` (capped at 50) on delivery confirmation. Exports `addTransactionDirect(verticalId, tx)` for deposit transactions written outside the normal checkout flow. Stamps `shiftId` from the current open shift (via `useShift`) onto every transaction record at write time.
+- **`useShift`** — per-vertical open-shift state. Reads `nuatis-pos:{v}:currentShift` on mount. `openShift(staffId, startingCashCents)` creates a new `Shift` record with a generated `shiftId`, writes it to `currentShift`, and appends it to `nuatis-pos:{v}:shifts`. `closeShift()` moves the current shift record (with `closedAt` timestamp) to the shifts log and clears `currentShift`. No provider — consumed as a direct hook in `RegisterPage` and `Header`. `shiftId` is passed into `useCheckout` for transaction stamping.
+- **`useOpenTickets`** — per-vertical open-ticket state for `workflow === 'drop_off'` verticals. `createTicket(lines, customer, tagNumber)` writes a new open ticket to `nuatis-pos:{v}:openTickets` with status `IN_PROGRESS`. `markReady(ticketId)` transitions status to `READY` and fires the mock-SMS toast. `closeTicket(ticketId, transactionId)` moves the record (with `closedAt` + `transactionId`) to `nuatis-pos:{v}:closedTickets`.
 - **`useActiveStaff`** — reads/writes `nuatis-pos:activeStaffId`. Shared across all verticals. Default `STAFF[0]`. `RegisterPage` watches `settings.staff` (active IDs) and falls back to first active staff if the persisted ID is no longer in the active list.
 - **`useManagerOverride`** — imperative modal pattern. `requestManagerOverride(reason)` creates a Promise, mounts `PinModal`, resolves `true` on any 4-digit entry, `false` on cancel/ESC. No prop-drilling; available to any descendant via context.
 - **`useActiveVertical`** — reads/writes `nuatis-pos:activeVerticalId`. Provides `{ activeVerticalId, setActiveVerticalId, config }` where `config = VERTICALS[activeVerticalId]`. Switching triggers cart reload and held-ticket reload in `RegisterPage`.
@@ -136,6 +151,19 @@ The codebase contains exactly **one** `setInterval`, located in `hooks/useElapse
 - **`useWaitlist`** — per-vertical walk-in queue, cap 10, persisted to `nuatis-pos:{verticalId}:waitlist`. `addEntry` appends; `removeEntry` deletes by id. Promoting a walk-in to the register calls `onStartService(entry)` in `RegisterPage`, which calls `attachCustomer` + `addItem` and then `removeEntry`.
 - **`useAppointments`** — per-vertical appointment list, seeded on first load from `lib/appointments.ts` seed functions. `startAppointment(id)` sets status `"started"`. `markNoShow(id)` sets `"no_show"`. `resetStatus(id)` returns to `"scheduled"`. `takeDeposit(id, txId)` sets `depositStatus: "taken"` and `depositTxId: txId`. Deposit transactions are written via `addTransactionDirect` from `TakeDepositModal` before the appointment status is updated.
 - **`useElapsedTick`** — drives the elapsed-second counter on active tanning session lines. Uses the codebase's sole `setInterval` (1000ms). Cleans up the interval on unmount.
+
+---
+
+## Architectural Axes Validated
+
+The following distinct design axes have been exercised and validated in this prototype:
+
+1. **6 wrinkle-free verticals (engine generalisation on uniform catalogs)** — salon, spa, nail_bar proven as config-only additions to a common engine; tanning, pet_grooming, tattoo extend the engine with wrinkle-specific fields, each in a 2-file change pattern.
+2. **3 service-line wrinkle categories** — money-shape (tattoo: deposit/balance two-phase), state-shape (pet_grooming: vaccination gate), duration-shape (tanning: session minutes + elapsed tick).
+3. **1 ticket-lifecycle alternate** — drop_off (laundry): ticket created without payment, persists across visits as an open ticket, closes on pickup. Orthogonal to the wrinkle categories.
+4. **Shift envelope** — per-vertical open-shift concept separate from device session and operator identity; Charge gated until a shift is open; transaction stamping with `shiftId`.
+5. **Multi-leg split tender** — up to 5 legs in any card+cash combination; sequential state machine with running ledger; per-leg `mockLast4`; void-disclaimer on cancel.
+6. **5-way overlay mutex** — Waitlist, Appointments, Today's Sales, Owner Settings, Open Tickets; only one open at a time.
 
 ---
 
@@ -161,7 +189,7 @@ The codebase contains exactly **one** `setInterval`, located in `hooks/useElapse
 ```
 
 Transitions:
-- `idle → tip`: operator taps "Charge" on non-empty cart
+- `idle → tip`: operator taps "Charge" on non-empty cart (blocked when no shift open)
 - `tip → idle`: operator taps "Cancel"
 - `tip → processing`: operator taps "Card $X.XX" (card path only)
 - `tip → receipt`: operator confirms cash (via CashTenderModal) or completes split (via SplitTenderModal) — cash and split skip the global processing state; card charge for split happens inside SplitTenderModal before `confirmCheckout` is called
@@ -184,14 +212,19 @@ Transitions:
 - **Walk-in promote** → `WaitlistOverlay` taps "Start Service" → `onStartService(entry)` → `RegisterPage` calls `attachCustomer` + `addItem` + `removeEntry(id)` → overlay closes
 - **Appointment hydrate** → `AppointmentsOverlay` taps "Start Service" → `onStartAppointment(appt)` → `RegisterPage` calls `attachCustomer`, `addItem`, `setActiveStaff`, `setDepositContext(apptId, depositCents)` if deposit taken, `startAppointment(apptId)` → overlay closes
 - **Take deposit** → `TakeDepositModal` opens from `AppointmentsOverlay` → operator charges card/cash → `addTransactionDirect(verticalId, depositTx)` writes deposit transaction → `onDepositCaptured(txId)` calls `takeDeposit(apptId, txId)` in `useAppointments` → appointment `depositStatus` → `"taken"` → modal closes, DEP PAID badge shows
-- **Charge tap (card)** → `useCheckout.startCheckout()` → `idle → tip` → operator taps "Card $X.XX" → `confirmCheckout({ paymentMethod: 'card', ... })` → `tip → processing` → 2000ms → `processing → receipt`
-- **Cash tap** → operator taps "Cash $X.XX" → `CashTenderModal` opens (z-50) → right-to-left keypad fills tendered amount → "Confirm Cash $X.XX" → `handleConfirmCash(tenderedCents)` → `confirmCheckout({ paymentMethod: 'cash', amountTendered, changeGiven, ... })` → `tip → receipt` (skips processing) → cash drawer toast fires
-- **Split tap** → operator taps "Split Card + Cash" → `SplitTenderModal` opens (z-50) → N-leg sequential state machine → each leg: compose amount via keypad → "Charge Card $X" (2-sec card sim, generates `mockLast4`) or "Tender Cash $X" (cash sub-flow) → running ledger updates → "Complete — N legs" enabled when remaining = 0 → `handleConfirmSplit(payments)` → `confirmCheckout({ paymentMethod: 'split', splitPayments, ... })` → `tip → receipt` → cash drawer toast if any cash leg
+- **Shift open** → operator taps "Open Shift" → `StartShiftModal` → staff selector + starting cash keypad → confirm → `useShift.openShift(staffId, startingCashCents)` → `currentShift` written to localStorage → shift pill shows elapsed duration → Charge button enabled
+- **Shift close** → operator opens `EndShiftModal` from header → summary computed from `nuatis-pos:{v}:transactions` filtered by `shiftId` → refund-adjusted gross + payment mix → confirm → `useShift.closeShift()` → `currentShift` cleared → shifts log updated → Charge button disabled
+- **Drop-off** → operator taps "Drop Off" (laundry vertical, cart non-empty, customer attached) → `useOpenTickets.createTicket(lines, customer, tagNumber)` → `tagCounter` incremented → `DropOffSuccessOverlay` shown with LAUN-XXXX tag → cart cleared → open ticket appears in OpenTicketsOverlay with IN PROGRESS badge
+- **Mark Ready** → `OpenTicketsOverlay` "Mark Ready" → `useOpenTickets.markReady(ticketId)` → ticket status → READY → mock-SMS toast with customer phone number → badge turns green
+- **Pickup** → `OpenTicketsOverlay` "Pick Up" → switch-confirmation banner → confirm → cart hydrated with original lines + customer → pickup mode banner in cart → operator proceeds through standard checkout → `confirmCheckout` stamps `openTicketId` on transaction → `useOpenTickets.closeTicket(ticketId, transactionId)` → ticket moved to closedTickets
+- **Charge tap (card)** → `useCheckout.startCheckout()` → `idle → tip` → operator taps "Card $X.XX" → `confirmCheckout({ paymentMethod: 'card', shiftId, ... })` → `tip → processing` → 2000ms → `processing → receipt`
+- **Cash tap** → operator taps "Cash $X.XX" → `CashTenderModal` opens (z-50) → right-to-left keypad fills tendered amount → "Confirm Cash $X.XX" → `handleConfirmCash(tenderedCents)` → `confirmCheckout({ paymentMethod: 'cash', amountTendered, changeGiven, shiftId, ... })` → `tip → receipt` (skips processing) → cash drawer toast fires
+- **Split tap** → operator taps "Split Card + Cash" → `SplitTenderModal` opens (z-50) → N-leg sequential state machine → each leg: compose amount via keypad → "Charge Card $X" (2-sec card sim, generates `mockLast4`) or "Tender Cash $X" (cash sub-flow) → running ledger updates → "Complete — N legs" enabled when remaining = 0 → `handleConfirmSplit(payments)` → `confirmCheckout({ paymentMethod: 'split', splitPayments, shiftId, ... })` → `tip → receipt` → cash drawer toast if any cash leg
 - **Split cancel (after card leg captured)** → void-disclaimer overlay lists each captured card leg (amount + `****XXXX` last4) → "Yes, Cancel" discards all legs; "Keep Going" dismisses overlay; no actual Stripe void API called
 - **Refund** → `ReceiptDetail` calls `requestManagerOverride('Refund authorization')` → on approval → `RefundPicker` → `onComplete(lineIds)` → `RefundRecord` appended to transaction → localStorage updated
 - **Delivery choice** → `useCheckout.completeDelivery(channel)` → append to `nuatis-pos:{verticalId}:transactions` → `receipt → completed`
 - **New Sale** → `useCart.clear()` + `clearDepositContext()` + `useCheckout.completeSale()` → `completed → idle`
-- **Vertical switch** → `setActiveVerticalId(id)` → localStorage write → context update → `useCart` reloads from new namespace → `useVerticalSettings` reloads settings for new vertical → `RegisterPage` reloads held tickets + waitlist count + appointments → tile grid re-renders with new vertical's services + colors
+- **Vertical switch** → `setActiveVerticalId(id)` → localStorage write → context update → `useCart` reloads from new namespace → `useVerticalSettings` reloads settings for new vertical → `useShift` hydrates that vertical's currentShift → `useOpenTickets` hydrates that vertical's openTickets → `RegisterPage` reloads held tickets + waitlist count + appointments → tile grid re-renders with new vertical's services + colors
 - **Settings save** → `SettingsOverlay` tab save → calls `updateBusiness / updateTaxRate / updateTipPresets / updateStaff` → `VerticalSettingsContext` state updates → all consumers (Cart, TipPicker, Receipt, StaffSwitcher, CartLine) re-render with new values
 
 ---
@@ -207,6 +240,10 @@ The config-driven vertical engine generalises beyond uniform service catalogs. T
 **duration-shape** (tanning, B23): services defined by session duration (minutes) and resource (bed). The register shows an elapsed-tick counter on active session lines (`useElapsedTick` — the codebase's sole `setInterval`). Bed occupancy state is tracked across the tile grid. Session lines carry `sessionMinutes` and `bedId` fields.
 
 Adding a new wrinkle category requires: extending `CartLine` with the wrinkle-specific fields, adding a gate or display component in `Cart`/`CartLine`, adding a seeded data file for the new vertical, and registering the vertical in `VERTICALS` with an extended `VerticalId` type.
+
+**Ticket-Lifecycle Axis**
+
+The wrinkle categories above describe service-line behavior within a single operator interaction. The ticket-lifecycle axis is orthogonal — it describes when a ticket opens, how it persists across visits, and when it closes. `VerticalConfig` carries a `workflow` flag: `"same_visit"` (default for all six prior verticals) or `"drop_off"` (laundry, B27). The drop-off lifecycle: ticket created without payment at drop-off → persists as an open ticket in localStorage → transitions to READY on mark-ready (mock-SMS) → closes at pickup checkout with `openTicketId` on the transaction. This axis is orthogonal to the wrinkle categories: wrinkles describe what happens inside a service interaction; lifecycle describes the existence and persistence of a ticket across visits.
 
 ---
 
@@ -229,6 +266,7 @@ All amounts are integer cents throughout. No floating-point arithmetic.
 - **Per-staff revenue** (reports) = sum of `calcLineTotalCents` for lines where `line.staffId === staff.id`, excluding refunded lines and comped transactions. Deposit transactions (`type === 'deposit'`) are excluded from per-staff breakdown entirely — the split across staff is attributed at service time, not deposit time.
 - **Payment mix** (Today's Sales): split transactions route each `payments[]` leg to its matching bucket — card portion → card revenue, cash portion → cash revenue. A single split transaction can contribute to both the card and cash buckets simultaneously.
 - **Cash change**: `changeCents = tenderedCents − cashPortionCents`. Change is excluded from revenue; only `amountCents` (what the business keeps) enters the revenue calculation.
+- **Shift summary revenue**: `EndShiftModal` computes refund-adjusted gross by filtering `nuatis-pos:{v}:transactions` for records where `shiftId === currentShift.id`, then subtracting `refundedTotalCents` where present.
 
 ---
 
@@ -239,6 +277,10 @@ All amounts are integer cents throughout. No floating-point arithmetic.
 - **Tanning bed occupancy is in-memory only**: bed state resets on page reload. Production would require a session-management table.
 - **Per-leg void on split cancel is not real**: the void-disclaimer overlay lists captured card legs and notes that production would call the Stripe Terminal void API per leg. No actual reversal occurs in the prototype.
 - **5-leg cap is a UI guard only**: the modal prevents a 6th leg from being composed. In production, the cap and leg ordering would be enforced server-side.
+- **Shift pill rides useClock re-renders**: the elapsed-duration display on the shift pill updates whenever `Header`'s `useClock` fires rather than computing duration independently. This is a prototype shortcut; production should compute duration from `shift.startedAt` on each render without an upstream dependency.
+- **Per-pound pricing skipped for laundry**: weight-based pricing (lbs × rate) is intentionally not implemented. The duration-shape pattern from tanning (minutes × rate) covers the same axis conceptually; laundry is exercised as a flat-price service catalog for lifecycle-axis validation only.
+- **Drop-off deposits are out of scope**: the ticket-lifecycle axis (drop-off) is kept separate from the money-shape axis (deposit) in this prototype. A production laundry vertical might combine both; the prototype keeps them independent for clarity.
+- **Tag counter is per-vertical but laundry-only currently**: the `tagCounter` localStorage helpers in `lib/openTickets.ts` are parameterized by `verticalId`, but only the laundry vertical exercises them. The `LAUN-` tag prefix is hardcoded to laundry; production would read the prefix from per-vertical config.
 
 ---
 
@@ -251,16 +293,21 @@ Per-vertical namespacing: `nuatis-pos:{verticalId}:{key}`
 | `nuatis-pos:{v}:cart` | `nuatis-pos:salon:cart` | Per-vertical |
 | `nuatis-pos:{v}:transactions` | `nuatis-pos:spa:transactions` | Per-vertical |
 | `nuatis-pos:{v}:heldTickets` | `nuatis-pos:salon:heldTickets` | Per-vertical |
-| `nuatis-pos:{v}:settings` | `nuatis-pos:nail_bar:settings` | Per-vertical |
+| `nuatis-pos:{v}:settings` | `nuatis-pos:nail_bar:settings` | Per-vertical (write-on-edit only) |
 | `nuatis-pos:{v}:waitlist` | `nuatis-pos:salon:waitlist` | Per-vertical |
 | `nuatis-pos:{v}:appointments` | `nuatis-pos:tattoo:appointments` | Per-vertical |
-| `nuatis-pos:{v}:cartMeta` | `nuatis-pos:tattoo:cartMeta` | Per-vertical |
+| `nuatis-pos:{v}:cartMeta` | `nuatis-pos:tattoo:cartMeta` | Per-vertical (write-on-edit only) |
+| `nuatis-pos:{v}:currentShift` | `nuatis-pos:salon:currentShift` | Per-vertical (absent when no shift open) |
+| `nuatis-pos:{v}:shifts` | `nuatis-pos:salon:shifts` | Per-vertical |
+| `nuatis-pos:{v}:openTickets` | `nuatis-pos:laundry:openTickets` | Per-vertical (laundry exercises this) |
+| `nuatis-pos:{v}:closedTickets` | `nuatis-pos:laundry:closedTickets` | Per-vertical (laundry exercises this) |
+| `nuatis-pos:{v}:tagCounter` | `nuatis-pos:laundry:tagCounter` | Per-vertical (laundry exercises this) |
 | `nuatis-pos:activeVerticalId` | — | Shared (no prefix) |
 | `nuatis-pos:activeStaffId` | — | Shared (no prefix) |
 
-**Pattern**: `nuatis-pos:{verticalId}:{key}` — 7 keys per vertical + 2 shared. At 6 verticals: 7 × 6 + 2 = **44 keys** (plus settings and cartMeta which are write-on-edit only, bringing the practical maximum to ~56 keys when all verticals have been customised).
+**Pattern**: `nuatis-pos:{verticalId}:{key}` — 9 base keys per vertical + 2 shared + 3 laundry-only = up to **68 keys** at maximum across 7 verticals when all settings have been customised. Write-on-edit-only keys (settings, cartMeta, currentShift) do not exist until first use.
 
-**Key helpers** (`lib/storage.ts`): `cartKey(v)`, `transactionsKey(v)`, `heldTicketsKey(v)`, `settingsKey(v)`, `waitlistKey(v)`, `appointmentsKey(v)`, `cartMetaKey(v)`, `ACTIVE_VERTICAL_KEY`, `ACTIVE_STAFF_KEY`.
+**Key helpers** (`lib/storage.ts`): `cartKey(v)`, `transactionsKey(v)`, `heldTicketsKey(v)`, `settingsKey(v)`, `waitlistKey(v)`, `appointmentsKey(v)`, `cartMetaKey(v)`, `currentShiftKey(v)`, `shiftsKey(v)`, `ACTIVE_VERTICAL_KEY`, `ACTIVE_STAFF_KEY`. Open-ticket helpers in `lib/openTickets.ts`: `openTicketsKey(v)`, `closedTicketsKey(v)`, `tagCounterKey(v)`.
 
 **`cartMeta`** stores `{ appointmentRef: string | null, depositApplied: number }`. Written by `useCart.setDepositContext` when an appointment with a completed deposit is loaded to the register. Read back on page reload to restore the deposit credit display. Cleared (set to null/0) on checkout completion, cart clear, or `clearDepositContext`.
 
@@ -275,7 +322,7 @@ Per-vertical namespacing: `nuatis-pos:{verticalId}:{key}`
 - Copies legacy unprefixed keys (`nuatis-pos:cart`, etc.) → `nuatis-pos:salon:*` (only if the new key doesn't already exist), then deletes the old keys
 - Idempotent — re-running on subsequent boots is a no-op once legacy keys are absent
 
-**Isolation guarantee**: switching verticals never merges or copies cart/transaction/held/settings/waitlist/appointments data across namespaces. Each vertical starts fresh or resumes its own last state.
+**Isolation guarantee**: switching verticals never merges or copies cart/transaction/held/settings/waitlist/appointments/shift data across namespaces. Each vertical starts fresh or resumes its own last state.
 
 ---
 
@@ -304,6 +351,8 @@ interface Transaction {
   appointmentRef?: string;                   // cross-links deposit ↔ service tx pair
   totalPaid?: number;                        // revenue truth
   depositBalanceDueCents?: number;
+  shiftId?: string;                          // B26: open shift at checkout time
+  openTicketId?: string;                     // B27: laundry pickup only, links to originating drop-off record
 }
 
 interface SplitPayment {
@@ -322,13 +371,17 @@ interface SplitPayment {
 
 | File | Exports | Notes |
 |---|---|---|
-| `lib/verticals.ts` | `VerticalId`, `VerticalConfig`, `VERTICALS`, `getActiveVerticalConfig` | Central per-vertical config: services, modifiers, category colors, business identity defaults for all 6 verticals |
+| `lib/verticals.ts` | `VerticalId`, `VerticalConfig`, `VERTICALS`, `getActiveVerticalConfig` | Central per-vertical config: services, modifiers, category colors, business identity defaults, `workflow` flag for all 7 verticals |
 | `lib/verticalSettings.ts` | `SettingsStaff`, `VerticalSettings`, `SettingsSection`, `getDefaults`, `getVerticalSettings`, `setVerticalSettings`, `resetSection`, `resetAll` | Settings override layer; reads defaults from `lib/verticals.ts` at runtime; pure functions, no React |
-| `lib/storage.ts` | `cartKey`, `transactionsKey`, `heldTicketsKey`, `settingsKey`, `waitlistKey`, `appointmentsKey`, `cartMetaKey`, `ACTIVE_STAFF_KEY`, `ACTIVE_VERTICAL_KEY`, `runMigrations` | Storage key helpers + one-time migration |
+| `lib/storage.ts` | `cartKey`, `transactionsKey`, `heldTicketsKey`, `settingsKey`, `waitlistKey`, `appointmentsKey`, `cartMetaKey`, `currentShiftKey`, `shiftsKey`, `ACTIVE_STAFF_KEY`, `ACTIVE_VERTICAL_KEY`, `runMigrations` | Storage key helpers + one-time migration |
+| `lib/shifts.ts` | `Shift`, `getCurrentShift`, `saveCurrentShift`, `clearCurrentShift`, `appendShiftToLog`, `getShiftsLog` | Per-vertical shift record type + localStorage helpers; `shiftId` is a UUID generated at open time |
+| `lib/openTickets.ts` | `OpenTicket`, `OpenTicketStatus`, `getOpenTickets`, `saveOpenTickets`, `getClosedTickets`, `appendClosedTicket`, `getTagCounter`, `incrementTagCounter`, `formatTag` | Drop-off ticket type + per-vertical localStorage helpers; tag format: `{PREFIX}-{NNNN}` |
 | `lib/services.ts` | `SERVICES`, `Service`, `CATEGORY_COLORS`, `formatPrice`, `formatDuration` | 12 salon services |
 | `lib/tattoo-services.ts` | `TATTOO_SERVICES`, `TATTOO_MODIFIERS_BY_SERVICE`, `TATTOO_CATEGORY_COLORS` | 12 tattoo services with size/complexity modifiers |
 | `lib/pet-grooming-services.ts` | `PET_GROOMING_SERVICES`, `PET_GROOMING_CATEGORY_COLORS` | 12 pet grooming services; vaccination gate applies across all |
 | `lib/tanning-services.ts` | `TANNING_SERVICES`, `TANNING_CATEGORY_COLORS` | Session-based tanning services with duration + bed-type fields |
+| `lib/laundry-services.ts` | `LAUNDRY_SERVICES`, `LAUNDRY_CATEGORY_COLORS` | 12 laundry services in muted blue + bronze palette; flat-price catalog |
+| `lib/laundry-customers.ts` | `LAUNDRY_CUSTOMERS` | Seed customer list for the laundry vertical; includes phone numbers for mock-SMS ready notifications |
 | `lib/staff.ts` | `STAFF`, `Staff` | 3 hardcoded staff members, shared as defaults; per-vertical staff list is editable via Settings |
 | `lib/customers.ts` | `CUSTOMERS`, `Customer`, `CartCustomer`, `addCustomerInMemory` | 6 seed customers; `addCustomerInMemory` mutates in-memory array only (lost on reload by design) |
 | `lib/modifiers.ts` | `Modifier`, `MODIFIERS_BY_SERVICE`, `getModifiersForService` | Salon modifiers only; spa and nail bar modifiers defined inline in `lib/verticals.ts` |
@@ -336,7 +389,7 @@ interface SplitPayment {
 | `lib/appointments.ts` | `Appointment`, `getAppointments`, `saveAppointments`, `takeAppointmentDeposit`, `formatAppointmentTime` | Seed functions per vertical; tattoo seeds include deposit fields; pet grooming seeds include vaccination status fields |
 | `lib/waitlist.ts` | `WaitlistEntry`, `getWaitlist`, `saveWaitlist` | FIFO queue, cap 10 per vertical; pure storage functions |
 | `lib/cartMath.ts` | `calcLineTotalCents`, `calcLineDiscountCents`, `calcSubtotal`, `calcTax`, `calcTaxWithRate`, `calcTip`, `calcTotal`, `TAX_RATE`, `MANAGER_DISCOUNT_THRESHOLD` | Pure functions, integer cents only; `calcTaxWithRate` is canonical at runtime |
-| `lib/cashMath.ts` | `appendCashDigit`, `appendDoubleCashZero`, `backspaceCashDigit`, `computeQuickTenders`, `CASH_TENDER_CAP` | Right-to-left cents-fill helpers + quick-tender row computation; used by both `CashTenderModal` and `SplitTenderModal` |
+| `lib/cashMath.ts` | `appendCashDigit`, `appendDoubleCashZero`, `backspaceCashDigit`, `computeQuickTenders`, `CASH_TENDER_CAP` | Right-to-left cents-fill helpers + quick-tender row computation; used by `CashTenderModal`, `SplitTenderModal`, and `StartShiftModal` (starting cash float) |
 | `lib/reports.ts` | `DailySummary`, `calcDailySummary`, `StaffSummary`, `calcPerStaffSummary` | `DailySummary` includes `discountCents` + `refundCents`; per-staff excludes refunded lines, comped transactions, and deposit transactions |
 | `lib/currency.ts` | `formatCurrency` | Formats integer cents as `$X.XX` |
 | `lib/phone.ts` | `normalizePhone`, `formatPhone` | `normalizePhone` strips non-digits; used for phone validation in CustomerSearch and SettingsOverlay |
@@ -372,6 +425,9 @@ interface SplitPayment {
 | B23 | Tanning as 6th vertical + duration-shape sessions (`useElapsedTick`, bed occupancy, `Header.useClock` migrated to `setTimeout`-recursion) |
 | B24 | Multi-leg split tender rewrite — up to 5 legs, any card+cash combo, per-leg `mockLast4`, running ledger, void-disclaimer on cancel |
 | B25 | Docs wrap + tag v0.0.7-prototype |
+| B26 | Shift-state envelope — per-vertical open shift, `StartShiftModal` + `EndShiftModal`, Charge gated when no shift open, `shiftId` stamped on every transaction, shift pill in header shows elapsed duration |
+| B27 | Laundry as 7th vertical + drop-off/pickup ticket-lifecycle shape — tag counter (LAUN-0001), `DropOffSuccessOverlay`, `OpenTicketsOverlay` (IN PROGRESS / READY badges), mock-SMS mark-ready, pickup cart hydration, `openTicketId` on pickup transaction, 5-way overlay mutex |
+| B28 | Docs wrap — README v6 + replit.md v6 + screenshots/README.md extended + tag v0.0.9-prototype |
 
 ---
 
@@ -386,6 +442,8 @@ interface SplitPayment {
 | v0.0.5-prototype | B21 | Split tender (2-leg); Today's Sales split-aware payment mix |
 | v0.0.6-prototype | B23 | Pet grooming (vaccination state-shape); tanning (duration-shape); setInterval invariant enforced |
 | v0.0.7-prototype | B25 | Multi-leg split (up to 5 legs, per-leg last4, void disclaimer); docs wrap v5 |
+| v0.0.8-prototype | B27 | Laundry vertical (drop-off/pickup lifecycle); shift-state envelope; 7th vertical; 5-way overlay mutex |
+| v0.0.9-prototype | B28 | Docs wrap v6 — README + replit.md + screenshots checklist through B27 |
 
 ---
 
@@ -432,6 +490,10 @@ Replit's default project template installed v4. All utility classes used are v3-
 - Unsaved-edits-confirm pattern on overlay close (dirty-state check before dismiss)
 - Account dropdown as the gateway to non-operator surfaces (Settings, future role management)
 - Engine generalisation pattern: `VERTICALS` registry + `getActiveVerticalConfig` — adding a vertical requires only registry addition + `VerticalId` type extension
+- **Shift envelope as a mental model**: per-vertical open-shift state distinct from device session and operator identity; shift pill in header; Charge gated until shift open; shift summary on close
+- **Ticket-lifecycle axis with `workflow` config flag**: `same_visit` vs `drop_off` as a per-vertical config flag cleanly scopes lifecycle behavior to the engine without touching shared checkout logic
+- **5-way overlay mutex**: Waitlist, Appointments, Today's Sales, Owner Settings, Open Tickets — only one surface open at a time; provides a clean pattern for adding future overlay surfaces
+- **Tag counter pattern**: sequential per-vertical counter persisted to localStorage; `formatTag(counter, prefix)` produces human-readable ticket identifiers (LAUN-0001); easily extensible to other drop-off verticals
 
 ## Things to Discard (Architecture Decisions)
 
@@ -453,6 +515,8 @@ Replit's default project template installed v4. All utility classes used are v3-
 - In-memory-only appointment seed approach (production: appointments come from the database)
 - Client-side vaccination gate (production: validate against a `vaccination_records` table with expiry-date checking)
 - In-memory tanning bed occupancy (production: session-management table with real-time occupancy)
+- **Shift pill's reliance on useClock re-renders** for elapsed-duration display — production should compute duration from `shift.startedAt` on each render, self-contained, without depending on an upstream clock re-render
+- **LAUN- tag prefix hardcoded to laundry** — production needs per-vertical tag prefix from `VerticalConfig` (e.g. `config.tagPrefix`) rather than a hardcoded string constant in the drop-off flow
 
 ---
 

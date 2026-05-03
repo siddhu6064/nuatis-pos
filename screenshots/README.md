@@ -1,6 +1,6 @@
 # Nuatis POS — Screenshot Capture Checklist
 
-> Manual capture step — not performed by Replit Agent. Capture at 1024×768 (iPad portrait) after prototype is stable at tag v0.0.7-prototype.
+> Manual capture step — not performed by Replit Agent. Capture at 1024×768 (iPad portrait) after prototype is stable at tag v0.0.9-prototype.
 >
 > Each item below is one intended screenshot. Check off after capture. File naming convention: `{slug}.png`, stored in this directory.
 
@@ -14,6 +14,7 @@
 - [ ] `register-tattoo.png` — Tattoo tile grid; cart empty; "Tattoo" vertical pill; DEP REQ badge visible on at least one appointment in the Appts overlay (open overlay for the shot)
 - [ ] `register-pet-grooming.png` — Pet Grooming tile grid; cart empty; "Pet Grooming" vertical pill
 - [ ] `register-tanning.png` — Tanning tile grid; bed occupancy indicators visible on at least one bed; "Tanning" vertical pill
+- [ ] `register-laundry.png` — Laundry tile grid; 12 services in muted blue + bronze palette; cart empty; "Laundry" vertical pill; "Open: N" header pill visible
 
 ---
 
@@ -24,6 +25,7 @@
 - [ ] `cart-vaccination-blocked.png` — Pet Grooming vertical; cart with a service line; red vaccination-blocked banner visible above the cart footer; Charge button disabled or gated
 - [ ] `cart-vaccination-warning.png` — Pet Grooming vertical; cart with a service line; amber vaccination-warning banner visible (within-30-day expiry); Charge button accessible
 - [ ] `cart-deposit-banner.png` — Tattoo vertical; cart hydrated from an appointment with a completed deposit; deposit-credit banner visible ("Deposit applied: −$X.XX"); balance-due amount visible in total row
+- [ ] `cart-drop-off-mode.png` — Laundry vertical; cart with 2–3 services; "Drop-Off Mode" label visible in cart header; customer attached (required for drop-off); Charge button shows "Drop Off" label
 
 ---
 
@@ -40,6 +42,24 @@
 
 - [ ] `vaccination-pin-override.png` — Manager PIN modal open, triggered by vaccination-blocked gate; reason text visible ("Vaccination override required"); 4-box PIN entry visible
 - [ ] `vaccination-override-confirmed.png` — Cart line after manager PIN accepted; line shows `vaccinationOverride` indicator; red blocked banner cleared
+
+---
+
+## Shift State Flow (B26)
+
+- [ ] `shift-open-header.png` — Header with an open shift; shift pill showing elapsed duration (e.g. "Shift · 1h 23m"); active staff name visible adjacent to pill
+- [ ] `start-shift-modal.png` — StartShiftModal open; active staff selector visible; starting cash float keypad displayed; "Open Shift" confirm button visible
+- [ ] `end-shift-modal.png` — EndShiftModal open; shift summary visible — refund-adjusted gross, payment mix (Card / Cash / Split breakdown), transaction count; "Close Shift" confirm button visible
+- [ ] `shift-no-shift-pill.png` — Header with no open shift; "No shift open" pill state visible; Charge button in cart disabled with tooltip indicating shift required
+
+---
+
+## Drop-Off / Pickup Flow (B27)
+
+- [ ] `drop-off-success-overlay.png` — DropOffSuccessOverlay shown immediately after drop-off; LAUN-0001 tag number displayed prominently; service summary visible; customer name shown
+- [ ] `open-tickets-overlay.png` — OpenTicketsOverlay open; at least one IN PROGRESS (amber badge) and one READY (green badge) ticket visible; "Mark Ready" and "Pick Up" buttons visible on respective tickets; "Open: N" pill visible in header behind overlay
+- [ ] `open-tickets-switch-confirm.png` — Switch-confirmation banner inside OpenTicketsOverlay; shown when operator taps "Pick Up" — confirms switching the cart to pickup mode for the selected ticket
+- [ ] `pickup-cart-banner.png` — Cart in pickup mode; banner at top showing "Returning Customer Pickup" or equivalent pickup-mode label; "Return to In Progress" button visible in banner; cart lines pre-filled from the original drop-off ticket
 
 ---
 
@@ -63,7 +83,7 @@
 
 ## Vertical Switcher
 
-- [ ] `vertical-switcher.png` — VerticalSwitcher modal open; all 6 verticals visible (Salon, Spa, Nail Bar, Tattoo, Pet Grooming, Tanning); active vertical highlighted; cart-has-items gate note visible if cart is non-empty
+- [ ] `vertical-switcher.png` — VerticalSwitcher modal open; all 7 verticals visible (Salon, Spa, Nail Bar, Tattoo, Pet Grooming, Tanning, Laundry); active vertical highlighted; cart-has-items gate note visible if cart is non-empty
 
 ---
 
@@ -73,6 +93,6 @@
 
 ---
 
-> **Total intended captures: 26**
+> **Total intended captures: 37**
 >
-> Capture order suggestion: verticals (6) → cart states (5) → payment flows (4) → vaccination gate (2) → overlays (5) → queues/appointments (3) → switcher (1) → PIN (1).
+> Capture order suggestion: verticals (7) → cart states (6) → payment flows (4) → vaccination gate (2) → shift state (4) → drop-off/pickup (4) → overlays (5) → queues/appointments (3) → switcher (1) → PIN (1).
