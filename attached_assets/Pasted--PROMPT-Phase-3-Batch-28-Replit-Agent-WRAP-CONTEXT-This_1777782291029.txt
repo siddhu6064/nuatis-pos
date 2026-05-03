@@ -1,0 +1,94 @@
+▶ PROMPT [Phase 3 · Batch 28 · Replit Agent · WRAP]
+
+CONTEXT
+This is a fresh Replit Agent session. The repository at hand is a throwaway UX prototype for Nuatis POS — production code lives elsewhere and this codebase is intentionally not used in production. The previous docs wrap was B25 which produced README v5 + replit.md v5 reflecting state through B24. Since then, two meaningful batches have shipped:
+
+B26 — Shift-state envelope. New mental model: per-vertical "open shift" state distinct from device session (Replit OIDC) and operator identity (active staff). Files: lib/shifts.ts (Shift type + localStorage helpers), hooks/useShift.ts (single hook, no provider, hydrates per vertical), components/StartShiftModal.tsx (active staff + starting cash float keypad reuses appendCashDigit/backspaceCashDigit/appendDoubleCashZero from lib/cashMath), components/EndShiftModal.tsx (shift summary with refund-adjusted gross + payment mix). Header gained a green Shift pill (rendered render-on-pull via existing useClock re-render — no new setInterval). Account dropdown gained Start Shift / End Shift items. Charge / Card / Cash / Split / Comp buttons gated when no shift open. Transaction type gained shiftId? field stamped at completion across all three checkout paths and on TakeDepositModal. Tag from B26 work: v0.0.7-prototype was the previous wrap (B25); B26 itself was not tagged.
+
+B27 — Ticket-lifecycle axis validated via laundry vertical + drop-off/pickup workflow. Architectural framing: the prior wrinkle framework (money / state / duration shapes) describes service-line behavior within a same-visit ticket. B27 introduces a separate axis: ticket-lifecycle shape — when a ticket opens, how it persists across visits, when it closes. VerticalConfig gained workflow: "same_visit" | "drop_off" with all 6 prior verticals defaulting to same_visit and laundry registered with drop_off. Files: lib/laundry-services.ts (12 services across wash_fold / dry_clean / specialty / add_ons in muted blue + bronze palette, fixed-price only — per-pound math intentionally skipped), lib/laundry-customers.ts (4 seed customers, no pet fields), lib/openTickets.ts (OpenTicket type + helpers including createDropOff / markTicketReady / completePickupTicket / sequential LAUN-{0001} tag counter), hooks/useOpenTickets.ts. Components: DropOffSuccessOverlay (dark full-screen, prominent JetBrains Mono blue tag, Copy Tag + Done), OpenTicketsOverlay (right-drawer, IN PROGRESS amber + READY green status badges, Mark Ready + Pick Up actions, switch-confirmation banner when picking a different ticket while one is hydrated). Cart gained "Drop-Off Mode" label and pickup-mode banner with "Return to In Progress" exit. RegisterPage now routes Charge → Drop Off when workflow === drop_off AND no openTicketId in cartMeta, normal Charge flow when in pickup mode. Header gained "Open: N" blue pill (visible only when laundry has active tickets). 5-way overlay mutex now: Waitlist / Appointments / Today's Sales / Settings / Open Tickets. Transaction.openTicketId field threaded through all three checkout paths. handleCompleteSale wrapper calls completePickup on payment success to transition open ticket to picked_up. After B27 lands, the prior "wrinkle framework exhaustively proven" framing was honestly reframed — exhaustive on the service-line axis only; ticket-lifecycle is a separate axis with same_visit (default) and drop_off (laundry) as its two values. Tag from B27: v0.0.8-prototype.
+
+This batch is a pure docs wrap — no source code changes. README and replit.md must be brought up to v6 capturing B26 and B27. Screenshots scaffold extended with new capture surfaces. Version bumped to v0.0.9-prototype.
+
+GOAL
+README v6 + replit.md v6 reflect state through B27 (shifts envelope + ticket-lifecycle axis validated); screenshots/README.md extended with B26 + B27 capture surfaces; package.json version bumped to 0.0.9-prototype. Zero source code touched.
+
+SCOPE — BUILD THIS
+- README.md → v6. Refresh in place, preserving existing voice. Specific sections to update:
+  - Top header / version stamp updated to v0.0.9-prototype (through Batch 27).
+  - "What's Built" feature inventory expanded to cover 7 verticals (salon, spa, nail_bar, tattoo, pet_grooming, tanning, laundry) and all overlay surfaces (now 5-way mutex: Waitlist, Appointments, Today's Sales, Owner Settings, Open Tickets).
+  - "Wrinkle Category Framework" section: keep the three service-line wrinkle categories (money / state / duration) as-is, then add a new subsection "Ticket-Lifecycle Axis" explaining that workflow config flag scopes ticket lifecycle to verticals — same_visit (default, all prior verticals) where ticket opens and closes within one operator interaction, and drop_off (laundry) where ticket is created without payment, persists across visits as an open ticket, and closes when picked up via standard checkout. Frame this as an axis distinct from the wrinkle categories rather than a 4th wrinkle.
+  - "Shift State" new section: per-vertical open-shift envelope, transactions stamped with shiftId, Start Shift / End Shift modals, Charge gated when no shift open, EndShiftModal summary with refund-adjusted gross + payment mix.
+  - "Drop-Off / Pickup Workflow" new section: drop-off requires customer attached, sequential per-vertical tag counter (LAUN-0001 format), open tickets persist across days in localStorage, mock-SMS toast on Mark Ready, pickup hydrates cart and routes through standard checkout, transaction.openTicketId links back.
+  - "Stack Deviations" block: confirm exactly 1 setInterval in the codebase (in hooks/useElapsedTick.ts only), Header useClock on setTimeout-recursion, shift pill duration display rides existing useClock re-renders (acknowledge this as a pragmatic prototype shortcut and note that production should compute duration purely from startedAt on render without depending on upstream re-renders).
+  - "What Is NOT In This Prototype" expanded with: shift history viewer, Reports overlay surface extensions (per-subcategory / per-vertical / per-status / any breakdown axis — content extension on validated surface), decorative animations on existing mock affordances, tag printing, real SMS, multi-day age indicators, storage fee logic, commercial / B2B account aging, per-pound weight input, photo capture at drop-off, special handling flags, additional Tier 4 verticals (tailoring / shoe_repair / jewelry_repair).
+  - "Transaction Record Shape" updated to include shiftId? and openTicketId? optional fields with one-line annotations.
+  - "localStorage Keys" table refreshed: per-vertical base keys now include currentShift + shifts (B26 added two per vertical) plus laundry-only openTickets + closedTickets + tagCounter (B27, parameterized helpers but only laundry exercises them). Update total count accordingly.
+  - "Hardcoded Mock Data" section: extend to all 7 verticals.
+  - "Batch History" table: add B26 and B27 rows with demo-able outcomes.
+- replit.md → v6. Refresh in place. Specific sections to update:
+  - Header: through Batch 27, v0.0.9-prototype.
+  - Component Tree: add Shift pill + StartShiftModal + EndShiftModal under Header / Account dropdown surfaces. Add DropOffSuccessOverlay + OpenTicketsOverlay + "Open: N" pill. Add laundry vertical to VerticalSwitcher set (now 7).
+  - Hooks table: add useShift and useOpenTickets rows with one-line behavior summaries.
+  - "setInterval Invariant" section: confirm count still 1, note the shift pill rides existing useClock re-renders as a pragmatic shortcut.
+  - State Architecture: add useShift and useOpenTickets paragraphs.
+  - Data Flow: add Shift open/close flow, Drop-off → Mark Ready → Pickup → Complete flow, and how shiftId + openTicketId propagate through useCheckout and TakeDepositModal.
+  - "Wrinkle Category Framework" section: same content as README but in replit.md voice. Add a paragraph at the bottom titled "Ticket-Lifecycle Axis" framing this as orthogonal to the wrinkle categories — wrinkles describe service-line behavior, lifecycle describes ticket existence across visits.
+  - "Architectural Axes Validated" new short section listing: 6 wrinkle-free verticals (engine generalization on uniform catalogs); 3 service-line wrinkle categories (money / state / duration); 1 lifecycle alternate (drop_off via laundry); shift envelope; multi-leg split tender; 5-way overlay mutex.
+  - Known Limitations: add bullets on shift pill riding useClock re-renders, on per-pound math being intentionally skipped (covered by tanning per-minute pattern), on drop-off deposits being out of scope (lifecycle axis kept separate from money-shape axis), on tag counter being per-vertical-but-laundry-only-currently.
+  - Storage Architecture: refresh key inventory and totals to reflect shift + open ticket additions.
+  - Transaction Shape quick-ref: add shiftId? and openTicketId? fields.
+  - Key Library Modules table: add lib/shifts.ts, lib/openTickets.ts, lib/laundry-services.ts, lib/laundry-customers.ts rows.
+  - Batch History table: full B1 through B28 (this batch is B28). One row per batch with demo-able outcome.
+  - Tag History table: extend with v0.0.7 (B25), v0.0.8 (B27), v0.0.9 (B28) entries with one-line description of what each tag captured.
+  - "Things to Carry Forward" section: add shift envelope as a new mental model for production; add ticket-lifecycle axis with workflow config flag pattern; add 5-way overlay mutex; add tag counter pattern.
+  - "Things to Discard" section: add the shift pill's reliance on useClock re-renders (production should be self-contained); add the LAUN- tag prefix being hardcoded to laundry (production needs per-vertical tag prefix from config).
+- screenshots/README.md → extend the existing checklist with B26 + B27 capture surfaces:
+  - Shift open with elapsed display in header
+  - StartShiftModal with starting cash keypad
+  - EndShiftModal with shift summary (gross, payment mix, transaction count)
+  - "No shift open" pill state with Charge disabled tooltip
+  - Laundry register grid with 12 services in muted blue + bronze palette
+  - "Drop-Off Mode" cart label state
+  - DropOffSuccessOverlay with prominent LAUN-0001 tag
+  - "Open: N" header pill
+  - OpenTicketsOverlay with IN PROGRESS amber + READY green badges visible
+  - Pickup-mode cart banner with "Return to In Progress" button
+  - Switch-confirmation banner inside OpenTicketsOverlay
+- package.json version field bumped to "0.0.9-prototype".
+
+SCOPE — DO NOT BUILD
+- Actual screenshot PNG files (manual capture step, not for the agent).
+- Any source code changes anywhere under src/. This is a docs-only batch.
+- Production roadmap content; the production master in the project folder is the source of truth for that.
+- Suite cross-references or any mention of the Suite repo or stack.
+- Architecture recommendations for production (carry-forward / discard items only describe what the prototype demonstrated, not what production should look like).
+- New verticals, features, or flows.
+- Refactoring shift pill off useClock re-renders (carry the limitation note into Known Limitations only — no code change).
+- Reports overlay extensions of any kind (declined umbrella).
+- README rewrite from scratch — refresh in place, preserve the existing voice and structure.
+
+TECH CONSTRAINTS
+- Markdown only. No new dependencies, no package installs.
+- Both files must be valid GitHub-flavored Markdown.
+- No edits to any file under src/.
+- No edits to any config file other than package.json (version field only).
+- Preserve all existing tables, sections, and prose blocks unless the spec explicitly calls for refresh.
+
+ACCEPTANCE
+- README.md "What's Built" mentions all 7 verticals, shift envelope, drop-off / pickup workflow, ticket-lifecycle axis, 5-way overlay mutex.
+- README.md stack-deviation block confirms exactly 1 setInterval in hooks/useElapsedTick.ts and includes the shift-pill-on-useClock pragmatic note.
+- README.md "What Is NOT In This Prototype" includes shift history viewer, Reports overlay extensions, decorative animations, tag printing, real SMS.
+- replit.md batch history runs B1 through B28 with demo-able outcomes.
+- replit.md tag history extends through v0.0.9 (B28) with batch + description.
+- replit.md "Architectural Axes Validated" section exists and lists wrinkle categories + lifecycle axis + shift envelope + multi-leg split + 5-way mutex.
+- replit.md Known Limitations includes shift-pill-useClock note + per-pound-skipped note + drop-off-deposits-out-of-scope note + tag-counter-laundry-only note.
+- /screenshots/README.md gained the B26 + B27 capture surfaces (10+ new items).
+- package.json version is "0.0.9-prototype".
+- git diff shows zero files under src/ modified.
+- TypeScript check still clean (sanity, even though no TS changed).
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — REQUIRED — agent's response must include four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS. The previous two batches (B26, B27) lapsed this format — please honor it strictly.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.
