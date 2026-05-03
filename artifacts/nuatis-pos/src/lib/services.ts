@@ -35,6 +35,8 @@ export interface Service {
   requiresVaccinations?: VaccinationRequirement[];
   // B23: optional — present only on tanning session-based services
   pricing?: SessionPricing;
+  // B29: optional — true for yoga_pilates class-style services
+  isClass?: boolean;
 }
 
 export const SERVICES: Service[] = [

@@ -62,6 +62,8 @@ export interface Transaction {
   shiftId?: string;
   // B27: open ticket link — id of the OpenTicket completed in this transaction
   openTicketId?: string;
+  // B29: class slot link — id of the ClassSlot booked in this transaction
+  classSlotId?: string;
 }
 
 export interface ConfirmData {
@@ -84,6 +86,8 @@ export interface ConfirmData {
   shiftId?: string;
   // B27: open ticket link
   openTicketId?: string;
+  // B29: class slot link
+  classSlotId?: string;
 }
 
 function appendTransaction(tx: Transaction, verticalId: string): void {
@@ -179,6 +183,7 @@ export function useCheckout(onComplete: () => void) {
         ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
         ...(data.shiftId && { shiftId: data.shiftId }),
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
+        ...(data.classSlotId && { classSlotId: data.classSlotId }),
       };
       setProcessingTotalCents(tx.totalPaid ?? totalPaid);
       setCompletedTx(tx);
@@ -207,6 +212,7 @@ export function useCheckout(onComplete: () => void) {
         ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
         ...(data.shiftId && { shiftId: data.shiftId }),
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
+        ...(data.classSlotId && { classSlotId: data.classSlotId }),
       };
       setCompletedTx(tx);
       setState("receipt");
@@ -236,6 +242,7 @@ export function useCheckout(onComplete: () => void) {
         ...(data.appointmentRef && { appointmentRef: data.appointmentRef }),
         ...(data.shiftId && { shiftId: data.shiftId }),
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
+        ...(data.classSlotId && { classSlotId: data.classSlotId }),
       };
       setCompletedTx(tx);
       setState("receipt");

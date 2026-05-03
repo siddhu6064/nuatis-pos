@@ -19,6 +19,10 @@ import {
   LAUNDRY_CUSTOMERS,
   addLaundryCustomerInMemory,
 } from "@/lib/laundry-customers";
+import {
+  YOGA_CUSTOMERS,
+  addYogaCustomerInMemory,
+} from "@/lib/yoga-customers";
 import { normalizePhone, formatPhone } from "@/lib/phone";
 import { getVaccinationStatus } from "@/lib/vaccinations";
 
@@ -318,6 +322,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
   const isPetGrooming = verticalId === "pet_grooming";
   const isTanning = verticalId === "tanning";
   const isLaundry = verticalId === "laundry";
+  const isYoga = verticalId === "yoga_pilates";
 
   const [query, setQuery] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -343,7 +348,9 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
       ? TANNING_CUSTOMERS
       : isLaundry
         ? LAUNDRY_CUSTOMERS
-        : CUSTOMERS;
+        : isYoga
+          ? YOGA_CUSTOMERS
+          : CUSTOMERS;
 
   const normalizedQ = normalizePhone(query);
   const phoneMode = isPhoneQuery(query);
@@ -376,14 +383,18 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
       ? "Tanning"
       : isLaundry
         ? "Laundry"
-        : null;
+        : isYoga
+          ? "Yoga & Pilates"
+          : null;
   const verticalBadgeStyle = isPetGrooming
     ? { backgroundColor: "#D1FAE5", color: "#065F46" }
     : isTanning
       ? { backgroundColor: "#FEF3C7", color: "#92400E" }
       : isLaundry
         ? { backgroundColor: "#DBEAFE", color: "#1E40AF" }
-        : {};
+        : isYoga
+          ? { backgroundColor: "#D1EDD4", color: "#1A6B2A" }
+          : {};
 
   return (
     <div
@@ -417,7 +428,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
               setShowCreate(false);
               setSelectedPetCustomerId(null);
             }}
-            placeholder={isPetGrooming ? "Owner phone or name" : "Phone or name"}
+            placeholder={isPetGrooming ? "Owner phone or name" : isYoga ? "Member phone or name" : "Phone or name"}
             className="w-full h-[44px] px-3 text-[15px] rounded-xl border outline-none"
             style={{ fontFamily: "'Epilogue', sans-serif", borderColor: "#D1D5DB", backgroundColor: "#F9FAFB" }}
           />
@@ -486,11 +497,11 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
               <p
                 className="text-[14px] font-medium"
                 style={{
-                  color: isPetGrooming ? "#059669" : isTanning ? "#B45309" : "#E84A00",
+                  color: isPetGrooming ? "#059669" : isTanning ? "#B45309" : isYoga ? "#1A6B2A" : "#E84A00",
                   fontFamily: "'Epilogue', sans-serif",
                 }}
               >
-                + New {isPetGrooming ? "Pet Grooming " : ""}Customer
+                + New {isPetGrooming ? "Pet Grooming " : isYoga ? "Yoga " : ""}Customer
               </p>
             </button>
           )}
@@ -502,6 +513,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
               onSave={(c) => {
                 if (isTanning) addTanningCustomerInMemory(c);
                 else if (isLaundry) addLaundryCustomerInMemory(c);
+                else if (isYoga) addYogaCustomerInMemory(c);
                 else addCustomerInMemory(c);
                 handleAttachDirect(c);
               }}
@@ -523,6 +535,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
               onSave={(c) => {
                 if (isTanning) addTanningCustomerInMemory(c);
                 else if (isLaundry) addLaundryCustomerInMemory(c);
+                else if (isYoga) addYogaCustomerInMemory(c);
                 else addCustomerInMemory(c);
                 handleAttachDirect(c);
               }}

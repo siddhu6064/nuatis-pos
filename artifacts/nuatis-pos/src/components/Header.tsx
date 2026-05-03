@@ -24,6 +24,9 @@ interface HeaderProps {
   // B27: open tickets (drop_off verticals)
   openTicketsCount?: number;
   onOpenTickets?: () => void;
+  // B29: classes (classEnabled verticals)
+  classesCount?: number;
+  onOpenClasses?: () => void;
   // B26: shift state
   isShiftOpen: boolean;
   currentShiftStaffName?: string;
@@ -75,6 +78,8 @@ export function Header({
   onOpenSettings,
   openTicketsCount = 0,
   onOpenTickets,
+  classesCount,
+  onOpenClasses,
   isShiftOpen,
   currentShiftStaffName,
   currentShiftStartedAt,
@@ -196,6 +201,22 @@ export function Header({
             }}
           >
             Open: {openTicketsCount}
+          </button>
+        )}
+
+        {/* B29: Classes pill — only when classEnabled vertical */}
+        {classesCount !== undefined && (
+          <button
+            onClick={onOpenClasses}
+            className="h-[22px] px-2.5 rounded-full text-[11px] font-semibold transition-colors duration-150"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              backgroundColor: classesCount > 0 ? "#D1EDD4" : "#F3F4F6",
+              color: classesCount > 0 ? "#1A6B2A" : "#9CA3AF",
+              cursor: "pointer",
+            }}
+          >
+            Classes{classesCount > 0 ? `: ${classesCount}` : ""}
           </button>
         )}
 

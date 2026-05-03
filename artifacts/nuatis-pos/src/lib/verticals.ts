@@ -18,8 +18,13 @@ import {
   LAUNDRY_MODIFIERS_BY_SERVICE,
   LAUNDRY_CATEGORY_COLORS,
 } from "@/lib/laundry-services";
+import {
+  YOGA_SERVICES,
+  YOGA_MODIFIERS_BY_SERVICE,
+  YOGA_CATEGORY_COLORS,
+} from "@/lib/yoga-services";
 
-export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming" | "tanning" | "laundry";
+export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming" | "tanning" | "laundry" | "yoga_pilates";
 
 export interface BusinessInfo {
   name: string;
@@ -39,6 +44,8 @@ export interface VerticalConfig {
   customerTerm: string;
   staffTerm: string;
   serviceTerm: string;
+  // B29: true for verticals that have a class schedule
+  classEnabled?: boolean;
 }
 
 // ── Spa services ─────────────────────────────────────────────────────────────
@@ -261,6 +268,24 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     customerTerm: "customer",
     staffTerm: "staff",
     serviceTerm: "order",
+  },
+  yoga_pilates: {
+    id: "yoga_pilates",
+    displayName: "Yoga & Pilates",
+    tagline: "Classes, private sessions, and mind-body wellness",
+    business: {
+      name: "Flow Studio",
+      address: "300 Serenity Lane, Austin, TX 78708",
+      phone: "(512) 555-0800",
+    },
+    services: YOGA_SERVICES,
+    modifiersByService: YOGA_MODIFIERS_BY_SERVICE,
+    categoryColors: YOGA_CATEGORY_COLORS,
+    workflow: "same_visit",
+    customerTerm: "member",
+    staffTerm: "instructor",
+    serviceTerm: "class",
+    classEnabled: true,
   },
 };
 

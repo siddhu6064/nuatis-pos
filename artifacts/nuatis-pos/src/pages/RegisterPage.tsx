@@ -20,7 +20,9 @@ import { StartShiftModal } from "@/components/StartShiftModal";
 import { EndShiftModal } from "@/components/EndShiftModal";
 import { DropOffSuccessOverlay } from "@/components/DropOffSuccessOverlay";
 import { OpenTicketsOverlay } from "@/components/OpenTicketsOverlay";
+import { ClassesOverlay } from "@/components/ClassesOverlay";
 import { useOpenTickets } from "@/hooks/useOpenTickets";
+import { useClassSlots } from "@/hooks/useClassSlots";
 import type { OpenTicket } from "@/lib/openTickets";
 import { useCart } from "@/hooks/useCart";
 import type { CartCustomer } from "@/hooks/useCart";
@@ -114,6 +116,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   // B27: open tickets (drop_off workflow)
   const openTicketsHook = useOpenTickets();
 
+  // B29: class slots (yoga_pilates vertical)
+  const classSlots = useClassSlots();
+
   // B23: useElapsedTick — ONLY setInterval in the codebase
   const hasActiveSessions = lines.some(
     (l) => l.sessionStartedAt !== undefined && l.sessionEndedAt === undefined,
@@ -144,6 +149,16 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
   // B27: drop-off workflow state
   const [showOpenTickets, setShowOpenTickets] = useState(false);
+
+  // B29: classes overlay state
+  const [showClasses, setShowClasses] = useState(false);
+  const [pendingBookSlotId, setPendingBookSlotId] = useState<string | null>(null);
+  const [classBookingContext, setClassBookingContext] = useState<{
+    slotId: string;
+    enrollmentId: string;
+    scheduledAt: number;
+    serviceName: string;
+  } | null>(null);
   const [dropOffSuccessTicket, setDropOffSuccessTicket] = useState<OpenTicket | null>(null);
   const [pickupTicketId, setPickupTicketId] = useState<string | null>(null);
   const [pickupTag, setPickupTag] = useState<string | null>(null);
@@ -253,6 +268,38 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
   const handleAttachCustomer = useCallback(
     (c: CartCustomer) => {
+      // B29: yoga class booking flow — triggered when pendingBookSlotId is set
+      if (pendingBookSlotId !== null) {
+        const slotId = pendingBookSlotId;
+        setPendingBookSlotId(null);
+        setShowCustomerSearch(false);
+        if (classSlots.checkSlotFull(slotId)) {
+          if (smsToastTimerRef.current) clearTimeout(smsToastTimerRef.current);
+          setSmsToast("Class is full — booking cancelled");
+          smsToastTimerRef.current = setTimeout(() => setSmsToast(null), 2000);
+          return;
+        }
+        const slot = classSlots.slots.find((s) => s.id === slotId);
+        if (!slot) return;
+        const customerName = `${c.firstName} ${c.lastName}`.trim();
+        const enrollment = classSlots.enrollCustomer(slotId, c.id, customerName);
+        if (!enrollment) return;
+        const svcConfig = config.services.find((s) => s.id === slot.serviceId);
+        const priceCents = svcConfig?.priceCents ?? 0;
+        attachCustomer(c);
+        addItem(slot.serviceId, slot.serviceName, priceCents, activeStaff.id);
+        if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+        setPulsingServiceId(slot.serviceId);
+        pulseTimerRef.current = setTimeout(() => setPulsingServiceId(null), 200);
+        setClassBookingContext({
+          slotId,
+          enrollmentId: enrollment.id,
+          scheduledAt: slot.scheduledAt,
+          serviceName: slot.serviceName,
+        });
+        return;
+      }
+      // Normal flow
       attachCustomer(c);
       setShowCustomerSearch(false);
       if (pendingService !== null && activeVerticalId === "pet_grooming") {
@@ -261,8 +308,15 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         runVaccinationGateCheck(svc, c);
       }
     },
-    [attachCustomer, pendingService, activeVerticalId, runVaccinationGateCheck],
+    [attachCustomer, pendingService, activeVerticalId, runVaccinationGateCheck, pendingBookSlotId, classSlots, config.services, activeStaff.id, addItem],
   );
+
+  // B29: book request from ClassesOverlay — opens CustomerSearch in yoga mode
+  const handleBookRequest = useCallback((slotId: string) => {
+    setPendingBookSlotId(slotId);
+    setShowClasses(false);
+    setShowCustomerSearch(true);
+  }, []);
 
   // ── Vaccination gate callbacks ────────────────────────────────────────────
 
@@ -313,8 +367,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       ...(appointmentRef ? { appointmentRef } : {}),
       ...(currentShift ? { shiftId: currentShift.id } : {}),
       ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
+      ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
     });
-  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId]);
+  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext]);
 
   const handleOpenCash = useCallback(() => {
     setShowCashModal(true);
@@ -342,12 +397,13 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(appointmentRef ? { appointmentRef } : {}),
         ...(currentShift ? { shiftId: currentShift.id } : {}),
         ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
+        ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
       });
       if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
       setCashDrawerToast(true);
       cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext],
   );
 
   const handleOpenSplit = useCallback(() => {
@@ -373,6 +429,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(appointmentRef ? { appointmentRef } : {}),
         ...(currentShift ? { shiftId: currentShift.id } : {}),
         ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
+        ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
       });
       if (payments.some((p) => p.method === "cash")) {
         if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
@@ -380,7 +437,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
       }
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext],
   );
 
   const handleHold = useCallback(() => {
@@ -489,8 +546,17 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       setPickupTicketId(null);
       setPickupTag(null);
     }
+    // B29: mark class enrollment paid
+    if (classBookingContext && checkout.completedTx) {
+      classSlots.markEnrollmentPaid(
+        classBookingContext.slotId,
+        classBookingContext.enrollmentId,
+        checkout.completedTx.id,
+      );
+      setClassBookingContext(null);
+    }
     checkout.completeSale();
-  }, [pickupTicketId, checkout, openTicketsHook]);
+  }, [pickupTicketId, checkout, openTicketsHook, classBookingContext, classSlots]);
 
   const handleStartWalkIn = useCallback(
     (entry: WaitlistEntry) => {
@@ -581,19 +647,29 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         onOpenWaitlist={() => {
           setShowAppointments(false);
           setShowOpenTickets(false);
+          setShowClasses(false);
           setShowWaitlist(true);
         }}
         appointmentsCount={appointmentsUrgentCount}
         onOpenAppointments={() => {
           setShowWaitlist(false);
           setShowOpenTickets(false);
+          setShowClasses(false);
           setShowAppointments(true);
         }}
         openTicketsCount={openTicketsHook.activeCount}
         onOpenTickets={() => {
           setShowWaitlist(false);
           setShowAppointments(false);
+          setShowClasses(false);
           setShowOpenTickets(true);
+        }}
+        classesCount={config.classEnabled ? classSlots.totalEnrolled : undefined}
+        onOpenClasses={() => {
+          setShowWaitlist(false);
+          setShowAppointments(false);
+          setShowOpenTickets(false);
+          setShowClasses(true);
         }}
         activeVerticalDisplayName={config.displayName}
         switcherDisabled={switcherDisabled}
@@ -659,6 +735,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             pickupCustomerName={pickupTicketId ? customerName : null}
             onDropOff={handleDropOff}
             onReturnToInProgress={handleReturnToInProgress}
+            classBookingContext={classBookingContext}
           />
         </aside>
       </div>
@@ -790,6 +867,16 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           onMarkReady={handleMarkReady}
           onPickUp={handlePickupSelect}
           onClose={() => setShowOpenTickets(false)}
+        />
+      )}
+
+      {/* B29: Classes overlay */}
+      {showClasses && (
+        <ClassesOverlay
+          slots={classSlots.slots}
+          onBookRequest={handleBookRequest}
+          onCancelEnrollment={classSlots.cancelEnrollment}
+          onClose={() => setShowClasses(false)}
         />
       )}
 

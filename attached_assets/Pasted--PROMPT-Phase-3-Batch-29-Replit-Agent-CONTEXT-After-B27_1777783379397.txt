@@ -1,0 +1,85 @@
+▶ PROMPT [Phase 3 · Batch 29 · Replit Agent]
+
+CONTEXT
+After B27 validated the ticket-lifecycle axis (drop_off via laundry) and B28 locked docs at v0.0.9-prototype, the production master surfaces one more architecturally distinct pattern that fits prototype scope: class enrollment slots with capacity + roster (P12 Tier 5 fitness, MVP §16.6). This is a 1:N customer-to-slot mental model distinct from existing 1:1 appointments (validated at B18). The capacity gate operates at slot-level, the roster is a new data structure, and one slot generates N transactions across N attendees. This batch validates that pattern with one vertical (yoga_pilates) so the engine config can scope class-style scheduling to specific verticals. Existing Appointments flow for the 7 prior verticals is unchanged.
+
+GOAL
+Add yoga_pilates as 8th vertical with classEnabled: true. Operator views today's class slots in a new Classes overlay; each slot shows capacity badge + current roster; operator books a customer into a slot (capacity-gated); booking hydrates cart with the class service for normal checkout; transaction links back to the slot.
+
+SCOPE — BUILD THIS
+- New yoga_pilates vertical config registered in lib/verticals.ts. classEnabled: true added to VerticalConfig type; all 7 existing verticals get classEnabled: false default. workflow stays "same_visit" (lifecycle axis unchanged here). Color palette: sage green + cream, visually distinct from prior verticals. customerTerm='customer', staffTerm='instructor', serviceTerm='class'.
+- New lib/yoga-services.ts: 12 services. 9 class-style with isClass: true field on Service interface (new optional field): Vinyasa Flow $25, Power Yoga $25, Yin Yoga $20, Restorative $20, Hot Yoga $30, Aerial Yoga $35, Acro Yoga $40, Beginner Flow $20, Workshop 2hr $50. Plus 3 non-class (isClass undefined or false): Private Session 60min $90, Mat Rental $3, Towel Rental $2.
+- New lib/yoga-customers.ts: 4 seed customers (no pet fields).
+- New ClassSlot type in lib/classSlots.ts: { id, verticalId, serviceId, serviceName, scheduledAt (timestamp), durationMin, instructorStaffId, instructorName, capacity, roster: ClassEnrollment[] }. ClassEnrollment: { id, customerId, customerName, enrolledAt, transactionId? }. Plus localStorage helpers loadClassSlots(verticalId), saveClassSlots, addEnrollment, removeEnrollment, isSlotFull.
+- New localStorage key per vertical: nuatis-pos:{verticalId}:classSlots. Only yoga uses it in this batch but parameterized helpers stay vertical-scoped.
+- 6 seed class slots for today's date in yoga_pilates, distribution intentionally exercises capacity-gate UX states: 9:00am Vinyasa Flow (cap 12, 3 enrolled), 11:00am Yin Yoga (cap 10, 8 enrolled — near capacity), 12:00pm Power Yoga (cap 15, 0 enrolled — empty), 4:00pm Hot Yoga (cap 12, 12 enrolled — FULL), 6:00pm Vinyasa Flow (cap 12, 5 enrolled), 7:00pm Aerial Yoga (cap 6, 4 enrolled). Seeded customers populate the rosters. scheduledAt computed as today's date plus the HH:mm at hook init.
+- New useClassSlots hook (single hook, no provider — pattern matches useShift / useOpenTickets): classSlots list, enrollCustomer(slotId, customerId, customerName), cancelEnrollment(slotId, enrollmentId), markEnrollmentPaid(slotId, enrollmentId, transactionId), isSlotFull(slotId).
+- New ClassesOverlay component (right-drawer, reuses OpenTicketsOverlay shell — do not fork): list of today's slots sorted by scheduledAt ascending. Each slot row shows: time (HH:mm), service name in mono, instructor name, capacity badge, Book button, expand-roster chevron.
+- Capacity badge color states: 0 to <80% green; 80% to <100% amber; at capacity red with "FULL" label inside the badge. Format "{enrolled}/{capacity}" e.g. "3/12".
+- Book button disabled state: when slot is full, button shows tooltip "Class full" and does not advance.
+- Roster expansion: tapping the chevron expands an inline roster panel below the slot row showing each enrollment as a row with customer name, enrolled-at relative time (render-on-pull, no setInterval), Cancel button. Cancel removes the enrollment from the slot's roster and updates capacity badge in place — no refund flow (see DO NOT BUILD).
+- Book flow: tap Book on a slot → CustomerSearch modal opens scoped to yoga customer source (add yoga branch matching the laundry branch added in B27) → on customer select, run isSlotFull capacity re-check at confirmation; if still has room, enrollment created + slot's roster updated + cart auto-hydrated with the slot's class service line at the slot's price + customer auto-attached + ClassesOverlay closes.
+- Capacity race protection: re-check isSlotFull at the moment of enrollment confirmation (between modal open and confirm). If filled in the interim, show toast "Class filled while you were booking" and block enrollment.
+- Header "Classes: N" pill: count of today's slots that are NOT yet fully booked. Visible only when current vertical has classEnabled === true. Same affordance shape as Held: N / Open: N pills (clickable, opens ClassesOverlay). Respects mutual-exclusivity.
+- ClassesOverlay added to overlay rotation — now 6-way mutual exclusivity: Waitlist / Appointments / Today's Sales / Settings / Open Tickets / Classes. Document this in the agent's report.
+- Per-vertical scoping: Classes pill hides on any vertical with classEnabled === false. Switching to a non-yoga vertical does not block; it just hides the pill.
+- Cart visual cue when hydrated from a class booking: small label above cart line list "Class booking · {scheduledTime HH:mm} · {serviceName}" so operator knows context. Cart in this state still flows through normal Charge / Card / Cash / Split / Comp.
+- Standard checkout flow on completion: transaction record gains optional classSlotId field linking back to the slot. After checkout success, call markEnrollmentPaid to stamp the enrollment with transactionId. Enrollment STAYS on the slot's roster post-checkout (paid attendees remain in roster — different from drop-off where ticket leaves openTickets on pickup; class enrollments persist as roster history).
+- Vertical switcher: yoga_pilates switchable from any other vertical per existing rules. Class slots persist for yoga across switches; pill state respects the vertical's classEnabled flag on switch.
+
+SCOPE — DO NOT BUILD
+- Check-in / attendance tracking (whether enrolled customer actually showed up; separate batch if ever).
+- Multi-customer booking on a single cart (one customer per booking → one cart → one transaction; family bookings handled as separate cart-and-checkout per attendee).
+- Recurring weekly schedule generation (slots seeded for today only — no recurrence engine).
+- Slot creation / editing / deletion UI (slots are seeded, not user-editable in this batch).
+- Wait-list when full (full = full; no wait queue or auto-promote-on-cancel).
+- Refund-on-cancel (Cancel button removes from roster pre-payment; if customer already paid via checkout, do not auto-refund — production handles via standard refund flow on the linked transaction).
+- Class packages / 10-class punch cards (separate package pattern, not in scope this batch).
+- Recurring monthly memberships ($150/mo unlimited) (separate subscription pattern).
+- Make-up lesson credits / vouchers.
+- Family accounts / multi-child enrollment.
+- Roster export, printable class roster, instructor view of roster as a separate surface.
+- Reports overlay extensions of any kind (declined umbrella across the day).
+- Capacity edit / instructor swap / time edit on existing slots.
+- Drop-in vs reserved differentiation (all enrollments are reserved + paid via standard checkout).
+- Multi-day or week view of upcoming classes (today only).
+- Push notifications, mock SMS to roster, instructor notification toasts (declined operator-attention nudge umbrella).
+- Photo capture or signed waiver for class first-timers (no file storage in prototype).
+- Additional Tier 5 verticals (personal_training, martial_arts, dance, swim, music_school, tutoring) — one vertical proves the cardinality pattern.
+- 9th vertical of any tier.
+- README / replit.md updates (defer to a future wrap batch if continuing).
+- Settings tab edits to anything class-related.
+- Cross-vertical class aggregation (declined umbrella).
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4. No new dependencies.
+- setInterval count must remain exactly 1 (in hooks/useElapsedTick.ts only). Slot relative-time displays use render-on-pull pattern matching existing waitlist wait-time and open-ticket dropped-off-at labels.
+- TypeScript strict. ClassSlot, ClassEnrollment, classEnabled, isClass fully typed; localStorage hydration without any.
+- Per-vertical localStorage namespacing follows nuatis-pos:{verticalId}:{key} pattern. Add the new key to whatever array/constant enumerates per-vertical keys for migration consistency.
+- ClassesOverlay respects 6-way mutual-exclusivity rule with the five existing header overlays.
+- ClassesOverlay reuses OpenTicketsOverlay's right-drawer shell — do not fork the overlay component.
+- Capacity badge reuses the existing badge component shell with new color state mapping. Do not create a new badge component.
+- CustomerSearch modal reused for booking; yoga branch added to the source switch (similar to laundry branch added in B27).
+- Capacity race re-check happens at enrollment confirmation time (post customer-select, before commit), not just at button-press time.
+- Slot scheduledAt computed from today's date + HH:mm at hook init. Do not hardcode timestamps that will go stale across days.
+
+ACCEPTANCE
+- Switch to yoga_pilates: register grid renders 12 services in sage/cream palette; Classes pill in header shows count of slots with available capacity (5 of 6 — the 4pm Hot Yoga is full).
+- Tap Classes pill → ClassesOverlay opens with 6 slots sorted by time. Capacity badges render correctly: 3/12 green, 8/10 amber, 0/15 green, 12/12 red FULL, 5/12 green, 4/6 amber.
+- 4pm Hot Yoga: Book button disabled with tooltip "Class full"; chevron expand shows roster of 12 enrolled customers with names + relative times.
+- Tap Book on 12pm Power Yoga (cap 15, 0 enrolled): CustomerSearch modal opens with yoga customer source; pick a customer; enrollment created; capacity badge updates to 1/15 green; cart hydrated with Power Yoga line at $25; "Class booking · 12:00 · Power Yoga" label visible above cart line; ClassesOverlay closes.
+- Reopen ClassesOverlay; expand 12pm slot roster: shows the just-booked customer with relative-time "just now" and Cancel button.
+- Standard Card payment flow: transaction in localStorage carries classSlotId === slot ID; enrollment record on slot gains transactionId.
+- 7pm Aerial Yoga (cap 6, 4 enrolled): book one customer → 5/6 amber; book another → 6/6 red FULL; Book button disables.
+- Cancel enrollment via roster row: roster row disappears; capacity badge reflects new count; no refund flow triggered (even if transactionId was stamped).
+- Switch to salon vertical: Classes pill hides; salon flows unchanged. Switch back to yoga_pilates: pill restored; slots persist.
+- 6-way mutex: open Classes while Waitlist is open → Waitlist closes first. Same for Appointments / Today's Sales / Settings / Open Tickets.
+- All 7 prior verticals regression-tested for classEnabled === false default — no Classes pill rendered, no Classes overlay accessible.
+- grep -r "setInterval" src/ → exactly 1 match in hooks/useElapsedTick.ts.
+- TypeScript check clean. No console errors during HMR or any flow.
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — REQUIRED — agent's response must include four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS. The previous wrap batch (B28) honored this format; please continue strictly.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.

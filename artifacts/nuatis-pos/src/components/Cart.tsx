@@ -50,6 +50,8 @@ interface CartProps {
   pickupCustomerName: string | null;
   onDropOff: () => void;
   onReturnToInProgress: () => void;
+  // B29: class booking context
+  classBookingContext?: { scheduledAt: number; serviceName: string } | null;
 }
 
 const SESSION_GATE_TOOLTIP = "Stop all sessions before checkout";
@@ -93,6 +95,7 @@ export function Cart({
   pickupCustomerName,
   onDropOff,
   onReturnToInProgress,
+  classBookingContext,
 }: CartProps) {
   const { settings } = useVerticalSettings();
   const [showCompModal, setShowCompModal] = useState(false);
@@ -276,6 +279,22 @@ export function Cart({
           </div>
         )}
       </div>
+
+      {/* B29: Class booking banner */}
+      {classBookingContext && !isEmpty && (
+        <div
+          className="px-4 py-2 border-b flex-shrink-0 flex items-center gap-2"
+          style={{ backgroundColor: "#F0FDF0", borderColor: "#BBF7D0", borderBottomWidth: 1 }}
+        >
+          <span className="text-[13px]">🧘</span>
+          <span
+            className="text-[12px] font-semibold"
+            style={{ color: "#1A6B2A", fontFamily: "'Epilogue', sans-serif" }}
+          >
+            Class booking · {new Date(classBookingContext.scheduledAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })} · {classBookingContext.serviceName}
+          </span>
+        </div>
+      )}
 
       {/* Line items */}
       <div className="flex-1 overflow-y-auto">
