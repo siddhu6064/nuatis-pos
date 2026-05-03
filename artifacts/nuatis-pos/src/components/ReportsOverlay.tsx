@@ -787,6 +787,18 @@ export function ReportsOverlay({ onClose }: ReportsOverlayProps) {
                                   PACK PURCHASE
                                 </span>
                               )}
+                              {tx.projectStageId && (
+                                <span
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    fontFamily: "'Epilogue', sans-serif",
+                                    color: "#4A3120",
+                                    backgroundColor: "#F5ECD7",
+                                  }}
+                                >
+                                  PROJECT STAGE
+                                </span>
+                              )}
                               {!tx.packPurchaseId && tx.lineItems.some((l) => l.usedPackId) && (
                                 <span
                                   className="text-[10px] font-bold px-1.5 py-0.5 rounded"

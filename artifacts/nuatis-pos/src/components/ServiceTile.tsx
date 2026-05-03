@@ -13,7 +13,7 @@ export function ServiceTile({ service, color, onTap }: ServiceTileProps) {
       onClick={() => onTap(service)}
       style={{ backgroundColor: color }}
       className="
-        flex flex-col justify-between
+        relative flex flex-col justify-between
         min-h-[140px] w-full
         rounded-2xl p-4
         text-left cursor-pointer
@@ -24,6 +24,19 @@ export function ServiceTile({ service, color, onTap }: ServiceTileProps) {
         border border-black/5
       "
     >
+      {service.isProject && (
+        <span
+          className="absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded"
+          style={{
+            fontFamily: "'Epilogue', sans-serif",
+            backgroundColor: "#C4A882",
+            color: "#4A3120",
+            letterSpacing: "0.04em",
+          }}
+        >
+          PROJECT
+        </span>
+      )}
       <span
         className="text-[18px] font-semibold leading-tight text-gray-900"
         style={{ fontFamily: "'Epilogue', sans-serif" }}

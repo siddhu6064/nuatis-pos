@@ -27,6 +27,9 @@ interface HeaderProps {
   // B29: classes (classEnabled verticals)
   classesCount?: number;
   onOpenClasses?: () => void;
+  // B33: projects (projectEnabled verticals)
+  projectsCount?: number;
+  onOpenProjects?: () => void;
   // B26: shift state
   isShiftOpen: boolean;
   currentShiftStaffName?: string;
@@ -80,6 +83,8 @@ export function Header({
   onOpenTickets,
   classesCount,
   onOpenClasses,
+  projectsCount,
+  onOpenProjects,
   isShiftOpen,
   currentShiftStaffName,
   currentShiftStartedAt,
@@ -217,6 +222,22 @@ export function Header({
             }}
           >
             Classes{classesCount > 0 ? `: ${classesCount}` : ""}
+          </button>
+        )}
+
+        {/* B33: Projects pill — only when projectEnabled vertical */}
+        {projectsCount !== undefined && (
+          <button
+            onClick={onOpenProjects}
+            className="h-[22px] px-2.5 rounded-full text-[11px] font-semibold transition-colors duration-150"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              backgroundColor: projectsCount > 0 ? "#C4A882" : "#F3F4F6",
+              color: projectsCount > 0 ? "#4A3120" : "#9CA3AF",
+              cursor: "pointer",
+            }}
+          >
+            Projects{projectsCount > 0 ? `: ${projectsCount}` : ""}
           </button>
         )}
 

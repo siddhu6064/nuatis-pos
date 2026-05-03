@@ -29,6 +29,10 @@ export const currentShiftKey = (verticalId: string): string =>
 export const shiftsHistoryKey = (verticalId: string): string =>
   `nuatis-pos:${verticalId}:shifts`;
 
+// B33: project keys (photography vertical, parameterized for extensibility)
+export const projectsKey = (verticalId: string): string =>
+  `nuatis-pos:v1:${verticalId}:projects`;
+
 // B27: drop-off workflow keys
 export const openTicketsKey = (verticalId: string): string =>
   `nuatis-pos:${verticalId}:openTickets`;

@@ -1,0 +1,137 @@
+▶ PROMPT [Phase 3 · Batch 33 · Replit Agent · STRICT MODE · ENFORCEMENT-FIRST]
+
+ENFORCEMENT FIRST — READ BEFORE WRITING ANY CODE
+B30 and B32 both violated the strict-mode contract by replacing the four-section report with custom narrative, dropping required audit outputs, and including closing pitches. Both failures looked the same. This batch will not repeat them.
+
+Your response will contain exactly four top-level sections, in this exact order, with these exact headings, no others:
+
+WHAT WAS BUILT
+ERRORS ENCOUNTERED
+ITEMS SKIPPED
+OPEN QUESTIONS
+
+The literal first line of WHAT WAS BUILT is the string: Format contract acknowledged.
+
+The literal second line of WHAT WAS BUILT is the output of `grep -rn "setInterval" src/` (paste the bytes).
+
+The literal third line of WHAT WAS BUILT is the output of `git diff --name-only HEAD` (paste the bytes).
+
+Only AFTER these three lines may you describe implementation work.
+
+These phrases will not appear anywhere in your response: "Next, I can add". "Would you like me to". "I could also". "Let me know if you want". "Happy to add". "future batch". (Open questions about deferred work belong in OPEN QUESTIONS using neutral language like "What should X do? — defer to next batch.")
+
+Custom narrative section headers (Data layer, UI layer, Orchestration, Files modified, etc.) within WHAT WAS BUILT are permitted as inline structure but are NOT substitutes for the four required top-level headings.
+
+If any of the four required headings is missing or out of order, the report is incomplete. ERRORS ENCOUNTERED reports actual code-level errors during the batch, not format errors. If genuinely no errors, write "None.". OPEN QUESTIONS lists genuine ambiguity. If genuinely none, write "None.". ITEMS SKIPPED enumerates DO NOT BUILD items confirmed not done — minimum bullet for each item explicitly listed in this prompt's DO NOT BUILD section.
+
+CONTEXT
+B27 introduced the ticket-lifecycle axis (workflow flag, drop_off via laundry). B29 introduced the cardinality axis (classEnabled flag, 1:N via yoga_pilates). B32 introduced the prepaid-credit-ledger payment shape (revenue books at purchase, burn books at consumption). This batch validates a fourth axis: multi-stage payment with project parent record. Production master P16 Tier 7 Specialty calls for: "Multi-stage payment workflow — large-ticket services charge in stages: deposit (e.g., 25% upfront) → progress payment (e.g., 50% mid-project) → final payment (25% on delivery). Each stage tracked, balance visible." Plus: "Project / job linking — multiple tickets linked to a parent project (e.g., wedding photography: engagement shoot ticket + wedding day ticket + album delivery ticket)." This is canonically photography. The pattern is distinct from B19 deposit (N=2, no parent record), distinct from B27 open ticket (lifecycle, not payment-stages), and distinct from B32 pack burn (balance ledger, not stage allocation).
+
+GOAL
+Add photography as 9th vertical with projectEnabled flag. Operator can start a Project for a high-ticket service ($3000 wedding package) which seeds 3 stages with allocation defaults (25%/50%/25%); each stage charges as an independent transaction linked back to the parent Project; project shows running balance; receipts show stage label and project balance footnote.
+
+SCOPE — BUILD THIS
+- New photography vertical config in lib/verticals.ts. projectEnabled: true added to VerticalConfig type; all 8 existing verticals get projectEnabled: false default. workflow stays "same_visit". classEnabled: false. Color palette: warm cream + sepia accents. customerTerm='client', staffTerm='photographer', serviceTerm='package'.
+- New lib/photography-services.ts with 12 services. 4 project-eligible (isProject: true new field): Wedding Photography Package $3000, Engagement Shoot $500, Portrait Session $300, Event Photography $800. 8 non-project: Photo Album $400, Prints (per pack) $25, Digital Gallery Access $150, Rush Editing $200, Travel Fee $150, Second Photographer Add-On $400, Drone Coverage $300, Raw Files Release $250.
+- New lib/photography-customers.ts with 4 seed clients (no pet/vaccination fields).
+- New Project type in lib/projects.ts: { id, verticalId, customerId, customerName, serviceId, serviceName, totalCents, stages: ProjectStage[], createdAt, completedAt? }. ProjectStage: { id, label, allocationPct, allocationCents, dueAt?, transactionId?, paidAt? }. Default stage labels for 3-stage projects: "Deposit", "Progress", "Final". Default allocation: 25% / 50% / 25%. Allocations sum to 100% — verify in helper.
+- localStorage key per vertical: nuatis-pos:{verticalId}:projects (only photography uses this batch but parameterized).
+- New useProjects hook: projects list, createProject(serviceId, customerId, customerName, totalCents), markStagePaid(projectId, stageId, transactionId), getActiveStage(projectId) returns first unpaid stage, isProjectComplete(projectId).
+- ProjectSetupModal: opens when operator taps a project-eligible service tile (any with isProject: true). Shows service name, total amount in JetBrains Mono, 3 stage rows with default labels and allocation %, total verification line, customer-attach affordance using existing CustomerSearch (client required for project setup — this is parallel to laundry drop-off and pack-purchase customer-required gates). Stage labels and allocations are NOT editable in this batch — defaults locked. Confirm creates Project record and returns operator to register; cart NOT hydrated at this point.
+- Cart routing for project-eligible service tiles: when activeVertical.projectEnabled === true AND tapped service has isProject: true, do NOT add to cart — open ProjectSetupModal instead. Non-project services tile-tap into cart normally.
+- Header "Projects: N" pill: count of photography projects with at least one unpaid stage. Visible only when current vertical has projectEnabled === true. Same affordance shape as Open: N and Classes: N pills. Respects mutual-exclusivity.
+- ProjectsOverlay (right-drawer reusing OpenTicketsOverlay shell — do not fork): list of projects sorted by createdAt desc. Each row shows: client name, service name, total amount, paid-of-total amount with progress label (e.g., "$750 of $3000 paid · 25%"), 3 stage badges (DEPOSIT / PROGRESS / FINAL with paid/unpaid color states). Tapping a row expands inline to show three stage rows; each unpaid stage has a Charge Stage button.
+- Charge Stage flow: tap Charge Stage on the next unpaid stage → cart hydrates with a single line at that stage's allocationCents priced. Line label format: "{serviceName} · {stage.label} ({stage.allocationPct}%)". Customer auto-attached from project. Cart shows banner above lines: "Project · {clientName} · {serviceName}". Standard Charge / Card / Cash / Split / Comp flow. ProjectsOverlay closes during checkout.
+- On checkout completion for a project stage: transaction record carries projectId and projectStageId optional fields. handleCompleteSale wrapper calls markStagePaid(projectId, stageId, transactionId) on success. Stage transitions to paid; project's running paid total updates.
+- Stage gating: only one stage chargeable at a time per project — must be the first unpaid stage in stage order. Out-of-order stage charges are not supported in this batch (operator must charge Deposit before Progress, Progress before Final). If somehow an earlier stage is unpaid and a later one is targeted, the Charge Stage button on the later stage is disabled with tooltip "Charge previous stage first".
+- Receipt rendering for stage transactions: line shows formatted label "{serviceName} · {stage.label} ({stage.allocationPct}%)". Below line items, new footnote line reads: "Project balance: $X paid of $Y total · {N} stages remaining" using post-completion totals. When the final stage is paid, footnote reads "Project complete · $Y total" instead.
+- Project completion: when all 3 stages are paid, Project.completedAt is set. ProjectsOverlay row badge changes from active state (running progress) to COMPLETE state (subtle gray). Completed projects remain in list (no separate archive in this batch); pill count drops them since they have no unpaid stages.
+- Today's Sales transaction badge: new PROJECT STAGE badge (warm cream/sepia distinct from existing badges) on transactions with projectStageId set. Reuses existing badge component shell.
+- Per-staff revenue rule: project stage revenue counts at the line's priceCents (the stage allocation amount), attributed to the staff on the line, in the standard way. No amortization here — full stage revenue books at stage payment.
+- Today's Sales gross revenue: project stage transactions count at full line totals in their actual Card/Cash/Split payment-mix bucket. No special revenue accounting beyond what already exists.
+
+SCOPE — DO NOT BUILD
+- Variable / editable allocation percentages per project (allocations locked at 25/50/25 default this batch).
+- Variable / editable number of stages (locked at 3 this batch).
+- Editable stage labels (defaults Deposit / Progress / Final locked).
+- Editable due dates / dueAt enforcement / overdue indicators / aging dashboard.
+- Auto-reminder SMS or email for upcoming stage payments (operator-attention nudge umbrella).
+- Project edit, delete, cancellation, refund-of-entire-project flow.
+- Mid-flight allocation rebalancing (if Deposit charges $1000 instead of $750, no auto-adjust to Progress/Final).
+- Out-of-order stage charging or skipping a stage.
+- Stage refund logic — what should happen to the project's running paid total if a stage transaction is refunded? Defer; flag in OPEN QUESTIONS.
+- Pack-burn compatibility within projects (project axis and pack-balance axis stay independent — do not allow class pack to apply to a project stage).
+- Project transfer between clients.
+- Customer-facing project status URL or share link.
+- Gallery integration (Pixieset / Pic-Time / ShootProof — real third-party APIs, declined umbrella).
+- Project reports / per-project utilization breakdown / project-specific Today's Sales filters.
+- Customer profile / purchase history surface (showing all projects per client) — declined umbrella.
+- "Project balance viewer" decoration on CustomerSearch results — declined as customer search surface decoration umbrella.
+- Tag printing for project receipt (no real printer).
+- Operator-attention notification when stage overdue (declined umbrella).
+- Stripe Schedule API or any backend recurring billing for stages.
+- Multi-vertical projects (project must live entirely within photography vertical).
+- Reports overlay surface extensions of any kind (declined umbrella).
+- Decorative animations on stage payment moment.
+- 10th vertical of any tier.
+- README / replit.md updates — defer to a future wrap batch.
+- Settings tab edits to anything project-related.
+- Audit log viewer for project events (declined list-view umbrella).
+- Manager PIN gate on project setup or stage charges (no role-based authorization).
+- Family / multi-client projects (one client per project).
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4. No new dependencies.
+- setInterval count must remain exactly 1 (in src/hooks/useElapsedTick.ts only).
+- TypeScript strict. Project, ProjectStage, projectEnabled, isProject, projectId, projectStageId fully typed; localStorage hydration without any.
+- Per-vertical localStorage namespacing follows nuatis-pos:{verticalId}:{key} pattern. Add the new key to whatever array/constant enumerates per-vertical keys.
+- ProjectsOverlay respects 7-way mutual-exclusivity rule — Waitlist / Appointments / Today's Sales / Settings / Open Tickets / Classes / Projects.
+- ProjectsOverlay reuses OpenTicketsOverlay's right-drawer shell — do not fork.
+- ProjectSetupModal reuses existing modal shell + backdrop pattern. Customer-attach within ProjectSetupModal reuses existing CustomerSearch component.
+- Stage badge color states reuse existing badge component shell with new color mappings; do not create a new badge component.
+- Project total verification: stages.reduce((s, st) => s + st.allocationCents, 0) must equal totalCents within ±1 cent rounding tolerance. Implement helper, fail-loud in dev console if violated.
+- Pickup-mode-style cart banner pattern reused for "Project · {clientName} · {serviceName}" banner.
+
+ACCEPTANCE
+Pre-implementation evidence:
+- Line 1 of WHAT WAS BUILT: Format contract acknowledged.
+- Line 2 of WHAT WAS BUILT: literal output of grep -rn "setInterval" src/ at end of batch.
+- Line 3 of WHAT WAS BUILT: literal output of git diff --name-only HEAD at end of batch.
+
+Behavioral:
+- Switch to photography vertical. Register grid renders 12 services in cream/sepia palette; 4 project-eligible services (Wedding, Engagement, Portrait, Event) are visually distinct from non-project (a small marker like a corner indicator — minimal addition, do not overdesign).
+- Tap Wedding Photography Package $3000 with no client attached: ProjectSetupModal opens, shows 3 stages (Deposit 25% $750, Progress 50% $1500, Final 25% $750), total verification line shows $3000 = sum, Confirm button is disabled with tooltip "Client required".
+- Open the embedded CustomerSearch within ProjectSetupModal, attach a client. Confirm enabled. Tap Confirm → modal closes; cart is empty (project setup does not hydrate cart); header pill "Projects: 1" appears.
+- Tap Projects pill → ProjectsOverlay opens. Single row visible: client name, "Wedding Photography Package", "$0 of $3000 paid · 0%". Three stage badges: DEPOSIT (unpaid amber), PROGRESS (unpaid gray), FINAL (unpaid gray).
+- Expand row → stage detail shows three rows. DEPOSIT row has Charge Stage button enabled. PROGRESS and FINAL rows have Charge Stage disabled with tooltip "Charge previous stage first".
+- Tap Charge Stage on DEPOSIT → ProjectsOverlay closes; cart hydrates with one line "Wedding Photography Package · Deposit (25%)" at $750; client auto-attached; banner reads "Project · {clientName} · Wedding Photography Package".
+- Standard Card payment flow on $750 → success. Inspect transaction record: projectId set, projectStageId set, transaction has standard fields. Inspect Project record: stages[0].transactionId and paidAt set; stages[1] and stages[2] still unpaid.
+- Reopen ProjectsOverlay: row now reads "$750 of $3000 paid · 25%". DEPOSIT badge flipped to paid green; PROGRESS unpaid amber and now has Charge Stage enabled.
+- Tap Charge Stage on PROGRESS → cart hydrates at $1500 with "Wedding Photography Package · Progress (50%)" line. Cash flow $1500 cash payment with $0 change → success. Inspect: stages[1].paidAt set; row reads "$2250 of $3000 paid · 75%".
+- Tap Charge Stage on FINAL → cart hydrates at $750. Charge → success. Inspect: stages[2].paidAt set; Project.completedAt set; row label updates to "Project complete · $3000 total". Projects pill drops to 0 (or hides if no other active projects).
+- Receipts: each of the 3 stage transactions shows the formatted line label, and footnote "Project balance: $X paid of $3000 · N stages remaining" with the stage-time numbers. Final-stage receipt footnote reads "Project complete · $3000 total".
+- Today's Sales: 3 PROJECT STAGE badges visible across the 3 transactions. Per-staff revenue: the staff attributed across stages is credited at $750, $1500, $750 respectively. Payment mix: $750 + $750 = $1500 in Card column from B-1 and B-3, $1500 in Cash column from B-2.
+- Edge: with no client and tap Engagement Shoot $500 (also project-eligible) → ProjectSetupModal opens with 3 stages of $125/$250/$125. Does not allow proceed without client.
+- Edge: tap Photo Album $400 (NOT project-eligible) → standard cart-add behavior; no modal.
+- Switch to salon vertical with photography projects active: Projects pill hides; salon flows unchanged. Switch back: pill restored.
+- 7-way mutex demonstration: open Projects while Waitlist is open → Waitlist closes first. Same for Appointments / Today's Sales / Settings / Open Tickets / Classes.
+- All 8 prior verticals regression-tested for projectEnabled === false default — Projects pill never shown, ProjectsOverlay never accessible, project-eligible service tiles do not exist (photography-only services).
+
+TypeScript / runtime:
+- TypeScript check clean.
+- No console errors during HMR or any flow.
+- Stage allocation sum verification helper does not throw on the seeded 25/50/25 default.
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — STRICT MODE
+Four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+Line 1 of WHAT WAS BUILT: Format contract acknowledged.
+Line 2: literal grep -rn "setInterval" src/ output.
+Line 3: literal git diff --name-only HEAD output.
+Forbidden phrases: "Next, I can add", "Would you like me to", "I could also", "Let me know if you want", "Happy to add", "future batch".
+Self-corrections during this batch are reported in ERRORS ENCOUNTERED with verbatim before/after.
+ITEMS SKIPPED enumerates every DO NOT BUILD item from this prompt as a one-line bullet, confirming each was not done.
+OPEN QUESTIONS includes the stage-refund question seeded above; if other ambiguity surfaces, list it; if genuinely no other ambiguity, just the seeded question.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.

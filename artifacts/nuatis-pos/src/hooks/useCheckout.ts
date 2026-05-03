@@ -66,6 +66,16 @@ export interface Transaction {
   classSlotId?: string;
   // B32: pack purchase — id of the PackBalance created by this transaction
   packPurchaseId?: string;
+  // B33: project stage fields
+  projectId?: string;
+  projectStageId?: string;
+  projectReceipt?: {
+    stageLabel: string;
+    stagePct: number;
+    projectTotalCents: number;
+    paidCentsAfter: number;
+    stagesRemainingAfter: number;
+  };
 }
 
 export interface ConfirmData {
@@ -92,6 +102,16 @@ export interface ConfirmData {
   classSlotId?: string;
   // B32: pack purchase id to stamp on transaction
   packPurchaseId?: string;
+  // B33: project stage fields
+  projectId?: string;
+  projectStageId?: string;
+  projectReceipt?: {
+    stageLabel: string;
+    stagePct: number;
+    projectTotalCents: number;
+    paidCentsAfter: number;
+    stagesRemainingAfter: number;
+  };
 }
 
 function appendTransaction(tx: Transaction, verticalId: string): void {
@@ -189,6 +209,9 @@ export function useCheckout(onComplete: () => void) {
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
         ...(data.classSlotId && { classSlotId: data.classSlotId }),
         ...(data.packPurchaseId && { packPurchaseId: data.packPurchaseId }),
+        ...(data.projectId && { projectId: data.projectId }),
+        ...(data.projectStageId && { projectStageId: data.projectStageId }),
+        ...(data.projectReceipt && { projectReceipt: data.projectReceipt }),
       };
       setProcessingTotalCents(tx.totalPaid ?? totalPaid);
       setCompletedTx(tx);
@@ -219,6 +242,9 @@ export function useCheckout(onComplete: () => void) {
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
         ...(data.classSlotId && { classSlotId: data.classSlotId }),
         ...(data.packPurchaseId && { packPurchaseId: data.packPurchaseId }),
+        ...(data.projectId && { projectId: data.projectId }),
+        ...(data.projectStageId && { projectStageId: data.projectStageId }),
+        ...(data.projectReceipt && { projectReceipt: data.projectReceipt }),
       };
       setCompletedTx(tx);
       setState("receipt");
@@ -250,6 +276,9 @@ export function useCheckout(onComplete: () => void) {
         ...(data.openTicketId && { openTicketId: data.openTicketId }),
         ...(data.classSlotId && { classSlotId: data.classSlotId }),
         ...(data.packPurchaseId && { packPurchaseId: data.packPurchaseId }),
+        ...(data.projectId && { projectId: data.projectId }),
+        ...(data.projectStageId && { projectStageId: data.projectStageId }),
+        ...(data.projectReceipt && { projectReceipt: data.projectReceipt }),
       };
       setCompletedTx(tx);
       setState("receipt");

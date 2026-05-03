@@ -57,6 +57,10 @@ import type { VaccinationRequirement } from "@/lib/vaccinations";
 import { getApplicablePacks, writePackBalance, decrementPackBalance } from "@/lib/packBalances";
 import type { PackBalance } from "@/lib/packBalances";
 import { ClassPackConfirmModal } from "@/components/ClassPackConfirmModal";
+import { useProjects } from "@/hooks/useProjects";
+import type { Project, ProjectStage } from "@/hooks/useProjects";
+import { ProjectSetupModal } from "@/components/ProjectSetupModal";
+import { ProjectsOverlay } from "@/components/ProjectsOverlay";
 
 interface RegisterPageProps {
   user: AuthUser;
@@ -123,6 +127,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   // B29: class slots (yoga_pilates vertical)
   const classSlots = useClassSlots();
 
+  // B33: projects (photography vertical)
+  const projectsHook = useProjects();
+
   // B23: useElapsedTick — ONLY setInterval in the codebase
   const hasActiveSessions = lines.some(
     (l) => l.sessionStartedAt !== undefined && l.sessionEndedAt === undefined,
@@ -153,6 +160,24 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
 
   // B27: drop-off workflow state
   const [showOpenTickets, setShowOpenTickets] = useState(false);
+
+  // B33: projects state
+  const [showProjectSetup, setShowProjectSetup] = useState(false);
+  const [pendingProjectService, setPendingProjectService] = useState<Service | null>(null);
+  const [showProjects, setShowProjects] = useState(false);
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  const [pendingProjectStageId, setPendingProjectStageId] = useState<string | null>(null);
+  const [pendingProjectReceipt, setPendingProjectReceipt] = useState<{
+    stageLabel: string;
+    stagePct: number;
+    projectTotalCents: number;
+    paidCentsAfter: number;
+    stagesRemainingAfter: number;
+  } | null>(null);
+  const [projectBannerContext, setProjectBannerContext] = useState<{
+    clientName: string;
+    serviceName: string;
+  } | null>(null);
 
   // B29: classes overlay state
   const [showClasses, setShowClasses] = useState(false);
@@ -239,10 +264,27 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     [addItem, activeStaff.id],
   );
 
+  // ── B33: Clear project context when cart empties ──────────────────────────
+  useEffect(() => {
+    if (lines.length === 0) {
+      setPendingProjectId(null);
+      setPendingProjectStageId(null);
+      setPendingProjectReceipt(null);
+      setProjectBannerContext(null);
+    }
+  }, [lines.length]);
+
   // ── Tile tap ───────────────────────────────────────────────────────────────
 
   const handleTileTap = useCallback(
     (service: Service) => {
+      // B33: Photography — project services open ProjectSetupModal
+      if (config.projectEnabled && service.isProject) {
+        setPendingProjectService(service);
+        setShowProjectSetup(true);
+        return;
+      }
+
       // Pet grooming: customer must be attached first
       if (activeVerticalId === "pet_grooming") {
         if (!customer) {
@@ -398,6 +440,59 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     setShowCustomerSearch(true);
   }, []);
 
+  // ── B33: Project setup confirm ────────────────────────────────────────────
+
+  const handleProjectSetupConfirm = useCallback(
+    (clientId: string, clientName: string) => {
+      if (!pendingProjectService) return;
+      projectsHook.createProject(
+        pendingProjectService.id,
+        pendingProjectService.name,
+        clientId,
+        clientName,
+        pendingProjectService.priceCents,
+      );
+      setShowProjectSetup(false);
+      setPendingProjectService(null);
+      setShowProjects(true);
+    },
+    [pendingProjectService, projectsHook],
+  );
+
+  // ── B33: Charge project stage ────────────────────────────────────────────
+
+  const handleChargeStage = useCallback(
+    (project: Project, stage: ProjectStage) => {
+      const lineName = `${project.serviceName} · ${stage.label} (${stage.allocationPct}%)`;
+      const paidBefore = project.stages.reduce(
+        (s, st) => s + (st.paidAt ? st.allocationCents : 0),
+        0,
+      );
+      const paidCentsAfter = paidBefore + stage.allocationCents;
+      const stagesRemainingAfter = project.stages.filter(
+        (st) => !st.paidAt && st.id !== stage.id,
+      ).length;
+      const receipt = {
+        stageLabel: stage.label,
+        stagePct: stage.allocationPct,
+        projectTotalCents: project.totalCents,
+        paidCentsAfter,
+        stagesRemainingAfter,
+      };
+      setPendingProjectId(project.id);
+      setPendingProjectStageId(stage.id);
+      setPendingProjectReceipt(receipt);
+      setProjectBannerContext({ clientName: project.customerName, serviceName: project.serviceName });
+      const nameParts = project.customerName.trim().split(/\s+/);
+      const firstName = nameParts[0] ?? project.customerName;
+      const lastName = nameParts.slice(1).join(" ");
+      attachCustomer({ id: project.customerId, firstName, lastName, phone: "" });
+      addItem(stage.id, lineName, stage.allocationCents, activeStaff.id);
+      setShowProjects(false);
+    },
+    [addItem, attachCustomer, activeStaff.id],
+  );
+
   // ── Vaccination gate callbacks ────────────────────────────────────────────
 
   const handleVaccinationAdd = useCallback(
@@ -467,8 +562,11 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
       ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
       ...(packPurchaseId ? { packPurchaseId } : {}),
+      ...(pendingProjectId ? { projectId: pendingProjectId } : {}),
+      ...(pendingProjectStageId ? { projectStageId: pendingProjectStageId } : {}),
+      ...(pendingProjectReceipt ? { projectReceipt: pendingProjectReceipt } : {}),
     });
-  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services]);
+  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services, pendingProjectId, pendingProjectStageId, pendingProjectReceipt]);
 
   const handleOpenCash = useCallback(() => {
     setShowCashModal(true);
@@ -500,12 +598,15 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
         ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
         ...(packPurchaseId ? { packPurchaseId } : {}),
+        ...(pendingProjectId ? { projectId: pendingProjectId } : {}),
+        ...(pendingProjectStageId ? { projectStageId: pendingProjectStageId } : {}),
+        ...(pendingProjectReceipt ? { projectReceipt: pendingProjectReceipt } : {}),
       });
       if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
       setCashDrawerToast(true);
       cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services, pendingProjectId, pendingProjectStageId, pendingProjectReceipt],
   );
 
   const handleOpenSplit = useCallback(() => {
@@ -535,6 +636,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
         ...(classBookingContext ? { classSlotId: classBookingContext.slotId } : {}),
         ...(packPurchaseId ? { packPurchaseId } : {}),
+        ...(pendingProjectId ? { projectId: pendingProjectId } : {}),
+        ...(pendingProjectStageId ? { projectStageId: pendingProjectStageId } : {}),
+        ...(pendingProjectReceipt ? { projectReceipt: pendingProjectReceipt } : {}),
       });
       if (payments.some((p) => p.method === "cash")) {
         if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
@@ -542,7 +646,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
       }
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId, classBookingContext, config.services, pendingProjectId, pendingProjectStageId, pendingProjectReceipt],
   );
 
   const handleHold = useCallback(() => {
@@ -660,6 +764,10 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       );
       setClassBookingContext(null);
     }
+    // B33: mark project stage paid
+    if (pendingProjectId && pendingProjectStageId && checkout.completedTx) {
+      projectsHook.markStagePaid(pendingProjectId, pendingProjectStageId, checkout.completedTx.id);
+    }
     // B32: write pack balance if this was a pack purchase transaction
     if (checkout.completedTx?.packPurchaseId && checkout.completedTx.customer) {
       const tx = checkout.completedTx;
@@ -687,7 +795,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       }
     }
     checkout.completeSale();
-  }, [pickupTicketId, checkout, openTicketsHook, classBookingContext, classSlots, config.services, activeVerticalId]);
+  }, [pickupTicketId, checkout, openTicketsHook, classBookingContext, classSlots, config.services, activeVerticalId, pendingProjectId, pendingProjectStageId, projectsHook]);
 
   const handleStartWalkIn = useCallback(
     (entry: WaitlistEntry) => {
@@ -779,6 +887,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           setShowAppointments(false);
           setShowOpenTickets(false);
           setShowClasses(false);
+          setShowProjects(false);
           setShowWaitlist(true);
         }}
         appointmentsCount={appointmentsUrgentCount}
@@ -786,6 +895,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           setShowWaitlist(false);
           setShowOpenTickets(false);
           setShowClasses(false);
+          setShowProjects(false);
           setShowAppointments(true);
         }}
         openTicketsCount={openTicketsHook.activeCount}
@@ -793,6 +903,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           setShowWaitlist(false);
           setShowAppointments(false);
           setShowClasses(false);
+          setShowProjects(false);
           setShowOpenTickets(true);
         }}
         classesCount={config.classEnabled ? classSlots.slots.filter(s => s.roster.length < s.capacity).length : undefined}
@@ -800,7 +911,16 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           setShowWaitlist(false);
           setShowAppointments(false);
           setShowOpenTickets(false);
+          setShowProjects(false);
           setShowClasses(true);
+        }}
+        projectsCount={config.projectEnabled ? projectsHook.activeProjectCount : undefined}
+        onOpenProjects={() => {
+          setShowWaitlist(false);
+          setShowAppointments(false);
+          setShowOpenTickets(false);
+          setShowClasses(false);
+          setShowProjects(true);
         }}
         activeVerticalDisplayName={config.displayName}
         switcherDisabled={switcherDisabled}
@@ -867,6 +987,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             onDropOff={handleDropOff}
             onReturnToInProgress={handleReturnToInProgress}
             classBookingContext={classBookingContext}
+            projectBannerContext={projectBannerContext}
           />
         </aside>
       </div>
@@ -1018,6 +1139,29 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           />
         );
       })()}
+
+      {/* B33: Project setup modal */}
+      {showProjectSetup && pendingProjectService && (
+        <ProjectSetupModal
+          serviceId={pendingProjectService.id}
+          serviceName={pendingProjectService.name}
+          priceCents={pendingProjectService.priceCents}
+          onConfirm={handleProjectSetupConfirm}
+          onCancel={() => {
+            setShowProjectSetup(false);
+            setPendingProjectService(null);
+          }}
+        />
+      )}
+
+      {/* B33: Projects overlay */}
+      {showProjects && (
+        <ProjectsOverlay
+          projects={projectsHook.projects}
+          onChargeStage={handleChargeStage}
+          onClose={() => setShowProjects(false)}
+        />
+      )}
 
       {/* B29: Classes overlay */}
       {showClasses && (

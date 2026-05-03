@@ -23,6 +23,10 @@ import {
   YOGA_CUSTOMERS,
   addYogaCustomerInMemory,
 } from "@/lib/yoga-customers";
+import {
+  getPhotographyCustomers,
+  addPhotographyCustomerInMemory,
+} from "@/lib/photography-customers";
 import { normalizePhone, formatPhone } from "@/lib/phone";
 import { getVaccinationStatus } from "@/lib/vaccinations";
 
@@ -323,6 +327,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
   const isTanning = verticalId === "tanning";
   const isLaundry = verticalId === "laundry";
   const isYoga = verticalId === "yoga_pilates";
+  const isPhotography = verticalId === "photography";
 
   const [query, setQuery] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -350,7 +355,9 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
         ? LAUNDRY_CUSTOMERS
         : isYoga
           ? YOGA_CUSTOMERS
-          : CUSTOMERS;
+          : isPhotography
+            ? (getPhotographyCustomers() as unknown as Customer[])
+            : CUSTOMERS;
 
   const normalizedQ = normalizePhone(query);
   const phoneMode = isPhoneQuery(query);
@@ -385,7 +392,9 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
         ? "Laundry"
         : isYoga
           ? "Yoga & Pilates"
-          : null;
+          : isPhotography
+            ? "Photography"
+            : null;
   const verticalBadgeStyle = isPetGrooming
     ? { backgroundColor: "#D1FAE5", color: "#065F46" }
     : isTanning
@@ -394,7 +403,9 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
         ? { backgroundColor: "#DBEAFE", color: "#1E40AF" }
         : isYoga
           ? { backgroundColor: "#D1EDD4", color: "#1A6B2A" }
-          : {};
+          : isPhotography
+            ? { backgroundColor: "#F5ECD7", color: "#4A3120" }
+            : {};
 
   return (
     <div
@@ -514,6 +525,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
                 if (isTanning) addTanningCustomerInMemory(c);
                 else if (isLaundry) addLaundryCustomerInMemory(c);
                 else if (isYoga) addYogaCustomerInMemory(c);
+                else if (isPhotography) addPhotographyCustomerInMemory(c);
                 else addCustomerInMemory(c);
                 handleAttachDirect(c);
               }}
@@ -536,6 +548,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
                 if (isTanning) addTanningCustomerInMemory(c);
                 else if (isLaundry) addLaundryCustomerInMemory(c);
                 else if (isYoga) addYogaCustomerInMemory(c);
+                else if (isPhotography) addPhotographyCustomerInMemory(c);
                 else addCustomerInMemory(c);
                 handleAttachDirect(c);
               }}

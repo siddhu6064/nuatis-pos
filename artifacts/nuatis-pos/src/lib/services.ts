@@ -45,6 +45,8 @@ export interface Service {
   isClass?: boolean;
   // B32: optional — true for class-pack purchasable services
   packageDef?: PackageDef;
+  // B33: optional — true for project-eligible services (photography packages)
+  isProject?: boolean;
 }
 
 export const SERVICES: Service[] = [

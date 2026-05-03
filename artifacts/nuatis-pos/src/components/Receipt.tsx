@@ -585,6 +585,42 @@ export function Receipt({ transaction, linkedDepositTx }: ReceiptProps) {
         </div>
       )}
 
+      {/* B33: Project stage footnote */}
+      {transaction.projectReceipt && (() => {
+        const pr = transaction.projectReceipt;
+        const isLastStage = pr.stagesRemainingAfter === 0;
+        return (
+          <div
+            className="mb-2 px-2 py-1.5 rounded-lg"
+            style={{ backgroundColor: "#FAF6F0", border: "1px solid #C4A882" }}
+          >
+            <p
+              className="text-[10px] font-semibold mb-0.5"
+              style={{ color: "#4A3120", fontFamily: "'Epilogue', sans-serif" }}
+            >
+              PROJECT STAGE
+            </p>
+            {isLastStage ? (
+              <p
+                className="text-[10px]"
+                style={{ color: "#9B7F5E", fontFamily: "'Epilogue', sans-serif" }}
+              >
+                Project complete · {formatCurrency(pr.projectTotalCents)} total paid
+              </p>
+            ) : (
+              <p
+                className="text-[10px]"
+                style={{ color: "#9B7F5E", fontFamily: "'Epilogue', sans-serif" }}
+              >
+                {pr.stageLabel} ({pr.stagePct}%) · {formatCurrency(pr.paidCentsAfter)} paid of{" "}
+                {formatCurrency(pr.projectTotalCents)} total · {pr.stagesRemainingAfter}{" "}
+                {pr.stagesRemainingAfter === 1 ? "stage" : "stages"} remaining
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Linked deposit footnote */}
       {hasDepositCredit && linkedDepositTx && (
         <p className="text-[11px] text-gray-400 mb-2">

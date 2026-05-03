@@ -52,6 +52,8 @@ interface CartProps {
   onReturnToInProgress: () => void;
   // B29: class booking context
   classBookingContext?: { scheduledAt: number; serviceName: string } | null;
+  // B33: project stage context
+  projectBannerContext?: { clientName: string; serviceName: string } | null;
 }
 
 const SESSION_GATE_TOOLTIP = "Stop all sessions before checkout";
@@ -96,6 +98,7 @@ export function Cart({
   onDropOff,
   onReturnToInProgress,
   classBookingContext,
+  projectBannerContext,
 }: CartProps) {
   const { settings } = useVerticalSettings();
   const [showCompModal, setShowCompModal] = useState(false);
@@ -292,6 +295,22 @@ export function Cart({
             style={{ color: "#1A6B2A", fontFamily: "'Epilogue', sans-serif" }}
           >
             Class booking · {new Date(classBookingContext.scheduledAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })} · {classBookingContext.serviceName}
+          </span>
+        </div>
+      )}
+
+      {/* B33: Project stage banner */}
+      {projectBannerContext && !isEmpty && (
+        <div
+          className="px-4 py-2 border-b flex-shrink-0 flex items-center gap-2"
+          style={{ backgroundColor: "#FAF6F0", borderColor: "#C4A882", borderBottomWidth: 1 }}
+        >
+          <span className="text-[13px]">📷</span>
+          <span
+            className="text-[12px] font-semibold"
+            style={{ color: "#4A3120", fontFamily: "'Epilogue', sans-serif" }}
+          >
+            Project · {projectBannerContext.clientName} · {projectBannerContext.serviceName}
           </span>
         </div>
       )}

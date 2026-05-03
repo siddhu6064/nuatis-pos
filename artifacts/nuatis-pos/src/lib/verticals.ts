@@ -23,8 +23,13 @@ import {
   YOGA_MODIFIERS_BY_SERVICE,
   YOGA_CATEGORY_COLORS,
 } from "@/lib/yoga-services";
+import {
+  PHOTOGRAPHY_SERVICES,
+  PHOTOGRAPHY_MODIFIERS_BY_SERVICE,
+  PHOTOGRAPHY_CATEGORY_COLORS,
+} from "@/lib/photography-services";
 
-export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming" | "tanning" | "laundry" | "yoga_pilates";
+export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming" | "tanning" | "laundry" | "yoga_pilates" | "photography";
 
 export interface BusinessInfo {
   name: string;
@@ -46,6 +51,8 @@ export interface VerticalConfig {
   serviceTerm: string;
   // B29: true for verticals that have a class schedule
   classEnabled?: boolean;
+  // B33: true for verticals that support multi-stage project payments
+  projectEnabled?: boolean;
 }
 
 // ── Spa services ─────────────────────────────────────────────────────────────
@@ -286,6 +293,24 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     staffTerm: "instructor",
     serviceTerm: "class",
     classEnabled: true,
+  },
+  photography: {
+    id: "photography",
+    displayName: "Photography",
+    tagline: "Packages, shoots, and deliverables for every occasion",
+    business: {
+      name: "Nuatis POS Demo Photography",
+      address: "404 Lens Lane, Austin, TX 78709",
+      phone: "(512) 555-0900",
+    },
+    services: PHOTOGRAPHY_SERVICES,
+    modifiersByService: PHOTOGRAPHY_MODIFIERS_BY_SERVICE,
+    categoryColors: PHOTOGRAPHY_CATEGORY_COLORS,
+    workflow: "same_visit",
+    customerTerm: "client",
+    staffTerm: "photographer",
+    serviceTerm: "package",
+    projectEnabled: true,
   },
 };
 
