@@ -1,0 +1,111 @@
+▶ PROMPT [Phase 3 · Batch 31 · Replit Agent · STRICT MODE · AUDIT]
+
+FORMAT CONTRACT — NON-NEGOTIABLE
+Your response will contain exactly four top-level sections in this exact order with these exact headings:
+
+WHAT WAS BUILT
+ERRORS ENCOUNTERED
+ITEMS SKIPPED
+OPEN QUESTIONS
+
+The first line of WHAT WAS BUILT is "Format contract acknowledged."
+
+No preamble. No fifth section. No closing pitch. The phrase "Next, I can add" must not appear in your response. The phrase "Would you like me to" must not appear in your response. No suggestion of follow-on work in any form.
+
+EVIDENCE OVER CLAIMS — NON-NEGOTIABLE
+Every audit step below requires you to paste literal command output or literal file contents (with line numbers as the view tool shows them). Paraphrasing is a discipline failure. Summarizing is a discipline failure. Writing "matched expected" or "all clean" instead of pasting bytes is a discipline failure. The audit is not the prose around the evidence — the audit IS the evidence.
+
+If a command output is long, paste all of it anyway. Do not truncate.
+
+CONTEXT
+B30 was a strict-mode wrap that violated the strict-mode contract — audit outputs were paraphrased instead of pasted, the four-section report was replaced with narrative, the closing pitch reappeared, and the classesCount semantic finding was never reported. The wrap docs (README v7, replit.md v7, screenshots/README.md, package.json at 0.0.11-prototype) appear to have been written and tag v0.0.11-prototype was pushed. This batch verifies the actual classesCount semantic in the running code, documents the finding with evidence, and applies a single targeted code fix ONLY IF the implementation deviates from the original B29 spec ("count of slots with available capacity"). If the implementation already matches the spec, no code changes occur.
+
+This is a verification-and-targeted-fix batch. It is not a feature batch. It is not a docs batch. The deliverable is evidence + at most one tiny code fix.
+
+GOAL
+Verify the actual semantic of the classesCount value passed from RegisterPage to Header for the yoga_pilates vertical. If the value as implemented equals the count of slots with available capacity (NOT full), no code change. If the value equals total enrolled across all slots or any other semantic, apply a one-line fix to RegisterPage.tsx so the value matches the original B29 spec.
+
+SCOPE — BUILD THIS
+
+Audit step 1. Run `pwd` and paste the literal output.
+
+Audit step 2. Run `git log --oneline -5` and paste the literal output.
+
+Audit step 3. Run `git status` and paste the literal output.
+
+Audit step 4. Open src/pages/RegisterPage.tsx. Locate every line that references `classesCount`, `classes_count`, or any variable being passed to Header as the classes pill count. Use the view tool. Paste each occurrence with the line number prefix as shown by the view tool, plus 3 lines of context above and below each occurrence.
+
+Audit step 5. Open src/components/Header.tsx. Locate every line that references the classes pill count value (the prop received from RegisterPage). Paste each occurrence with line number and 3 lines of context.
+
+Audit step 6. Open src/lib/classSlots.ts (or wherever ClassSlot helpers live — find via grep if path differs). Locate any helper named `isSlotFull`, `hasAvailableCapacity`, or similar. Paste the function bodies verbatim with line numbers.
+
+Audit step 7. Open src/hooks/useClassSlots.ts. Paste the entire return value / hook surface (the object literal returned, or the destructure of returned values). Include line numbers.
+
+Audit step 8. Compute the expected value under each interpretation using the B29 seed slot data. Seed slots from B29 spec:
+   9:00am Vinyasa Flow — capacity 12, enrolled 3
+   11:00am Yin Yoga — capacity 10, enrolled 8
+   12:00pm Power Yoga — capacity 15, enrolled 0
+   4:00pm Hot Yoga — capacity 12, enrolled 12 (FULL)
+   6:00pm Vinyasa Flow — capacity 12, enrolled 5
+   7:00pm Aerial Yoga — capacity 6, enrolled 4
+
+   Interpretation A (per B29 spec): count of slots with available capacity. Expected: 5.
+   Interpretation B (per B29 agent self-report): total enrolled across all slots. Expected: 32.
+   Interpretation C: any other semantic — state what.
+
+   State which interpretation the actual code in RegisterPage.tsx implements based on the lines pasted in audit step 4. Cite the specific line(s) supporting your conclusion. If the conclusion is ambiguous from static reading, say so explicitly.
+
+Audit step 9. Run `grep -rn "classesCount" src/` and paste the literal output. Then run `grep -rn "setInterval" src/` and paste the literal output (expected: exactly 1 match in src/hooks/useElapsedTick.ts).
+
+Decision step. Based on audit step 8:
+
+   IF interpretation is A: no code change. Write "No code change required — implementation matches spec." in WHAT WAS BUILT after the audit. Move to acceptance.
+
+   IF interpretation is B or C (deviates from spec): apply a single targeted edit to RegisterPage.tsx. Replace the existing classesCount computation with one that returns the count of slots with available capacity. Use the existing `isSlotFull` helper if present, or compute inline as `classSlots.filter(s => s.roster.length < s.capacity).length`. Paste the BEFORE block (3-line context + the changed line) and the AFTER block (same shape). Re-run TypeScript check. Paste the literal output of the typecheck command (`npx tsc --noEmit` or whatever the project uses — find the script in package.json if needed). Re-run `grep -rn "setInterval" src/` and paste the output (must still be exactly 1).
+
+Verification step (always runs, after either branch).
+
+   Run `git diff --name-only HEAD` and paste the literal output. The output must be either:
+   - Empty (interpretation A — no code change), OR
+   - Exactly one line: `src/pages/RegisterPage.tsx` (interpretation B/C — single targeted fix)
+   Any other path in the diff is a discipline failure and must be reverted before reporting.
+
+   Run `git diff HEAD` and paste the literal output. Empty diff if no change; the BEFORE/AFTER lines if a fix was applied.
+
+SCOPE — DO NOT BUILD
+- No documentation changes. README, replit.md, screenshots/README.md, package.json all stay untouched. The B30 wrap already documented the semantic; if the code is fixed in this batch, the documented "Known Limitation" entry will read as a non-issue going forward, but the docs themselves are not edited here.
+- No new features, components, hooks, types, or lib modules.
+- No refactoring of useClassSlots or ClassesOverlay or any other existing component.
+- No source file edits other than the single targeted line in RegisterPage.tsx, and only if interpretation B or C.
+- No package.json edits. No version bump.
+- No git operations. Sid runs git himself.
+- No screenshot generation, no test additions, no new acceptance harness.
+- No closing suggestion section. No "Next, I can add" pitch. No "Would you like me to" question.
+- No roster export, no waitlist, no shift history viewer, no Reports overlay extensions, no decorative animations — all previously declined umbrellas re-declined.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4. No new dependencies.
+- setInterval count must remain exactly 1 (in src/hooks/useElapsedTick.ts only).
+- TypeScript strict. Any code change must compile clean.
+- The targeted edit, if applied, must be the smallest possible change — ideally a single expression change in one line plus its computation. Do not refactor surrounding code.
+
+ACCEPTANCE
+- All 9 audit steps appear in WHAT WAS BUILT, in order, with literal command output and literal file content (with line numbers) where called for. Paraphrasing in any audit step is a discipline failure.
+- Audit step 8's interpretation conclusion is stated explicitly and cites specific line numbers from audit step 4.
+- Decision step result is stated explicitly: either "No code change required" or BEFORE/AFTER blocks plus typecheck output.
+- Verification step's `git diff --name-only HEAD` output is pasted literally and contains either nothing or exactly one path: `src/pages/RegisterPage.tsx`.
+- Verification step's `git diff HEAD` output is pasted literally.
+- ERRORS ENCOUNTERED reports any self-correction during the batch — including any audit command that returned an unexpected result and required you to look further. If genuinely none, write "None."
+- ITEMS SKIPPED enumerates the explicit DO NOT BUILD items confirmed not done: documentation changes, new features, refactoring, version bump, git operations, decorative animations, declined umbrellas. Each as a one-line bullet.
+- OPEN QUESTIONS lists any ambiguity surfaced. If genuinely none, write "None."
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — STRICT MODE
+Four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+First line of WHAT WAS BUILT is "Format contract acknowledged."
+No preamble. No fifth section. No closing pitch. No "Next, I can add". No "Would you like me to".
+Audit outputs are literal command output and literal file content with line numbers — not paraphrased.
+Self-corrections during this batch are reported in ERRORS ENCOUNTERED with verbatim before/after.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.

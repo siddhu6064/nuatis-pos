@@ -664,7 +664,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           setShowClasses(false);
           setShowOpenTickets(true);
         }}
-        classesCount={config.classEnabled ? classSlots.totalEnrolled : undefined}
+        classesCount={config.classEnabled ? classSlots.slots.filter(s => s.roster.length < s.capacity).length : undefined}
         onOpenClasses={() => {
           setShowWaitlist(false);
           setShowAppointments(false);
