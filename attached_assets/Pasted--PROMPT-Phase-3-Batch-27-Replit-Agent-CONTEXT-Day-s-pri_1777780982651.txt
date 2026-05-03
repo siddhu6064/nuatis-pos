@@ -1,0 +1,82 @@
+▶ PROMPT [Phase 3 · Batch 27 · Replit Agent]
+
+CONTEXT
+Day's prior wrinkle framework (money/state/duration) is exhaustive along the service-line-shape axis (how a single line behaves within a same-visit ticket). The production master (PRD §8.4, MVP §16.5) surfaces a separate axis untouched by the prototype: ticket-lifecycle shape. P11 Tier 4 Drop-Off (laundry, tailoring, shoe_repair, jewelry_repair) introduces the two-stage workflow — drop-off creates an open ticket without payment; ticket persists across visits; pickup hydrates the open ticket into a normal checkout flow. Same pattern is reused by P8 pet boarding/daycare and P10 auto/bike repair. This batch validates the round trip with one vertical (laundry) so the engine config can scope ticket lifecycle to specific verticals.
+
+GOAL
+Add laundry as a 7th vertical with workflow='drop_off'. Operator can drop off goods (no payment, tag assigned, customer required), see the open ticket persist in a header pill + overlay, mark it ready (mock-SMS toast), then pick it up (cart hydrates, normal checkout flow completes the ticket). The same-visit flow for all 6 prior verticals is unchanged.
+
+SCOPE — BUILD THIS
+- New laundry vertical config registered in lib/verticals.ts. workflow: 'drop_off' added to VerticalConfig type; existing verticals get workflow: 'same_visit' default. Color palette: muted blue + bronze accents, distinct from tanning's warm gold. customerTerm='customer', staffTerm='staff', serviceTerm='order' (per PRD §8.4.1).
+- New lib/laundry-services.ts: 12 services. 8 fixed-price (Wash & Fold Small $15, Wash & Fold Medium $25, Wash & Fold Large $40, Dry Clean Shirt $7, Dry Clean Suit $25, Comforter $30, Wedding Gown $120, Iron-Only $5) + 4 add-on style fixed-price (Same-Day Rush $10, Hypoallergenic Detergent $3, Plastic Garment Bags $2, Stain Treatment $5). Per-pound math is intentionally skipped — covered by the tanning per-minute pattern already; this batch is about lifecycle, not pricing math.
+- New lib/laundry-customers.ts: 4 seed customers (no pet fields).
+- New OpenTicket type in lib/openTickets.ts: { id, verticalId, tag, customerId, customerName, lines (CartLine[]), droppedOffAt, markedReadyAt?, pickedUpAt?, status: 'in_progress' | 'ready_for_pickup' | 'picked_up' }.
+- New localStorage keys per vertical (only laundry uses them in this batch but the helpers are vertical-parameterized): nuatis-pos:{verticalId}:openTickets (active in_progress + ready_for_pickup, full record), nuatis-pos:{verticalId}:closedTickets (picked_up, cap last 50), nuatis-pos:{verticalId}:tagCounter (sequential int).
+- Tag generation: sequential per-vertical, format "LAUN-{0001-padded}", increments on each drop-off. Counter persists in localStorage.
+- New useOpenTickets hook (single hook, no provider — pattern matches useCart/useShift): openTickets list, dropOff(customerId, customerName, lines) returns ticket with tag, markReady(ticketId), pickUp(ticketId) returns lines for hydration, completePickup(ticketId, transactionId) moves to closedTickets.
+- Engine routing in pages/RegisterPage.tsx: when activeVertical.workflow === 'drop_off' AND no cartMeta.openTicketId set, the cart's primary action becomes "Drop Off" instead of Charge. When cartMeta.openTicketId is set, primary action returns to normal Charge / Card / Cash / Split flow (pickup mode). Tile taps and cart line management unchanged.
+- Drop Off button gating: requires customer attached. If no customer, button shows tooltip "Customer required for drop-off" and does not advance. Drop Off also requires shift open (existing rule from B26).
+- DropOffSuccessOverlay: replaces success-overlay shape for drop-off completions. Shows tag prominently (large JetBrains Mono, accent color), customer name, line items list, "Copy Tag" button (clipboard write + toast confirmation), Done button. No payment, no tip, no receipt delivery channels.
+- Header "Open: N" pill: count of in_progress + ready_for_pickup tickets for current vertical. Always visible when count > 0; hidden when 0. Same affordance shape as existing Held: N pill. Respects mutual-exclusivity rule.
+- OpenTicketsOverlay: list of open tickets sorted by droppedOffAt desc. Each row shows tag (mono), customer name, dropped-off relative time (render-on-pull, no setInterval), line summary count ("3 items"), status badge. Two action buttons per row: "Mark Ready" (in_progress only) and "Pick Up" (both states). Adds Open Tickets to the header overlay rotation: Waitlist / Appointments / Today's Sales / Settings / Open Tickets — now 5-way mutual exclusivity.
+- Status badges: IN PROGRESS (amber), READY (green) — distinct from existing transaction badges. Use the existing badge component shell.
+- Mark Ready action: transitions in_progress → ready_for_pickup, sets markedReadyAt, fires mock-SMS toast "Pickup notification sent to {customerName}" matching the existing 4-channel toast pattern from receipt delivery. No real SMS.
+- Pick Up action: closes overlay, hydrates cart with the open ticket's lines + auto-attaches customer + sets cartMeta.openTicketId. Cart shows a sticky banner above the line list: "Pickup mode · Tag LAUN-0001 · {customerName}" with a "Return to In Progress" button (clears cart + cartMeta.openTicketId, ticket stays open).
+- Pickup checkout: standard Charge / Card / Cash / Split / Comp flow. On successful completion, openTicket transitions to picked_up via completePickup(ticketId, transactionId), moves to closedTickets, and the resulting Transaction record carries openTicketId field linking back. Transaction list badge: standard CASH/SPLIT/etc. badges apply; no new pickup-specific badge in this batch.
+- Vertical switcher: laundry switchable from any other vertical per existing rules. Open tickets persist for laundry across switches; pill only shows when laundry is active. Existing cart-state and checkout-state gates on switching unchanged.
+- Cart drop-off mode visual cue: cart header shows "Drop-Off Mode" subtle label when laundry vertical AND no openTicketId in cartMeta (so operator knows what Charge will do). When in pickup mode, banner replaces this.
+
+SCOPE — DO NOT BUILD
+- Real SMS notifications (mock toast only — same pattern as existing Print/Email/SMS/None receipt mocks).
+- Real tag printing or label generation (display + clipboard copy only).
+- Per-pound weight input modal or weight-based pricing (skipped intentionally — tanning per-minute already validated heterogeneous pricing math).
+- Drop-off deposits or partial pre-payment (all payment happens at pickup — keeps lifecycle axis pure, separate from money-shape axis).
+- Special handling flags / per-line free-text notes (declined umbrella — service-level free-text notes).
+- Multi-day age indicators (>7 days, >14 days), aging dashboard, storage fee logic (content extension; per-subcategory reports declined).
+- Open ticket edit, cancel, delete, refund-before-pickup (read-only post-drop-off in this batch).
+- Search by tag inside CustomerSearch modal (overlay-only access; tag lookup UX is the overlay).
+- Photo capture at drop-off (no file storage in prototype).
+- Per-item verification/check-in at pickup (assume what was dropped off matches what's picked up).
+- Wedding/special event priority flags (content extension).
+- Commercial / B2B account aging (different mental model, separate batch if ever).
+- Tailoring, shoe_repair, jewelry_repair verticals (one vertical proves the lifecycle axis; additional Tier 4 verticals would be content extension at this point).
+- Workflow flag exposed in Settings overlay for editing (config-locked).
+- README / replit.md updates (defer to a future wrap batch).
+- Operator-attention nudges around aging tickets (declined umbrella).
+- Vertical switcher gate on open tickets being present (open tickets persist across switches; switching out of laundry with open tickets is fine).
+- Open Tickets shown in Today's Sales overlay (separate surface).
+- Reverse flow ("undo pickup" / "return to ready") — not in this batch.
+
+TECH CONSTRAINTS
+- React 18 + Vite + Tailwind v4. No new dependencies.
+- setInterval count must remain exactly 1 (in hooks/useElapsedTick.ts only). Open ticket relative-time displays use render-on-pull pattern.
+- TypeScript strict. OpenTicket and workflow types fully typed; localStorage hydration without any.
+- Per-vertical namespacing follows nuatis-pos:{verticalId}:{key} pattern; the three new keys added to whatever array/constant enumerates per-vertical keys for migration consistency.
+- OpenTicketsOverlay respects mutual-exclusivity with Waitlist / Appointments / Today's Sales / Settings (now 5-way).
+- DropOffSuccessOverlay reuses the existing modal/success shell, not a forked component.
+- Cart pickup-mode banner reuses an existing banner shell pattern (e.g., the deposit-banner pattern from tattoo or the active-session amber pattern from tanning); do not create a new component if reuse is viable.
+- Mark Ready toast reuses the existing toast component used for receipt delivery confirmation.
+- Mutual-exclusivity rule note: opening Open Tickets while in pickup mode (cart has lines hydrated from a ticket) is allowed and shows the in-progress / ready states; if the user picks a different ticket while one is hydrated, prompt confirmation to discard current pickup hydration.
+
+ACCEPTANCE
+- Switch to laundry vertical: register grid renders 12 laundry services in the new color palette; cart Charge button label reads "Drop Off"; "Drop-Off Mode" cart-header label visible.
+- Build cart with Wash & Fold Medium + Hypoallergenic Detergent without attaching customer; tap Drop Off → toast "Customer required for drop-off"; no advance.
+- Attach customer (existing phone-first flow); tap Drop Off → DropOffSuccessOverlay shows tag "LAUN-0001", customer name, line list, Copy Tag button (verify clipboard write fires toast), Done.
+- After Done: cart cleared, header "Open: 1" pill visible.
+- Tap Open: 1 → OpenTicketsOverlay shows row with LAUN-0001, customer, "just now" relative time, "2 items", IN PROGRESS amber badge; Mark Ready and Pick Up buttons present.
+- Tap Mark Ready → row badge flips to READY green; mock-SMS toast "Pickup notification sent to {customerName}".
+- Tap Pick Up → overlay closes; cart hydrated with the 2 lines; customer auto-attached; banner reads "Pickup mode · Tag LAUN-0001 · {customerName}"; Return to In Progress button visible.
+- Standard Card payment flow → success overlay; Open: pill drops to 0 (or hides); transaction in localStorage carries openTicketId === LAUN-0001's id; nuatis-pos:laundry:openTickets is empty; nuatis-pos:laundry:closedTickets has one entry; nuatis-pos:laundry:tagCounter === 1.
+- Drop off a second ticket: tag generated as LAUN-0002.
+- Open second ticket, tap Pick Up; without completing, tap Return to In Progress: cart clears, ticket remains in openTickets with status unchanged.
+- Switch to salon vertical: header pill hides (no laundry open tickets visible from salon context); salon Charge button is normal Charge label, no Drop-Off Mode anywhere; salon flows unchanged. Switch back to laundry: pill restored.
+- Switch verticals while laundry has openTickets and no cart items: switch succeeds (open tickets do not block switching).
+- grep -r "setInterval" src/ → exactly 1 match in hooks/useElapsedTick.ts.
+- TypeScript check clean. No console errors during HMR or any flow.
+- All 6 prior verticals (salon, spa, nail_bar, tattoo, pet_grooming, tanning) regression-tested for workflow='same_visit' default — Charge button label, no Drop-Off Mode label, no Open: pill ever shown.
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — REQUIRED — agent's response must include four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.

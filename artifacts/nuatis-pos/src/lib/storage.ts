@@ -29,6 +29,16 @@ export const currentShiftKey = (verticalId: string): string =>
 export const shiftsHistoryKey = (verticalId: string): string =>
   `nuatis-pos:${verticalId}:shifts`;
 
+// B27: drop-off workflow keys
+export const openTicketsKey = (verticalId: string): string =>
+  `nuatis-pos:${verticalId}:openTickets`;
+
+export const closedTicketsKey = (verticalId: string): string =>
+  `nuatis-pos:${verticalId}:closedTickets`;
+
+export const tagCounterKey = (verticalId: string): string =>
+  `nuatis-pos:${verticalId}:tagCounter`;
+
 // Legacy (pre-vertical) keys
 const LEGACY_CART_KEY = "nuatis-pos:cart";
 const LEGACY_TX_KEY = "nuatis-pos:transactions";

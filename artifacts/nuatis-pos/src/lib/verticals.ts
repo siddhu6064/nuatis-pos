@@ -13,8 +13,13 @@ import {
   TANNING_MODIFIERS_BY_SERVICE,
   TANNING_CATEGORY_COLORS,
 } from "@/lib/tanning-services";
+import {
+  LAUNDRY_SERVICES,
+  LAUNDRY_MODIFIERS_BY_SERVICE,
+  LAUNDRY_CATEGORY_COLORS,
+} from "@/lib/laundry-services";
 
-export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming" | "tanning";
+export type VerticalId = "salon" | "spa" | "nail_bar" | "tattoo" | "pet_grooming" | "tanning" | "laundry";
 
 export interface BusinessInfo {
   name: string;
@@ -30,6 +35,10 @@ export interface VerticalConfig {
   services: Service[];
   modifiersByService: Record<string, Modifier[]>;
   categoryColors: Record<string, string>;
+  workflow: "same_visit" | "drop_off";
+  customerTerm: string;
+  staffTerm: string;
+  serviceTerm: string;
 }
 
 // ── Spa services ─────────────────────────────────────────────────────────────
@@ -141,6 +150,10 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     services: SERVICES,
     modifiersByService: MODIFIERS_BY_SERVICE,
     categoryColors: CATEGORY_COLORS,
+    workflow: "same_visit",
+    customerTerm: "client",
+    staffTerm: "stylist",
+    serviceTerm: "service",
   },
   spa: {
     id: "spa",
@@ -159,6 +172,10 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
       body: "#FDE68A",
       wellness: "#BAE6FD",
     },
+    workflow: "same_visit",
+    customerTerm: "client",
+    staffTerm: "therapist",
+    serviceTerm: "service",
   },
   nail_bar: {
     id: "nail_bar",
@@ -172,6 +189,10 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     services: NAIL_BAR_SERVICES,
     modifiersByService: NAIL_BAR_MODIFIERS_BY_SERVICE,
     categoryColors: NAIL_BAR_CATEGORY_COLORS,
+    workflow: "same_visit",
+    customerTerm: "client",
+    staffTerm: "technician",
+    serviceTerm: "service",
   },
   tattoo: {
     id: "tattoo",
@@ -185,6 +206,10 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     services: TATTOO_SERVICES,
     modifiersByService: TATTOO_MODIFIERS_BY_SERVICE,
     categoryColors: TATTOO_CATEGORY_COLORS,
+    workflow: "same_visit",
+    customerTerm: "client",
+    staffTerm: "artist",
+    serviceTerm: "service",
   },
   pet_grooming: {
     id: "pet_grooming",
@@ -198,6 +223,10 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     services: PET_GROOMING_SERVICES,
     modifiersByService: PET_GROOMING_MODIFIERS_BY_SERVICE,
     categoryColors: PET_GROOMING_CATEGORY_COLORS,
+    workflow: "same_visit",
+    customerTerm: "owner",
+    staffTerm: "groomer",
+    serviceTerm: "service",
   },
   tanning: {
     id: "tanning",
@@ -211,6 +240,27 @@ export const VERTICALS: Record<VerticalId, VerticalConfig> = {
     services: TANNING_SERVICES,
     modifiersByService: TANNING_MODIFIERS_BY_SERVICE,
     categoryColors: TANNING_CATEGORY_COLORS,
+    workflow: "same_visit",
+    customerTerm: "client",
+    staffTerm: "staff",
+    serviceTerm: "session",
+  },
+  laundry: {
+    id: "laundry",
+    displayName: "Laundry",
+    tagline: "Wash & fold, dry cleaning, specialty care",
+    business: {
+      name: "Clean & Press",
+      address: "200 Linen Way, Austin, TX 78707",
+      phone: "(512) 555-0700",
+    },
+    services: LAUNDRY_SERVICES,
+    modifiersByService: LAUNDRY_MODIFIERS_BY_SERVICE,
+    categoryColors: LAUNDRY_CATEGORY_COLORS,
+    workflow: "drop_off",
+    customerTerm: "customer",
+    staffTerm: "staff",
+    serviceTerm: "order",
   },
 };
 

@@ -21,6 +21,9 @@ interface HeaderProps {
   switcherDisabled: boolean;
   onOpenVerticalSwitcher: () => void;
   onOpenSettings: () => void;
+  // B27: open tickets (drop_off verticals)
+  openTicketsCount?: number;
+  onOpenTickets?: () => void;
   // B26: shift state
   isShiftOpen: boolean;
   currentShiftStaffName?: string;
@@ -70,6 +73,8 @@ export function Header({
   switcherDisabled,
   onOpenVerticalSwitcher,
   onOpenSettings,
+  openTicketsCount = 0,
+  onOpenTickets,
   isShiftOpen,
   currentShiftStaffName,
   currentShiftStartedAt,
@@ -178,6 +183,21 @@ export function Header({
         >
           Appointments{appointmentsCount > 0 ? `: ${appointmentsCount}` : ""}
         </button>
+
+        {/* B27: Open Tickets pill — only for drop_off verticals when count > 0 */}
+        {openTicketsCount > 0 && (
+          <button
+            onClick={onOpenTickets}
+            className="h-[22px] px-2.5 rounded-full text-[11px] font-semibold text-white transition-colors duration-150"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              backgroundColor: "#2563EB",
+              cursor: "pointer",
+            }}
+          >
+            Open: {openTicketsCount}
+          </button>
+        )}
 
         {/* Today's Sales link */}
         <button

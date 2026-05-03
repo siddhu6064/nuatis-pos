@@ -25,10 +25,11 @@ interface ActiveVerticalProviderProps {
 export function ActiveVerticalProvider({
   children,
 }: ActiveVerticalProviderProps) {
+  const ALL_VERTICAL_IDS: VerticalId[] = ["salon", "spa", "nail_bar", "tattoo", "pet_grooming", "tanning", "laundry"];
   const [activeVerticalId, setActiveVerticalIdState] = useState<VerticalId>(
     () => {
       const saved = localStorage.getItem(ACTIVE_VERTICAL_KEY);
-      return saved === "salon" || saved === "spa" || saved === "nail_bar" || saved === "tattoo"
+      return ALL_VERTICAL_IDS.includes(saved as VerticalId)
         ? (saved as VerticalId)
         : "salon";
     },

@@ -43,6 +43,13 @@ interface CartProps {
   stopSession: (lineId: string) => void;
   // B26: shift gate
   isShiftOpen: boolean;
+  // B27: drop-off workflow
+  workflow: "same_visit" | "drop_off";
+  openTicketId: string | null;
+  openTicketTag: string | null;
+  pickupCustomerName: string | null;
+  onDropOff: () => void;
+  onReturnToInProgress: () => void;
 }
 
 const SESSION_GATE_TOOLTIP = "Stop all sessions before checkout";
@@ -80,6 +87,12 @@ export function Cart({
   elapsedTick,
   stopSession,
   isShiftOpen,
+  workflow,
+  openTicketId,
+  openTicketTag,
+  pickupCustomerName,
+  onDropOff,
+  onReturnToInProgress,
 }: CartProps) {
   const { settings } = useVerticalSettings();
   const [showCompModal, setShowCompModal] = useState(false);
@@ -107,6 +120,18 @@ export function Cart({
   const hasActiveSessions = lines.some(
     (l) => l.sessionStartedAt !== undefined && l.sessionEndedAt === undefined,
   );
+
+  // B27: drop-off workflow derived flags
+  const isDropOffMode = workflow === "drop_off" && !openTicketId;
+  const isPickupMode = workflow === "drop_off" && !!openTicketId;
+  const dropOffDisabled = isEmpty || !customer || !isShiftOpen;
+  const dropOffTitle = !isShiftOpen
+    ? SHIFT_GATE_TOOLTIP
+    : !customer
+      ? "Customer required for drop-off"
+      : isEmpty
+        ? "Add items to drop off"
+        : undefined;
 
   const taxLabel = `Tax (${settings.taxRatePercent % 1 === 0 ? settings.taxRatePercent.toFixed(0) : settings.taxRatePercent}%)`;
 
@@ -173,6 +198,31 @@ export function Cart({
         </div>
       )}
 
+      {/* B27: Pickup mode banner */}
+      {isPickupMode && (
+        <div
+          className="px-4 py-2 border-b flex-shrink-0 flex items-center justify-between"
+          style={{ backgroundColor: "#EFF6FF", borderColor: "#BFDBFE", borderBottomWidth: 1 }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[14px]">📦</span>
+            <span
+              className="text-[12px] font-semibold"
+              style={{ color: "#1D4ED8", fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Pickup · {openTicketTag} · {pickupCustomerName}
+            </span>
+          </div>
+          <button
+            onClick={onReturnToInProgress}
+            className="text-[11px] font-medium transition-colors duration-100"
+            style={{ color: "#1D4ED8", fontFamily: "'Epilogue', sans-serif" }}
+          >
+            Return to In Progress
+          </button>
+        </div>
+      )}
+
       {/* B23: Active session banner */}
       {hasActiveSessions && (
         <div
@@ -191,12 +241,22 @@ export function Cart({
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-black/8 flex-shrink-0">
-        <span
-          className="text-[22px] font-bold text-gray-900"
-          style={{ fontFamily: "'Fraunces', serif" }}
-        >
-          Cart
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className="text-[22px] font-bold text-gray-900"
+            style={{ fontFamily: "'Fraunces', serif" }}
+          >
+            Cart
+          </span>
+          {isDropOffMode && (
+            <span
+              className="text-[11px] font-semibold uppercase tracking-wide"
+              style={{ color: "#2563EB", fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Drop-Off Mode
+            </span>
+          )}
+        </div>
         {!isEmpty && isIdle && (
           <div className="flex items-center gap-3">
             <button
@@ -483,6 +543,21 @@ export function Cart({
               </button>
             </div>
           )
+        ) : isDropOffMode ? (
+          // B27: Drop-off mode — Drop Off button replaces Charge
+          <button
+            onClick={dropOffDisabled ? undefined : onDropOff}
+            disabled={dropOffDisabled}
+            title={dropOffTitle}
+            className="w-full h-[56px] rounded-lg text-[18px] font-semibold text-white transition-all duration-150 active:scale-[0.98]"
+            style={{
+              fontFamily: "'Epilogue', sans-serif",
+              backgroundColor: dropOffDisabled ? "#D1D5DB" : "#2563EB",
+              cursor: dropOffDisabled ? "not-allowed" : "pointer",
+            }}
+          >
+            Drop Off
+          </button>
         ) : (
           // Idle: Charge button — gated on active sessions and shift
           <button

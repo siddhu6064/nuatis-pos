@@ -18,6 +18,10 @@ import { VaccinationGateModal } from "@/components/VaccinationGateModal";
 import { Toast } from "@/components/Toast";
 import { StartShiftModal } from "@/components/StartShiftModal";
 import { EndShiftModal } from "@/components/EndShiftModal";
+import { DropOffSuccessOverlay } from "@/components/DropOffSuccessOverlay";
+import { OpenTicketsOverlay } from "@/components/OpenTicketsOverlay";
+import { useOpenTickets } from "@/hooks/useOpenTickets";
+import type { OpenTicket } from "@/lib/openTickets";
 import { useCart } from "@/hooks/useCart";
 import type { CartCustomer } from "@/hooks/useCart";
 import { useCheckout } from "@/hooks/useCheckout";
@@ -107,6 +111,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   // B26: shift-state (no provider — reads activeVerticalId internally)
   const { currentShift, isShiftOpen, openShift, closeShift } = useShift();
 
+  // B27: open tickets (drop_off workflow)
+  const openTicketsHook = useOpenTickets();
+
   // B23: useElapsedTick — ONLY setInterval in the codebase
   const hasActiveSessions = lines.some(
     (l) => l.sessionStartedAt !== undefined && l.sessionEndedAt === undefined,
@@ -132,6 +139,14 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
   );
   const [holdToast, setHoldToast] = useState(false);
   const [cashDrawerToast, setCashDrawerToast] = useState(false);
+  const [smsToast, setSmsToast] = useState<string | null>(null);
+  const smsToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // B27: drop-off workflow state
+  const [showOpenTickets, setShowOpenTickets] = useState(false);
+  const [dropOffSuccessTicket, setDropOffSuccessTicket] = useState<OpenTicket | null>(null);
+  const [pickupTicketId, setPickupTicketId] = useState<string | null>(null);
+  const [pickupTag, setPickupTag] = useState<string | null>(null);
 
   // B22: pet grooming gate
   const [pendingService, setPendingService] = useState<Service | null>(null);
@@ -297,8 +312,9 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
       ...(depositApplied > 0 ? { depositApplied } : {}),
       ...(appointmentRef ? { appointmentRef } : {}),
       ...(currentShift ? { shiftId: currentShift.id } : {}),
+      ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
     });
-  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift]);
+  }, [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId]);
 
   const handleOpenCash = useCallback(() => {
     setShowCashModal(true);
@@ -325,12 +341,13 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(depositApplied > 0 ? { depositApplied } : {}),
         ...(appointmentRef ? { appointmentRef } : {}),
         ...(currentShift ? { shiftId: currentShift.id } : {}),
+        ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
       });
       if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
       setCashDrawerToast(true);
       cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId],
   );
 
   const handleOpenSplit = useCallback(() => {
@@ -355,6 +372,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         ...(depositApplied > 0 ? { depositApplied } : {}),
         ...(appointmentRef ? { appointmentRef } : {}),
         ...(currentShift ? { shiftId: currentShift.id } : {}),
+        ...(pickupTicketId ? { openTicketId: pickupTicketId } : {}),
       });
       if (payments.some((p) => p.method === "cash")) {
         if (cashToastTimerRef.current) clearTimeout(cashToastTimerRef.current);
@@ -362,7 +380,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         cashToastTimerRef.current = setTimeout(() => setCashDrawerToast(false), 1500);
       }
     },
-    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift],
+    [lines, checkout, customer, compApplied, compReason, buildCartTotals, depositApplied, appointmentRef, currentShift, pickupTicketId],
   );
 
   const handleHold = useCallback(() => {
@@ -411,9 +429,68 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     (id: VerticalId) => {
       setActiveVerticalId(id);
       setShowVerticalSwitcher(false);
+      // Reset pickup state when switching verticals
+      setPickupTicketId(null);
+      setPickupTag(null);
     },
     [setActiveVerticalId],
   );
+
+  // ── B27: Drop-off workflow handlers ─────────────────────────────────────
+
+  const handleDropOff = useCallback(() => {
+    if (!customer) return;
+    const customerName = `${customer.firstName} ${customer.lastName}`.trim();
+    const ticket = openTicketsHook.dropOff(customer.id, customerName, lines);
+    setDropOffSuccessTicket(ticket);
+    clear();
+  }, [customer, lines, openTicketsHook, clear]);
+
+  const handlePickupSelect = useCallback(
+    (ticketId: string) => {
+      const result = openTicketsHook.pickUp(ticketId);
+      if (!result) return;
+      const nameParts = result.customerName.trim().split(/\s+/);
+      const firstName = nameParts[0] ?? result.customerName;
+      const lastName = nameParts.slice(1).join(" ");
+      const pickupCustomer: CartCustomer = {
+        id: result.customerId,
+        firstName,
+        lastName,
+        phone: "",
+      };
+      loadHeld(result.lines, pickupCustomer, false, null);
+      setPickupTicketId(ticketId);
+      setPickupTag(result.tag);
+      setShowOpenTickets(false);
+    },
+    [openTicketsHook, loadHeld],
+  );
+
+  const handleReturnToInProgress = useCallback(() => {
+    clear();
+    setPickupTicketId(null);
+    setPickupTag(null);
+  }, [clear]);
+
+  const handleMarkReady = useCallback(
+    (ticketId: string) => {
+      const customerName = openTicketsHook.markReady(ticketId);
+      if (smsToastTimerRef.current) clearTimeout(smsToastTimerRef.current);
+      setSmsToast(`Pickup notification sent to ${customerName}`);
+      smsToastTimerRef.current = setTimeout(() => setSmsToast(null), 2000);
+    },
+    [openTicketsHook],
+  );
+
+  const handleCompleteSale = useCallback(() => {
+    if (pickupTicketId && checkout.completedTx) {
+      openTicketsHook.completePickup(pickupTicketId, checkout.completedTx.id);
+      setPickupTicketId(null);
+      setPickupTag(null);
+    }
+    checkout.completeSale();
+  }, [pickupTicketId, checkout, openTicketsHook]);
 
   const handleStartWalkIn = useCallback(
     (entry: WaitlistEntry) => {
@@ -489,6 +566,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
     >
       {holdToast && <Toast message="Ticket held" />}
       {cashDrawerToast && <Toast message="💵 Cash drawer opened" />}
+      {smsToast && <Toast message={smsToast} />}
 
       <Header
         user={user}
@@ -502,12 +580,20 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         waitlistCount={waitlistEntries.length}
         onOpenWaitlist={() => {
           setShowAppointments(false);
+          setShowOpenTickets(false);
           setShowWaitlist(true);
         }}
         appointmentsCount={appointmentsUrgentCount}
         onOpenAppointments={() => {
           setShowWaitlist(false);
+          setShowOpenTickets(false);
           setShowAppointments(true);
+        }}
+        openTicketsCount={openTicketsHook.activeCount}
+        onOpenTickets={() => {
+          setShowWaitlist(false);
+          setShowAppointments(false);
+          setShowOpenTickets(true);
         }}
         activeVerticalDisplayName={config.displayName}
         switcherDisabled={switcherDisabled}
@@ -567,6 +653,12 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
             elapsedTick={elapsedTick}
             stopSession={stopSession}
             isShiftOpen={isShiftOpen}
+            workflow={config.workflow}
+            openTicketId={pickupTicketId}
+            openTicketTag={pickupTag}
+            pickupCustomerName={pickupTicketId ? customerName : null}
+            onDropOff={handleDropOff}
+            onReturnToInProgress={handleReturnToInProgress}
           />
         </aside>
       </div>
@@ -577,7 +669,7 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
         completedTx={checkout.completedTx}
         onCompleteDelivery={checkout.completeDelivery}
         onAttachCustomerPostSale={checkout.attachCustomerPostSale}
-        onNewSale={checkout.completeSale}
+        onNewSale={handleCompleteSale}
       />
 
       {showCashModal && checkout.state === "tip" && (
@@ -677,6 +769,27 @@ export function RegisterPage({ user, onLogout }: RegisterPageProps) {
           cartIsIdle={cartIsIdle}
           onClose={() => setShowAppointments(false)}
           currentShiftId={currentShift?.id}
+        />
+      )}
+
+      {/* B27: Drop-off success overlay */}
+      {dropOffSuccessTicket && (
+        <DropOffSuccessOverlay
+          tag={dropOffSuccessTicket.tag}
+          customerName={dropOffSuccessTicket.customerName}
+          lines={dropOffSuccessTicket.lines}
+          onDone={() => setDropOffSuccessTicket(null)}
+        />
+      )}
+
+      {/* B27: Open tickets overlay */}
+      {showOpenTickets && (
+        <OpenTicketsOverlay
+          tickets={openTicketsHook.openTickets}
+          currentPickupTicketId={pickupTicketId}
+          onMarkReady={handleMarkReady}
+          onPickUp={handlePickupSelect}
+          onClose={() => setShowOpenTickets(false)}
         />
       )}
 

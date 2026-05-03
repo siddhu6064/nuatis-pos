@@ -15,6 +15,10 @@ import {
   TANNING_CUSTOMERS,
   addTanningCustomerInMemory,
 } from "@/lib/tanning-customers";
+import {
+  LAUNDRY_CUSTOMERS,
+  addLaundryCustomerInMemory,
+} from "@/lib/laundry-customers";
 import { normalizePhone, formatPhone } from "@/lib/phone";
 import { getVaccinationStatus } from "@/lib/vaccinations";
 
@@ -313,6 +317,7 @@ function PetInfoCard({ pet }: { pet: Pet }) {
 export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearchProps) {
   const isPetGrooming = verticalId === "pet_grooming";
   const isTanning = verticalId === "tanning";
+  const isLaundry = verticalId === "laundry";
 
   const [query, setQuery] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -336,7 +341,9 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
     ? PET_GROOMING_CUSTOMERS
     : isTanning
       ? TANNING_CUSTOMERS
-      : CUSTOMERS;
+      : isLaundry
+        ? LAUNDRY_CUSTOMERS
+        : CUSTOMERS;
 
   const normalizedQ = normalizePhone(query);
   const phoneMode = isPhoneQuery(query);
@@ -363,12 +370,20 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
     : null;
 
   // Badge label for non-standard verticals
-  const verticalBadgeLabel = isPetGrooming ? "Pet Grooming" : isTanning ? "Tanning" : null;
+  const verticalBadgeLabel = isPetGrooming
+    ? "Pet Grooming"
+    : isTanning
+      ? "Tanning"
+      : isLaundry
+        ? "Laundry"
+        : null;
   const verticalBadgeStyle = isPetGrooming
     ? { backgroundColor: "#D1FAE5", color: "#065F46" }
     : isTanning
       ? { backgroundColor: "#FEF3C7", color: "#92400E" }
-      : {};
+      : isLaundry
+        ? { backgroundColor: "#DBEAFE", color: "#1E40AF" }
+        : {};
 
   return (
     <div
@@ -486,6 +501,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
               prefillPhone={normalizedQ}
               onSave={(c) => {
                 if (isTanning) addTanningCustomerInMemory(c);
+                else if (isLaundry) addLaundryCustomerInMemory(c);
                 else addCustomerInMemory(c);
                 handleAttachDirect(c);
               }}
@@ -506,6 +522,7 @@ export function CustomerSearch({ onAttach, onClose, verticalId }: CustomerSearch
               prefillPhone=""
               onSave={(c) => {
                 if (isTanning) addTanningCustomerInMemory(c);
+                else if (isLaundry) addLaundryCustomerInMemory(c);
                 else addCustomerInMemory(c);
                 handleAttachDirect(c);
               }}
