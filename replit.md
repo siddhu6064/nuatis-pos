@@ -2,7 +2,7 @@
 
 > Throwaway UX prototype (May 2, 2026). All state in localStorage. No backend required beyond Replit Auth. See README.md for the full context.
 >
-> **v6 — through Batch 27 (laundry vertical + drop-off/pickup lifecycle). Tag: v0.0.9-prototype.**
+> **v7 — through Batch 29 (yoga_pilates vertical + class enrollment / cardinality axis). Tag: v0.0.11-prototype.**
 
 ---
 
@@ -16,6 +16,7 @@
 - **Fonts**: Fraunces (brand/prices, serif), Epilogue (UI text, sans), JetBrains Mono (numbers/clock)
 - **Accent**: `#E84A00` · Background: `#F8F7F4` · Overlay bg: `#0F0F10`
 - **Manager override**: `#7C3AED` (purple) · Discount/comp/refund: `#DC2626` (red)
+- **Yoga palette**: classes `#D1EDD4` (sage green) · extras `#FEF9C3` (cream) · staff accent `#1A6B2A`
 
 ---
 
@@ -50,6 +51,7 @@ App.tsx
 │               │   ├── "Waitlist: N"    — opens WaitlistOverlay, gated on idle
 │               │   ├── "Appts: N"       — opens AppointmentsOverlay, gated on idle
 │               │   ├── "Open: N"        — opens OpenTicketsOverlay (drop-off verticals)
+│               │   ├── "Classes: N"     — opens ClassesOverlay (classEnabled verticals only); sage-green pill; N = total enrolled across all slots; hidden when config.classEnabled is falsy
 │               │   ├── shift pill        — elapsed duration when shift open; "No shift open" otherwise
 │               │   ├── "Today's Sales"  — opens ReportsOverlay, gated on idle
 │               │   ├── live clock (useClock — setTimeout-recursion only, no setInterval)
@@ -64,6 +66,7 @@ App.tsx
 │               │   ├── vaccination gate banner — shown on pet_grooming with blocked/warning status
 │               │   ├── drop-off mode label — shown when workflow === 'drop_off'
 │               │   ├── pickup mode banner — shown when cart loaded from open ticket; includes "Return to In Progress" button
+│               │   ├── class booking banner — shown when classBookingContext is set; sage-green 🧘 label with class time + name
 │               │   ├── CartLine  (×N)   — useVerticalSettings for active staff list
 │               │   │   ├── qty controls
 │               │   │   ├── staff picker — inline chips from settings.staff (active only)
@@ -80,6 +83,9 @@ App.tsx
 │               │   ├── delivery buttons — print / email / sms / none
 │               │   └── CustomerSearch (post-sale attach)
 │               ├── DropOffSuccessOverlay — tag number prominent display + service summary
+│               ├── ClassesOverlay       — right-drawer; lists all ClassSlots for today; per-slot capacity badge (green/amber/red); roster expand with cancel; Book button opens CustomerSearch in yoga mode; disabled when slot full
+│               │   ├── CapacityBadge    — green (< 70% full), amber (≥ 70% and not full), red FULL (roster.length >= capacity)
+│               │   └── RosterRow  (×N) — member name + enrolled-time label + Cancel button
 │               ├── CashTenderModal      — z-50, right-to-left keypad, quick-tender row
 │               ├── SplitTenderModal     — z-50, N-leg sequential state machine (up to 5 legs)
 │               │   ├── leg-picker mode  — amount keypad + Card/Cash action buttons
@@ -87,7 +93,7 @@ App.tsx
 │               │   ├── cash-tendering   — full cash sub-flow (quick-tender + keypad + change)
 │               │   └── void-disclaimer  — cancel overlay lists all captured card legs with last4
 │               ├── StaffSwitcher        — modal, active staff from settings.staff
-│               ├── CustomerSearch       — modal, phone-first search + inline create
+│               ├── CustomerSearch       — modal, phone-first search + inline create; verticalId-routed customer source (yoga_pilates → YOGA_CUSTOMERS, sage-green badge, "Member phone or name" placeholder)
 │               ├── ReportsOverlay       — reads from active vertical's transaction namespace
 │               │   ├── summary view     — 5-stat row + per-staff + list + SPLIT/DEPOSIT badges
 │               │   ├── receipt detail   — Receipt (useVerticalSettings for business identity)
@@ -96,7 +102,7 @@ App.tsx
 │               ├── WaitlistOverlay      — FIFO queue, cap 10, AddWalkInModal, promote-to-ticket
 │               ├── AppointmentsOverlay  — Upcoming/History tabs, status state machine, TakeDepositModal
 │               ├── OpenTicketsOverlay   — IN PROGRESS (amber) + READY (green) tickets; Mark Ready + Pick Up actions; switch-confirmation banner on pickup
-│               ├── VerticalSwitcher     — modal, all 7 verticals, gated when cart has items
+│               ├── VerticalSwitcher     — modal, all 8 verticals, gated when cart has items
 │               ├── SettingsOverlay      — owner UX; 3 tabs: Business / Tax & Tips / Staff
 │               │   ├── Business tab     — name/address/phone inputs + live receipt preview
 │               │   ├── Tax & Tips tab   — tax rate input + tip preset CRUD
@@ -105,7 +111,7 @@ App.tsx
 │               └── Toast                — fixed top-right, 1500ms auto-dismiss
 ```
 
-The five overlay surfaces (WaitlistOverlay, AppointmentsOverlay, ReportsOverlay, SettingsOverlay, OpenTicketsOverlay) participate in a **5-way mutex**: only one can be open at a time. Opening any overlay closes any other that is open.
+The six overlay surfaces (WaitlistOverlay, AppointmentsOverlay, ReportsOverlay, SettingsOverlay, OpenTicketsOverlay, ClassesOverlay) participate in a **6-way mutex**: only one can be open at a time. Opening any overlay closes any other that is open. The mutex is enforced in `RegisterPage`'s inline handler callbacks on each overlay's open trigger.
 
 ---
 
@@ -114,7 +120,7 @@ The five overlay surfaces (WaitlistOverlay, AppointmentsOverlay, ReportsOverlay,
 | Hook | File | Responsibility |
 |---|---|---|
 | `useCart` | `hooks/useCart.ts` | Line items, customer, comp state, deposit context (appointmentRef + depositApplied), vaccination gate state, cart mutations, per-vertical localStorage write-through |
-| `useCheckout` | `hooks/useCheckout.ts` | Checkout state machine + transaction persistence; handles card, cash, and split-tender paths; `SplitPayment[]` on transaction when `paymentMethod === 'split'`; each card leg carries `mockLast4` |
+| `useCheckout` | `hooks/useCheckout.ts` | Checkout state machine + transaction persistence; handles card, cash, and split-tender paths; `SplitPayment[]` on transaction when `paymentMethod === 'split'`; each card leg carries `mockLast4`; `classSlotId` stamped on class booking transactions |
 | `useActiveStaff` | `hooks/useActiveStaff.ts` | Current operator identity, persisted to `nuatis-pos:activeStaffId` (shared) |
 | `useManagerOverride` | `hooks/useManagerOverride.ts` | Promise-based PIN gate; `requestManagerOverride(reason)` returns `Promise<boolean>`; mock — any 4 digits accepted |
 | `useActiveVertical` | `hooks/useActiveVertical.ts` | Active vertical id + full config; persisted to `nuatis-pos:activeVerticalId`; reloads cart/held on switch |
@@ -124,6 +130,7 @@ The five overlay surfaces (WaitlistOverlay, AppointmentsOverlay, ReportsOverlay,
 | `useElapsedTick` | `hooks/useElapsedTick.ts` | **Only `setInterval` in the codebase.** Drives the elapsed-time counter on active tanning session cart lines. Cleans up on unmount. |
 | `useShift` | `hooks/useShift.ts` | Per-vertical open-shift envelope. Hydrates from `nuatis-pos:{v}:currentShift` on mount. Exposes `openShift(staffId, startingCashCents)`, `closeShift()`, and the current `shift` record. No React provider — used as a direct hook. `shiftId` flows into `useCheckout` for transaction stamping. |
 | `useOpenTickets` | `hooks/useOpenTickets.ts` | Per-vertical open-ticket list for drop-off verticals. Reads/writes `nuatis-pos:{v}:openTickets` and `nuatis-pos:{v}:closedTickets`. Exposes `createTicket`, `markReady`, `closeTicket`, and the `openTickets` array. |
+| `useClassSlots` | `hooks/useClassSlots.ts` | Per-vertical class slot roster. Reads/writes `nuatis-pos:{v}:classSlots`. Seeds from `lib/classSlots.ts` `seedClassSlots()` on first load for yoga_pilates. Exposes `slots`, `enrollCustomer`, `cancelEnrollment`, `markEnrollmentPaid`, `checkSlotFull`, and `totalEnrolled` (sum of all roster lengths). |
 
 ---
 
@@ -141,9 +148,10 @@ The codebase contains exactly **one** `setInterval`, located in `hooks/useElapse
 ## State Architecture
 
 - **`useCart`** — owns `lines: CartLine[]`, `customer`, `compApplied`, `compReason`, `appointmentRef`, `depositApplied`. Every mutation immediately writes to `nuatis-pos:{verticalId}:cart`. Deposit context (`appointmentRef` + `depositApplied`) is persisted to `nuatis-pos:{verticalId}:cartMeta` separately — written by `setDepositContext(apptId, depositCents)` when hydrating from an appointment, cleared by `clearDepositContext()` on checkout completion or cart clear. Reloads from new namespace when `activeVerticalId` changes.
-- **`useCheckout`** — owns checkout state machine and in-flight/completed transaction. Three `confirmCheckout` paths: `card` (2-sec sim → processing → receipt), `cash` (skips processing → receipt directly), `split` (card already settled in SplitTenderModal → skips processing → receipt directly). Appends to `nuatis-pos:{verticalId}:transactions` (capped at 50) on delivery confirmation. Exports `addTransactionDirect(verticalId, tx)` for deposit transactions written outside the normal checkout flow. Stamps `shiftId` from the current open shift (via `useShift`) onto every transaction record at write time.
+- **`useCheckout`** — owns checkout state machine and in-flight/completed transaction. Three `confirmCheckout` paths: `card` (2-sec sim → processing → receipt), `cash` (skips processing → receipt directly), `split` (card already settled in SplitTenderModal → skips processing → receipt directly). Appends to `nuatis-pos:{verticalId}:transactions` (capped at 50) on delivery confirmation. Exports `addTransactionDirect(verticalId, tx)` for deposit transactions written outside the normal checkout flow. Stamps `shiftId` from the current open shift (via `useShift`) onto every transaction record at write time. Stamps `classSlotId` when `ConfirmData` includes one.
 - **`useShift`** — per-vertical open-shift state. Reads `nuatis-pos:{v}:currentShift` on mount. `openShift(staffId, startingCashCents)` creates a new `Shift` record with a generated `shiftId`, writes it to `currentShift`, and appends it to `nuatis-pos:{v}:shifts`. `closeShift()` moves the current shift record (with `closedAt` timestamp) to the shifts log and clears `currentShift`. No provider — consumed as a direct hook in `RegisterPage` and `Header`. `shiftId` is passed into `useCheckout` for transaction stamping.
 - **`useOpenTickets`** — per-vertical open-ticket state for `workflow === 'drop_off'` verticals. `createTicket(lines, customer, tagNumber)` writes a new open ticket to `nuatis-pos:{v}:openTickets` with status `IN_PROGRESS`. `markReady(ticketId)` transitions status to `READY` and fires the mock-SMS toast. `closeTicket(ticketId, transactionId)` moves the record (with `closedAt` + `transactionId`) to `nuatis-pos:{v}:closedTickets`.
+- **`useClassSlots`** — per-vertical class slot state for `classEnabled === true` verticals. Reads `nuatis-pos:{v}:classSlots` on mount; seeds from `seedClassSlots(verticalId)` on first load for yoga_pilates. `enrollCustomer(slotId, customerId, customerName)` returns a new `ClassEnrollment` or `null` if the slot is full (atomic check inside the state updater). `cancelEnrollment(slotId, enrollmentId)` removes the enrollment from the roster. `markEnrollmentPaid(slotId, enrollmentId, transactionId)` stamps the transaction ID on the enrollment record. `checkSlotFull(slotId)` performs a read-time capacity check used for the race re-check in `handleAttachCustomer`. `totalEnrolled` is a derived value: `slots.reduce((sum, s) => sum + s.roster.length, 0)` — the sum of all roster lengths across all slots; this is what drives the "Classes: N" header pill count.
 - **`useActiveStaff`** — reads/writes `nuatis-pos:activeStaffId`. Shared across all verticals. Default `STAFF[0]`. `RegisterPage` watches `settings.staff` (active IDs) and falls back to first active staff if the persisted ID is no longer in the active list.
 - **`useManagerOverride`** — imperative modal pattern. `requestManagerOverride(reason)` creates a Promise, mounts `PinModal`, resolves `true` on any 4-digit entry, `false` on cancel/ESC. No prop-drilling; available to any descendant via context.
 - **`useActiveVertical`** — reads/writes `nuatis-pos:activeVerticalId`. Provides `{ activeVerticalId, setActiveVerticalId, config }` where `config = VERTICALS[activeVerticalId]`. Switching triggers cart reload and held-ticket reload in `RegisterPage`.
@@ -158,12 +166,13 @@ The codebase contains exactly **one** `setInterval`, located in `hooks/useElapse
 
 The following distinct design axes have been exercised and validated in this prototype:
 
-1. **6 wrinkle-free verticals (engine generalisation on uniform catalogs)** — salon, spa, nail_bar proven as config-only additions to a common engine; tanning, pet_grooming, tattoo extend the engine with wrinkle-specific fields, each in a 2-file change pattern.
+1. **8 verticals (engine generalisation on uniform catalogs)** — salon, spa, nail_bar proven as config-only additions to a common engine; tattoo, pet_grooming, tanning, laundry, yoga_pilates extend the engine with wrinkle-specific and axis-specific fields, each in a 2-file change pattern.
 2. **3 service-line wrinkle categories** — money-shape (tattoo: deposit/balance two-phase), state-shape (pet_grooming: vaccination gate), duration-shape (tanning: session minutes + elapsed tick).
 3. **1 ticket-lifecycle alternate** — drop_off (laundry): ticket created without payment, persists across visits as an open ticket, closes on pickup. Orthogonal to the wrinkle categories.
 4. **Shift envelope** — per-vertical open-shift concept separate from device session and operator identity; Charge gated until a shift is open; transaction stamping with `shiftId`.
 5. **Multi-leg split tender** — up to 5 legs in any card+cash combination; sequential state machine with running ledger; per-leg `mockLast4`; void-disclaimer on cancel.
-6. **5-way overlay mutex** — Waitlist, Appointments, Today's Sales, Owner Settings, Open Tickets; only one open at a time.
+6. **6-way overlay mutex** — Waitlist, Appointments, Today's Sales, Owner Settings, Open Tickets, Classes; only one open at a time.
+7. **Cardinality axis (1:1 vs 1:N customer-to-slot)** — prior appointments (B18) are 1:1: one appointment record binds one customer to one slot. Class slots (B29) are 1:N: one `ClassSlot` holds a `roster: ClassEnrollment[]` bounded by `capacity`. The `classEnabled` flag on `VerticalConfig` scopes this axis to specific verticals (yoga_pilates only currently). The capacity gate is enforced at both display time (Book button disabled) and confirmation time (race re-check in `handleAttachCustomer`). `markEnrollmentPaid` cross-links the completed transaction to the enrollment record via `transactionId`.
 
 ---
 
@@ -197,6 +206,8 @@ Transitions:
 - `receipt → completed`: operator selects delivery channel
 - `completed → idle`: operator taps "New Sale" (`completeSale`)
 
+On `completeSale`: if `classBookingContext` is set and `checkout.completedTx` is present, `markEnrollmentPaid(slotId, enrollmentId, transactionId)` is called before `checkout.completeSale()` resets state.
+
 ---
 
 ## Data Flow
@@ -217,14 +228,16 @@ Transitions:
 - **Drop-off** → operator taps "Drop Off" (laundry vertical, cart non-empty, customer attached) → `useOpenTickets.createTicket(lines, customer, tagNumber)` → `tagCounter` incremented → `DropOffSuccessOverlay` shown with LAUN-XXXX tag → cart cleared → open ticket appears in OpenTicketsOverlay with IN PROGRESS badge
 - **Mark Ready** → `OpenTicketsOverlay` "Mark Ready" → `useOpenTickets.markReady(ticketId)` → ticket status → READY → mock-SMS toast with customer phone number → badge turns green
 - **Pickup** → `OpenTicketsOverlay` "Pick Up" → switch-confirmation banner → confirm → cart hydrated with original lines + customer → pickup mode banner in cart → operator proceeds through standard checkout → `confirmCheckout` stamps `openTicketId` on transaction → `useOpenTickets.closeTicket(ticketId, transactionId)` → ticket moved to closedTickets
-- **Charge tap (card)** → `useCheckout.startCheckout()` → `idle → tip` → operator taps "Card $X.XX" → `confirmCheckout({ paymentMethod: 'card', shiftId, ... })` → `tip → processing` → 2000ms → `processing → receipt`
-- **Cash tap** → operator taps "Cash $X.XX" → `CashTenderModal` opens (z-50) → right-to-left keypad fills tendered amount → "Confirm Cash $X.XX" → `handleConfirmCash(tenderedCents)` → `confirmCheckout({ paymentMethod: 'cash', amountTendered, changeGiven, shiftId, ... })` → `tip → receipt` (skips processing) → cash drawer toast fires
-- **Split tap** → operator taps "Split Card + Cash" → `SplitTenderModal` opens (z-50) → N-leg sequential state machine → each leg: compose amount via keypad → "Charge Card $X" (2-sec card sim, generates `mockLast4`) or "Tender Cash $X" (cash sub-flow) → running ledger updates → "Complete — N legs" enabled when remaining = 0 → `handleConfirmSplit(payments)` → `confirmCheckout({ paymentMethod: 'split', splitPayments, shiftId, ... })` → `tip → receipt` → cash drawer toast if any cash leg
+- **Class booking flow** → operator opens `ClassesOverlay` (header "Classes: N" pill) → views 6 seed slots with capacity badge states → taps "Book" on a non-full slot → `handleBookRequest(slotId)` → `setShowClasses(false)` + `setPendingBookSlotId(slotId)` + `setShowCustomerSearch(true)` → CustomerSearch opens in yoga mode → operator selects/creates a member → `handleAttachCustomer(c)` branches on `pendingBookSlotId` → `checkSlotFull(slotId)` race re-check → if full: toast "Class is full — booking cancelled", return → `classSlots.enrollCustomer(slotId, c.id, customerName)` → `attachCustomer(c)` + `addItem(slot.serviceId, slot.serviceName, priceCents, activeStaff.id)` → `setClassBookingContext({ slotId, enrollmentId, scheduledAt, serviceName })` → Cart renders 🧘 booking banner → operator proceeds through standard checkout flow → `confirmCheckout` carries `classSlotId` → `completeSale` → `markEnrollmentPaid(slotId, enrollmentId, transactionId)` → enrollment stamped with transactionId → `classBookingContext` cleared
+- **Class enrollment cancel** → `ClassesOverlay` roster row "Cancel" → `classSlots.cancelEnrollment(slotId, enrollmentId)` → roster updates → capacity badge may change state (e.g. full → near-capacity) → no refund triggered
+- **Charge tap (card)** → `useCheckout.startCheckout()` → `idle → tip` → operator taps "Card $X.XX" → `confirmCheckout({ paymentMethod: 'card', shiftId, classSlotId?, ... })` → `tip → processing` → 2000ms → `processing → receipt`
+- **Cash tap** → operator taps "Cash $X.XX" → `CashTenderModal` opens (z-50) → right-to-left keypad fills tendered amount → "Confirm Cash $X.XX" → `handleConfirmCash(tenderedCents)` → `confirmCheckout({ paymentMethod: 'cash', amountTendered, changeGiven, shiftId, classSlotId?, ... })` → `tip → receipt` (skips processing) → cash drawer toast fires
+- **Split tap** → operator taps "Split Card + Cash" → `SplitTenderModal` opens (z-50) → N-leg sequential state machine → each leg: compose amount via keypad → "Charge Card $X" (2-sec card sim, generates `mockLast4`) or "Tender Cash $X" (cash sub-flow with change calculator) → running ledger updates → "Complete — N legs" enabled when remaining = 0 → `handleConfirmSplit(payments)` → `confirmCheckout({ paymentMethod: 'split', splitPayments, shiftId, classSlotId?, ... })` → `tip → receipt` → cash drawer toast if any cash leg
 - **Split cancel (after card leg captured)** → void-disclaimer overlay lists each captured card leg (amount + `****XXXX` last4) → "Yes, Cancel" discards all legs; "Keep Going" dismisses overlay; no actual Stripe void API called
 - **Refund** → `ReceiptDetail` calls `requestManagerOverride('Refund authorization')` → on approval → `RefundPicker` → `onComplete(lineIds)` → `RefundRecord` appended to transaction → localStorage updated
 - **Delivery choice** → `useCheckout.completeDelivery(channel)` → append to `nuatis-pos:{verticalId}:transactions` → `receipt → completed`
 - **New Sale** → `useCart.clear()` + `clearDepositContext()` + `useCheckout.completeSale()` → `completed → idle`
-- **Vertical switch** → `setActiveVerticalId(id)` → localStorage write → context update → `useCart` reloads from new namespace → `useVerticalSettings` reloads settings for new vertical → `useShift` hydrates that vertical's currentShift → `useOpenTickets` hydrates that vertical's openTickets → `RegisterPage` reloads held tickets + waitlist count + appointments → tile grid re-renders with new vertical's services + colors
+- **Vertical switch** → `setActiveVerticalId(id)` → localStorage write → context update → `useCart` reloads from new namespace → `useVerticalSettings` reloads settings for new vertical → `useShift` hydrates that vertical's currentShift → `useOpenTickets` hydrates that vertical's openTickets → `useClassSlots` hydrates that vertical's classSlots (seeds on first load if yoga_pilates) → `RegisterPage` reloads held tickets + waitlist count + appointments → tile grid re-renders with new vertical's services + colors → "Classes: N" pill shown/hidden based on `config.classEnabled`
 - **Settings save** → `SettingsOverlay` tab save → calls `updateBusiness / updateTaxRate / updateTipPresets / updateStaff` → `VerticalSettingsContext` state updates → all consumers (Cart, TipPicker, Receipt, StaffSwitcher, CartLine) re-render with new values
 
 ---
@@ -243,7 +256,7 @@ Adding a new wrinkle category requires: extending `CartLine` with the wrinkle-sp
 
 **Ticket-Lifecycle Axis**
 
-The wrinkle categories above describe service-line behavior within a single operator interaction. The ticket-lifecycle axis is orthogonal — it describes when a ticket opens, how it persists across visits, and when it closes. `VerticalConfig` carries a `workflow` flag: `"same_visit"` (default for all six prior verticals) or `"drop_off"` (laundry, B27). The drop-off lifecycle: ticket created without payment at drop-off → persists as an open ticket in localStorage → transitions to READY on mark-ready (mock-SMS) → closes at pickup checkout with `openTicketId` on the transaction. This axis is orthogonal to the wrinkle categories: wrinkles describe what happens inside a service interaction; lifecycle describes the existence and persistence of a ticket across visits.
+The wrinkle categories above describe service-line behavior within a single operator interaction. The ticket-lifecycle axis is orthogonal — it describes when a ticket opens, how it persists across visits, and when it closes. `VerticalConfig` carries a `workflow` flag: `"same_visit"` (default for all verticals except laundry) or `"drop_off"` (laundry, B27). The drop-off lifecycle: ticket created without payment at drop-off → persists as an open ticket in localStorage → transitions to READY on mark-ready (mock-SMS) → closes at pickup checkout with `openTicketId` on the transaction. This axis is orthogonal to the wrinkle categories: wrinkles describe what happens inside a service interaction; lifecycle describes the existence and persistence of a ticket across visits.
 
 ---
 
@@ -281,6 +294,10 @@ All amounts are integer cents throughout. No floating-point arithmetic.
 - **Per-pound pricing skipped for laundry**: weight-based pricing (lbs × rate) is intentionally not implemented. The duration-shape pattern from tanning (minutes × rate) covers the same axis conceptually; laundry is exercised as a flat-price service catalog for lifecycle-axis validation only.
 - **Drop-off deposits are out of scope**: the ticket-lifecycle axis (drop-off) is kept separate from the money-shape axis (deposit) in this prototype. A production laundry vertical might combine both; the prototype keeps them independent for clarity.
 - **Tag counter is per-vertical but laundry-only currently**: the `tagCounter` localStorage helpers in `lib/openTickets.ts` are parameterized by `verticalId`, but only the laundry vertical exercises them. The `LAUN-` tag prefix is hardcoded to laundry; production would read the prefix from per-vertical config.
+- **`classesCount` semantic — actual implementation**: the "Classes: N" header pill shows `classSlots.totalEnrolled`, which is `slots.reduce((sum, s) => sum + s.roster.length, 0)` — the **total number of enrollments across all slots** (Interpretation B). At seed this is 32 (3+8+0+12+5+4). This differs from Interpretation A (count of slots with available capacity = 5), which was an alternative considered during spec. The current implementation answers "how many members are booked today across all classes" rather than "how many classes still have open spots". Both interpretations are valid for different UX goals; the pill label ("Classes: N") is neutral enough to carry either. A production implementation should confirm the intended semantic with the operator UX team.
+- **Class wait-list omitted by design**: when a slot reaches capacity, no wait-list queue is maintained. Cancelling an enrollment silently frees capacity with no notification to waiters. Production would need a wait-list queue with auto-promote and SMS notification.
+- **Class slots seeded for today only**: the 6 seed slots are computed from `todayAt(HH, MM)` (today's date at the given hour). There is no recurrence engine. On the next calendar day, the seed slots will have past timestamps. Production needs a recurring schedule engine.
+- **Cancel-without-refund is prototype behavior**: `cancelEnrollment` removes the enrollment record from the roster but does not trigger a refund or credit. In production, cancellation policy (refund window, cancellation fees) would be enforced at the payment processor level.
 
 ---
 
@@ -302,12 +319,13 @@ Per-vertical namespacing: `nuatis-pos:{verticalId}:{key}`
 | `nuatis-pos:{v}:openTickets` | `nuatis-pos:laundry:openTickets` | Per-vertical (laundry exercises this) |
 | `nuatis-pos:{v}:closedTickets` | `nuatis-pos:laundry:closedTickets` | Per-vertical (laundry exercises this) |
 | `nuatis-pos:{v}:tagCounter` | `nuatis-pos:laundry:tagCounter` | Per-vertical (laundry exercises this) |
+| `nuatis-pos:{v}:classSlots` | `nuatis-pos:yoga_pilates:classSlots` | Per-vertical (yoga_pilates exercises this; seeded on first load) |
 | `nuatis-pos:activeVerticalId` | — | Shared (no prefix) |
 | `nuatis-pos:activeStaffId` | — | Shared (no prefix) |
 
-**Pattern**: `nuatis-pos:{verticalId}:{key}` — 9 base keys per vertical + 2 shared + 3 laundry-only = up to **68 keys** at maximum across 7 verticals when all settings have been customised. Write-on-edit-only keys (settings, cartMeta, currentShift) do not exist until first use.
+**Pattern**: `nuatis-pos:{verticalId}:{key}` — 9 base keys per vertical + 2 shared + 3 laundry-only + 1 yoga-only = up to **80 keys** at maximum across 8 verticals when all settings have been customised. Write-on-edit-only keys (settings, cartMeta, currentShift) do not exist until first use.
 
-**Key helpers** (`lib/storage.ts`): `cartKey(v)`, `transactionsKey(v)`, `heldTicketsKey(v)`, `settingsKey(v)`, `waitlistKey(v)`, `appointmentsKey(v)`, `cartMetaKey(v)`, `currentShiftKey(v)`, `shiftsKey(v)`, `ACTIVE_VERTICAL_KEY`, `ACTIVE_STAFF_KEY`. Open-ticket helpers in `lib/openTickets.ts`: `openTicketsKey(v)`, `closedTicketsKey(v)`, `tagCounterKey(v)`.
+**Key helpers** (`lib/storage.ts`): `cartKey(v)`, `transactionsKey(v)`, `heldTicketsKey(v)`, `settingsKey(v)`, `waitlistKey(v)`, `appointmentsKey(v)`, `cartMetaKey(v)`, `currentShiftKey(v)`, `shiftsKey(v)`, `ACTIVE_VERTICAL_KEY`, `ACTIVE_STAFF_KEY`. Open-ticket helpers in `lib/openTickets.ts`: `openTicketsKey(v)`, `closedTicketsKey(v)`, `tagCounterKey(v)`. Class slot helpers in `lib/classSlots.ts`: `classSlotStorageKey(v)` (module-internal; exposed via `loadClassSlots(v)` and `saveClassSlots(v, slots)`).
 
 **`cartMeta`** stores `{ appointmentRef: string | null, depositApplied: number }`. Written by `useCart.setDepositContext` when an appointment with a completed deposit is loaded to the register. Read back on page reload to restore the deposit credit display. Cleared (set to null/0) on checkout completion, cart clear, or `clearDepositContext`.
 
@@ -322,7 +340,7 @@ Per-vertical namespacing: `nuatis-pos:{verticalId}:{key}`
 - Copies legacy unprefixed keys (`nuatis-pos:cart`, etc.) → `nuatis-pos:salon:*` (only if the new key doesn't already exist), then deletes the old keys
 - Idempotent — re-running on subsequent boots is a no-op once legacy keys are absent
 
-**Isolation guarantee**: switching verticals never merges or copies cart/transaction/held/settings/waitlist/appointments/shift data across namespaces. Each vertical starts fresh or resumes its own last state.
+**Isolation guarantee**: switching verticals never merges or copies cart/transaction/held/settings/waitlist/appointments/shift/classSlots data across namespaces. Each vertical starts fresh or resumes its own last state.
 
 ---
 
@@ -353,6 +371,7 @@ interface Transaction {
   depositBalanceDueCents?: number;
   shiftId?: string;                          // B26: open shift at checkout time
   openTicketId?: string;                     // B27: laundry pickup only, links to originating drop-off record
+  classSlotId?: string;                      // B29: yoga class booking only, links transaction to the enrolled ClassSlot
 }
 
 interface SplitPayment {
@@ -371,12 +390,15 @@ interface SplitPayment {
 
 | File | Exports | Notes |
 |---|---|---|
-| `lib/verticals.ts` | `VerticalId`, `VerticalConfig`, `VERTICALS`, `getActiveVerticalConfig` | Central per-vertical config: services, modifiers, category colors, business identity defaults, `workflow` flag for all 7 verticals |
+| `lib/verticals.ts` | `VerticalId`, `VerticalConfig`, `VERTICALS`, `getActiveVerticalConfig` | Central per-vertical config: services, modifiers, category colors, business identity defaults, `workflow` flag, `classEnabled` flag; all 8 verticals registered |
 | `lib/verticalSettings.ts` | `SettingsStaff`, `VerticalSettings`, `SettingsSection`, `getDefaults`, `getVerticalSettings`, `setVerticalSettings`, `resetSection`, `resetAll` | Settings override layer; reads defaults from `lib/verticals.ts` at runtime; pure functions, no React |
 | `lib/storage.ts` | `cartKey`, `transactionsKey`, `heldTicketsKey`, `settingsKey`, `waitlistKey`, `appointmentsKey`, `cartMetaKey`, `currentShiftKey`, `shiftsKey`, `ACTIVE_STAFF_KEY`, `ACTIVE_VERTICAL_KEY`, `runMigrations` | Storage key helpers + one-time migration |
 | `lib/shifts.ts` | `Shift`, `getCurrentShift`, `saveCurrentShift`, `clearCurrentShift`, `appendShiftToLog`, `getShiftsLog` | Per-vertical shift record type + localStorage helpers; `shiftId` is a UUID generated at open time |
 | `lib/openTickets.ts` | `OpenTicket`, `OpenTicketStatus`, `getOpenTickets`, `saveOpenTickets`, `getClosedTickets`, `appendClosedTicket`, `getTagCounter`, `incrementTagCounter`, `formatTag` | Drop-off ticket type + per-vertical localStorage helpers; tag format: `{PREFIX}-{NNNN}` |
-| `lib/services.ts` | `SERVICES`, `Service`, `CATEGORY_COLORS`, `formatPrice`, `formatDuration` | 12 salon services |
+| `lib/classSlots.ts` | `ClassSlot`, `ClassEnrollment`, `seedClassSlots`, `loadClassSlots`, `saveClassSlots`, `isSlotFull`, `addEnrollmentToSlots`, `removeEnrollmentFromSlots`, `markEnrollmentPaidInSlots` | Class slot + enrollment types; 6 seed slots for yoga_pilates; per-vertical localStorage helpers; storage key: `nuatis-pos:{v}:classSlots` (module-internal) |
+| `lib/yoga-services.ts` | `YOGA_SERVICES`, `YOGA_MODIFIERS_BY_SERVICE`, `YOGA_CATEGORY_COLORS` | 12 yoga & pilates services; 9 have `isClass: true`; sage-green / cream palette |
+| `lib/yoga-customers.ts` | `YOGA_CUSTOMERS`, `addYogaCustomerInMemory` | 4 seed yoga members; `addYogaCustomerInMemory` mutates in-memory array only |
+| `lib/services.ts` | `SERVICES`, `Service`, `CATEGORY_COLORS`, `formatPrice`, `formatDuration` | 12 salon services; `Service` interface extended with `isClass?: boolean` |
 | `lib/tattoo-services.ts` | `TATTOO_SERVICES`, `TATTOO_MODIFIERS_BY_SERVICE`, `TATTOO_CATEGORY_COLORS` | 12 tattoo services with size/complexity modifiers |
 | `lib/pet-grooming-services.ts` | `PET_GROOMING_SERVICES`, `PET_GROOMING_CATEGORY_COLORS` | 12 pet grooming services; vaccination gate applies across all |
 | `lib/tanning-services.ts` | `TANNING_SERVICES`, `TANNING_CATEGORY_COLORS` | Session-based tanning services with duration + bed-type fields |
@@ -428,6 +450,8 @@ interface SplitPayment {
 | B26 | Shift-state envelope — per-vertical open shift, `StartShiftModal` + `EndShiftModal`, Charge gated when no shift open, `shiftId` stamped on every transaction, shift pill in header shows elapsed duration |
 | B27 | Laundry as 7th vertical + drop-off/pickup ticket-lifecycle shape — tag counter (LAUN-0001), `DropOffSuccessOverlay`, `OpenTicketsOverlay` (IN PROGRESS / READY badges), mock-SMS mark-ready, pickup cart hydration, `openTicketId` on pickup transaction, 5-way overlay mutex |
 | B28 | Docs wrap — README v6 + replit.md v6 + screenshots/README.md extended + tag v0.0.9-prototype |
+| B29 | Yoga & Pilates as 8th vertical + class enrollment / cardinality axis — `ClassSlot` + `ClassEnrollment` types, `useClassSlots` hook, `ClassesOverlay` (capacity badge states, roster expand/cancel), 6 seed slots, `classSlotId` on transaction, `markEnrollmentPaid`, 6-way overlay mutex, CustomerSearch yoga mode |
+| B30 | Docs wrap — README v7 + replit.md v7 + screenshots/README.md extended to 45 surfaces + tag v0.0.11-prototype |
 
 ---
 
@@ -444,6 +468,8 @@ interface SplitPayment {
 | v0.0.7-prototype | B25 | Multi-leg split (up to 5 legs, per-leg last4, void disclaimer); docs wrap v5 |
 | v0.0.8-prototype | B27 | Laundry vertical (drop-off/pickup lifecycle); shift-state envelope; 7th vertical; 5-way overlay mutex |
 | v0.0.9-prototype | B28 | Docs wrap v6 — README + replit.md + screenshots checklist through B27 |
+| v0.0.10-prototype | B29 | Yoga & Pilates (8th vertical); class enrollment cardinality axis; ClassSlot/ClassEnrollment types; 6-way overlay mutex |
+| v0.0.11-prototype | B30 | Docs wrap v7 — README v7 + replit.md v7 + screenshots extended to 45 surfaces |
 
 ---
 
@@ -492,8 +518,11 @@ Replit's default project template installed v4. All utility classes used are v3-
 - Engine generalisation pattern: `VERTICALS` registry + `getActiveVerticalConfig` — adding a vertical requires only registry addition + `VerticalId` type extension
 - **Shift envelope as a mental model**: per-vertical open-shift state distinct from device session and operator identity; shift pill in header; Charge gated until shift open; shift summary on close
 - **Ticket-lifecycle axis with `workflow` config flag**: `same_visit` vs `drop_off` as a per-vertical config flag cleanly scopes lifecycle behavior to the engine without touching shared checkout logic
-- **5-way overlay mutex**: Waitlist, Appointments, Today's Sales, Owner Settings, Open Tickets — only one surface open at a time; provides a clean pattern for adding future overlay surfaces
+- **6-way overlay mutex**: Waitlist, Appointments, Today's Sales, Owner Settings, Open Tickets, Classes — only one surface open at a time; provides a clean pattern for adding future overlay surfaces
 - **Tag counter pattern**: sequential per-vertical counter persisted to localStorage; `formatTag(counter, prefix)` produces human-readable ticket identifiers (LAUN-0001); easily extensible to other drop-off verticals
+- **Cardinality axis with `classEnabled` config flag**: `classEnabled: true` on `VerticalConfig` scopes 1:N class slot behavior to specific verticals without touching the core checkout engine; the flag is the clean extension point for adding further class-based verticals
+- **Capacity race re-check pattern**: capacity is checked at slot selection time (disables Book button) and re-checked at customer confirmation time (`handleAttachCustomer`) to guard against the race condition where a slot fills between opening CustomerSearch and selecting a customer; both checks use the same `checkSlotFull` helper
+- **Capacity badge color states**: green (< 70% full), amber (≥ 70% and not full), red FULL (at capacity) — three states map cleanly to actionable vs warning vs blocked without a fourth "critical" state
 
 ## Things to Discard (Architecture Decisions)
 
@@ -517,6 +546,9 @@ Replit's default project template installed v4. All utility classes used are v3-
 - In-memory tanning bed occupancy (production: session-management table with real-time occupancy)
 - **Shift pill's reliance on useClock re-renders** for elapsed-duration display — production should compute duration from `shift.startedAt` on each render, self-contained, without depending on an upstream clock re-render
 - **LAUN- tag prefix hardcoded to laundry** — production needs per-vertical tag prefix from `VerticalConfig` (e.g. `config.tagPrefix`) rather than a hardcoded string constant in the drop-off flow
+- **Class slots seeded for today only** — production needs a recurring schedule engine (weekly cadence, instructor assignment, room/resource allocation); the seed approach is a one-day throwaway
+- **In-memory `addYogaCustomerInMemory` / `addCustomerInMemory`** mutation pattern — production manages customers via a database with proper deduplication on phone number
+- **`classesCount` as total enrolled** — semantics should be confirmed with the operator UX team before production; "available spots" may be more actionable than "total enrolled" for the header pill
 
 ---
 

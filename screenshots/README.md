@@ -1,6 +1,6 @@
 # Nuatis POS — Screenshot Capture Checklist
 
-> Manual capture step — not performed by Replit Agent. Capture at 1024×768 (iPad portrait) after prototype is stable at tag v0.0.9-prototype.
+> Manual capture step — not performed by Replit Agent. Capture at 1024×768 (iPad portrait) after prototype is stable at tag v0.0.11-prototype.
 >
 > Each item below is one intended screenshot. Check off after capture. File naming convention: `{slug}.png`, stored in this directory.
 
@@ -15,6 +15,7 @@
 - [ ] `register-pet-grooming.png` — Pet Grooming tile grid; cart empty; "Pet Grooming" vertical pill
 - [ ] `register-tanning.png` — Tanning tile grid; bed occupancy indicators visible on at least one bed; "Tanning" vertical pill
 - [ ] `register-laundry.png` — Laundry tile grid; 12 services in muted blue + bronze palette; cart empty; "Laundry" vertical pill; "Open: N" header pill visible
+- [ ] `register-yoga.png` — Yoga & Pilates tile grid; sage-green / cream palette; cart empty; "Yoga & Pilates" vertical pill; "Classes: N" sage-green header pill visible (N = total enrolled across all slots at seed = 32)
 
 ---
 
@@ -26,6 +27,7 @@
 - [ ] `cart-vaccination-warning.png` — Pet Grooming vertical; cart with a service line; amber vaccination-warning banner visible (within-30-day expiry); Charge button accessible
 - [ ] `cart-deposit-banner.png` — Tattoo vertical; cart hydrated from an appointment with a completed deposit; deposit-credit banner visible ("Deposit applied: −$X.XX"); balance-due amount visible in total row
 - [ ] `cart-drop-off-mode.png` — Laundry vertical; cart with 2–3 services; "Drop-Off Mode" label visible in cart header; customer attached (required for drop-off); Charge button shows "Drop Off" label
+- [ ] `cart-class-booking-banner.png` — Yoga & Pilates vertical; cart hydrated via class booking flow; sage-green 🧘 class booking banner visible above line items showing class time and name (e.g. "Class booking · 12:00 PM · Power Yoga"); member attached
 
 ---
 
@@ -63,6 +65,19 @@
 
 ---
 
+## Class Enrollment Flow (B29)
+
+- [ ] `classes-overlay-all-slots.png` — ClassesOverlay open (right-drawer); all 6 seed slots visible with distinct capacity badge colors: green (partial/empty), amber (near-capacity — 8/10 Yin Yoga), red FULL (Hot Yoga 12/12); "Classes: N" sage-green pill visible in header; Book button disabled on the FULL slot
+- [ ] `classes-overlay-roster-expanded.png` — ClassesOverlay with one slot expanded showing enrolled member roster (names + enrolled-time labels); Cancel button visible on at least one enrollment row; slot with 3+ enrollments preferred for this shot
+- [ ] `classes-capacity-full-state.png` — ClassesOverlay focused on a full slot (Hot Yoga 12/12); red FULL badge visible; Book button visibly disabled (greyed out) with tooltip or label indicating class is full; capacity count showing 12/12
+- [ ] `classes-header-pill.png` — Header showing "Classes: N" sage-green pill (N = total enrolled across all 6 slots = 32 at seed); Classes pill positioned in the header pill row alongside Waitlist / Appts / Open Tickets pills; no other overlay open
+- [ ] `classes-cart-booking-banner.png` — Cart after completing class booking flow; 🧘 sage-green banner above line items confirming class time and service name; member name visible in customer pill; service line showing class service price
+- [ ] `classes-customer-search-yoga.png` — CustomerSearch modal open in yoga mode (triggered from ClassesOverlay Book flow); "Yoga & Pilates" sage-green badge visible in header of modal; member list showing seeded yoga customers; "Member phone or name" placeholder visible
+- [ ] `classes-6way-mutex.png` — ClassesOverlay open with all other overlays (Waitlist, Appointments, Today's Sales, Open Tickets) visibly closed; demonstrates 6-way overlay mutex — only Classes surface open at once
+- [ ] `classes-capacity-race-toast.png` — (capture if reproducible in two-tab scenario) Toast visible reading "Class is full — booking cancelled" after capacity race condition: slot became full between CustomerSearch open and customer selection
+
+---
+
 ## Overlay Surfaces
 
 - [ ] `todays-sales-summary.png` — Today's Sales (ReportsOverlay) summary view; 5-stat row (Gross, Discounts, Refunds, Net, Transactions) visible; per-staff table visible; at least one SPLIT badge and one DEPOSIT badge in the transaction list
@@ -83,7 +98,7 @@
 
 ## Vertical Switcher
 
-- [ ] `vertical-switcher.png` — VerticalSwitcher modal open; all 7 verticals visible (Salon, Spa, Nail Bar, Tattoo, Pet Grooming, Tanning, Laundry); active vertical highlighted; cart-has-items gate note visible if cart is non-empty
+- [ ] `vertical-switcher.png` — VerticalSwitcher modal open; all 8 verticals visible (Salon, Spa, Nail Bar, Tattoo, Pet Grooming, Tanning, Laundry, Yoga & Pilates); active vertical highlighted; cart-has-items gate note visible if cart is non-empty
 
 ---
 
@@ -93,6 +108,6 @@
 
 ---
 
-> **Total intended captures: 37**
+> **Total intended captures: 45**
 >
-> Capture order suggestion: verticals (7) → cart states (6) → payment flows (4) → vaccination gate (2) → shift state (4) → drop-off/pickup (4) → overlays (5) → queues/appointments (3) → switcher (1) → PIN (1).
+> Capture order suggestion: verticals (8) → cart states (7) → payment flows (4) → vaccination gate (2) → shift state (4) → drop-off/pickup (4) → class enrollment (8) → overlays (5) → queues/appointments (3) → switcher (1) → PIN (1).

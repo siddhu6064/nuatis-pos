@@ -4,13 +4,13 @@
 >
 > Built in one day on Replit Agent (May 2, 2026) for UX validation only. Code quality is exploratory. Architecture is intentionally wrong. Production POS build follows the separate Master Plan documents (PRD / MVP / Build Checklist) and starts post-Suite-ship (Aug 2026+).
 >
-> **Prototype version: v6 (through Batch 27 · tag v0.0.9-prototype)**
+> **Prototype version: v7 (through Batch 29 · tag v0.0.11-prototype)**
 
 ---
 
 ## What This Is
 
-- A tablet-portrait multi-vertical point-of-sale UX prototype (salon, spa, nail bar, tattoo, pet grooming, tanning, laundry — all seven planned launch verticals).
+- A tablet-portrait multi-vertical point-of-sale UX prototype (salon, spa, nail bar, tattoo, pet grooming, tanning, laundry, yoga & pilates — all eight planned launch verticals).
 - Single-page React app simulating the operator flow from tile-tap to mock checkout to mock receipt.
 - Includes a first-pass owner Settings UX: business identity, tax rate, tip presets, and staff CRUD — all per-vertical.
 - State lives in localStorage. No backend, no real payments, no real auth beyond Replit's session.
@@ -50,7 +50,8 @@
 - **Pet grooming vertical (5th) — state-shape wrinkle**: vaccination gate blocks checkout on missing records, warning path on expiring records (within 30 days), manager PIN override unlocks blocked gate, line-level `vaccinationOverride` field on CartLine
 - **Tanning vertical (6th) — duration-shape wrinkle**: session-based service lines (minutes, beds), elapsed-tick counter on active cart line, 6-bed layout with occupancy tracking
 - **Shift-state envelope**: per-vertical open-shift concept distinct from device session and operator identity; Start Shift / End Shift modals; Charge gated when no shift open; EndShiftModal summary with refund-adjusted gross, payment mix, and transaction count; shift pill in header shows elapsed duration; `shiftId` stamped on every transaction
-- **Laundry vertical (7th) — drop-off/pickup lifecycle**: customer-required drop-off flow, sequential per-vertical tag counter (LAUN-0001 format), DropOffSuccessOverlay with prominent tag display, open tickets persist across days, mock-SMS "ready" notification, pickup hydrates cart and routes through standard checkout, `openTicketId` on pickup transaction; 5-way overlay mutex now includes Open Tickets
+- **Laundry vertical (7th) — drop-off/pickup lifecycle**: customer-required drop-off flow, sequential per-vertical tag counter (LAUN-0001 format), DropOffSuccessOverlay with prominent tag display, open tickets persist across days, mock-SMS "ready" notification, pickup hydrates cart and routes through standard checkout, `openTicketId` on pickup transaction; 6-way overlay mutex includes Open Tickets
+- **Yoga & Pilates vertical (8th) — class enrollment / cardinality axis**: `classEnabled: true` config flag scopes class behavior; ClassSlot + ClassEnrollment types; 6 seed slots with capacity distribution (empty / partial / near-capacity / full); ClassesOverlay with capacity badge color states; per-slot roster with cancel; booking flow: CustomerSearch → capacity re-check → enrollment + cart hydration; `classSlotId` on transaction; `markEnrollmentPaid` links transaction to enrollment; 6-way overlay mutex includes Classes
 
 ---
 
@@ -68,10 +69,27 @@ The wrinkle categories above describe service-line behavior within a single oper
 
 `VerticalConfig` carries a `workflow` flag: `"same_visit"` (default) or `"drop_off"`.
 
-- **same_visit** (all six prior verticals): ticket opens when the first item is added to the cart, all services are rendered and paid before the operator interaction ends, and the ticket closes at checkout. The ticket never persists beyond the current session.
+- **same_visit** (all verticals except laundry): ticket opens when the first item is added to the cart, all services are rendered and paid before the operator interaction ends, and the ticket closes at checkout. The ticket never persists beyond the current session.
 - **drop_off** (laundry): ticket is created without payment at drop-off, receives a sequential tag number (LAUN-0001 format), persists in localStorage as an open ticket across days and page reloads, transitions to READY when the operator marks it ready (triggering a mock-SMS notification), and closes when the customer returns to pick up and pay through standard checkout. The pickup transaction carries `openTicketId` linking back to the original drop-off record.
 
 The lifecycle axis is separate from the money-shape axis: drop-off deposits are intentionally out of scope for this prototype. Production would likely combine both (drop-off + deposit) for some verticals; the prototype keeps the two axes independent for clarity.
+
+### Class Enrollment / Cardinality Axis
+
+Prior appointments (B18) are 1:1 — one appointment record binds one customer to one service slot. Class slots (B29) are 1:N — one slot holds multiple enrollments (a roster), bounded by a per-slot capacity ceiling.
+
+`VerticalConfig` carries a `classEnabled?: boolean` flag. When `true`, the vertical participates in the class enrollment axis. Only `yoga_pilates` sets this flag currently.
+
+Key structural differences from the appointments axis:
+
+- **Slot type** (`ClassSlot`): holds `capacity: number` and `roster: ClassEnrollment[]`. A slot is full when `roster.length >= capacity`.
+- **Enrollment type** (`ClassEnrollment`): one record per customer per slot, with optional `transactionId` stamped after paid checkout.
+- **Capacity gate**: checked at booking initiation (in ClassesOverlay, disabling the Book button) and **re-checked at confirmation** (in `handleAttachCustomer`) to guard against the race condition where the slot fills between when the operator opened the customer search and when they selected a customer.
+- **Roster as data structure**: `ClassesOverlay` shows each slot's roster inline with cancel buttons. Cancellation removes the enrollment from the roster; it does not trigger a refund.
+- **Cart hydration at booking**: enrolling a customer in a class immediately attaches the customer and adds the class service as a cart line, priced from the vertical's service config. The `classSlotId` flows through `confirmCheckout` to the transaction record.
+- **markEnrollmentPaid**: after checkout completes, `handleCompleteSale` calls `useClassSlots.markEnrollmentPaid(slotId, enrollmentId, transactionId)`, writing the transaction ID to the enrollment record.
+
+The cardinality axis is orthogonal to the ticket-lifecycle axis: class slots use `same_visit` workflow (the booking and payment happen in a single operator interaction), but the roster itself persists in `nuatis-pos:{v}:classSlots` across page reloads, independently of the cart.
 
 ---
 
@@ -168,12 +186,21 @@ These deviations are intentional. The prototype was built to answer UX questions
 - **Photo capture at drop-off** (no camera integration)
 - **Special handling flags** on open tickets (e.g. delicate / hand-wash)
 - **Additional Tier 4 verticals** beyond laundry (tailoring, alterations, shoe repair, dry cleaning are noted as candidates but not built)
+- **Class wait-list / auto-promote-on-cancel** — when a slot reaches capacity, no wait-list queue is maintained; cancelled enrollments free capacity silently with no notification
+- **Attendance check-in tracking** — no "checked in" status on enrollments; roster shows enrolled members only
+- **Recurring weekly schedule generation** — the 6 seed slots are seeded for today only; no recurrence engine, no next-week slots
+- **Multi-customer single-cart class booking** — the booking flow enrolls one customer per cart interaction; enrolling multiple customers in one cart transaction is not supported
+- **Class packages / punch cards** — no pre-paid class bundles; each enrollment is a single-session transaction
+- **Recurring monthly memberships** — no subscription or membership billing axis in this prototype
+- **Family accounts** — no multi-member household management
+- **Make-up lesson credits** — no credit or rollover mechanism for missed classes
+- **Roster export / printable roster** — ClassesOverlay shows roster on-screen only; no export or print path
 
 ---
 
 ## Transaction Record Shape
 
-All transactions are stored in `nuatis-pos:{verticalId}:transactions` (capped at 50). The shape as of B27:
+All transactions are stored in `nuatis-pos:{verticalId}:transactions` (capped at 50). The shape as of B29:
 
 ```typescript
 interface Transaction {
@@ -207,6 +234,8 @@ interface Transaction {
   shiftId?: string;                          // open shift at time of checkout; absent on pre-shift transactions
   // B27 extensions:
   openTicketId?: string;                     // laundry pickup only: links back to the originating open-ticket record
+  // B29 extensions:
+  classSlotId?: string;                      // yoga class booking only: links transaction to the enrolled ClassSlot
 }
 
 interface SplitPayment {
@@ -245,10 +274,11 @@ interface SplitPayment {
 | `nuatis-pos:{v}:openTickets` | Open drop-off tickets for vertical `v` (B27; laundry exercises this) |
 | `nuatis-pos:{v}:closedTickets` | Closed/picked-up ticket log for vertical `v` (B27; laundry exercises this) |
 | `nuatis-pos:{v}:tagCounter` | Sequential tag counter for vertical `v` (B27; laundry exercises this) |
+| `nuatis-pos:{v}:classSlots` | Class slot roster for vertical `v` (B29; yoga_pilates exercises this; seeded on first load) |
 
-**Total: ~68 keys** at maximum (2 shared + 9 per-vertical × 7 verticals = 65, plus up to 3 laundry-only keys when the laundry vertical has been exercised). Write-on-edit-only keys (settings, cartMeta, currentShift) do not exist until first use, so the practical minimum across a fresh 7-vertical session is lower.
+**Total: ~80 keys** at maximum (2 shared + 9 base keys per vertical × 8 verticals = 74, plus up to 3 laundry-only keys + 1 yoga-only key when those verticals have been exercised). Write-on-edit-only keys (settings, cartMeta, currentShift) do not exist until first use, so the practical minimum across a fresh 8-vertical session is lower.
 
-The pattern `nuatis-pos:{verticalId}:{key}` scales to any number of verticals by registry addition only. The openTickets / closedTickets / tagCounter helpers are parameterized by verticalId in `lib/openTickets.ts` but only the laundry vertical exercises them in this prototype.
+The pattern `nuatis-pos:{verticalId}:{key}` scales to any number of verticals by registry addition only. The openTickets / closedTickets / tagCounter helpers are parameterized by verticalId in `lib/openTickets.ts` but only the laundry vertical exercises them in this prototype. The classSlots helper in `lib/classSlots.ts` is similarly parameterized but only yoga_pilates exercises it currently.
 
 Legacy unprefixed keys (`nuatis-pos:cart`, `nuatis-pos:transactions`, `nuatis-pos:heldTickets`) are migrated to `nuatis-pos:salon:*` on first boot and then deleted.
 
@@ -256,19 +286,21 @@ Legacy unprefixed keys (`nuatis-pos:cart`, `nuatis-pos:transactions`, `nuatis-po
 
 ## Hardcoded Mock Data
 
-- **7 verticals** — Salon, Spa, Nail Bar, Tattoo, Pet Grooming, Tanning, Laundry.
+- **8 verticals** — Salon, Spa, Nail Bar, Tattoo, Pet Grooming, Tanning, Laundry, Yoga & Pilates.
   - Launch trio (salon, spa, nail_bar): uniform-service verticals.
   - Tattoo: money-shape wrinkle (deposit + balance two-phase transactions).
   - Pet Grooming: state-shape wrinkle (vaccination gate with blocked/warning/clear paths).
   - Tanning: duration-shape wrinkle (session-based service lines, elapsed-tick counter, bed occupancy).
   - Laundry: drop-off lifecycle (tag counter, open tickets, mark-ready/pickup flow).
+  - Yoga & Pilates: class enrollment / cardinality axis (`classEnabled: true`, ClassSlot roster, capacity badge states, booking flow).
 - **Salon business** — "Nuatis POS Demo Salon · 123 Main St, Austin, TX 78701 · (512) 555-0100" — **editable via Settings**
 - **Spa business** — "Nuatis POS Demo Spa · 456 Wellness Ave, Austin, TX 78704 · (512) 555-0200" — **editable via Settings**
 - **Nail Bar business** — "Nuatis POS Demo Nail Bar · 789 Polish Lane, Austin, TX 78702 · (512) 555-0300" — **editable via Settings**
 - **Tattoo business** — "Nuatis POS Demo Tattoo · 321 Ink Blvd, Austin, TX 78703 · (512) 555-0400" — **editable via Settings**
 - **Pet Grooming business** — "Nuatis POS Demo Pet Grooming · 555 Paw Lane, Austin, TX 78705 · (512) 555-0500" — **editable via Settings**
 - **Tanning business** — "Nuatis POS Demo Tanning · 888 Sun Blvd, Austin, TX 78706 · (512) 555-0600" — **editable via Settings**
-- **Laundry business** — "Nuatis POS Demo Laundry · 999 Wash Ave, Austin, TX 78707 · (512) 555-0700" — **editable via Settings**
+- **Laundry business** — "Clean & Press · 200 Linen Way, Austin, TX 78707 · (512) 555-0700" — **editable via Settings**
+- **Yoga & Pilates business** — "Flow Studio · 300 Serenity Lane, Austin, TX 78708 · (512) 555-0800" — **editable via Settings**
 - **Salon services** (`lib/services.ts`) — Women's Cut, Men's Cut, Beard Trim, Kids Cut, Highlights Full, Color Root, Gloss, Olaplex Treatment, Deep Conditioning, Wax, Blowout, Polish Change
 - **Spa services** — Swedish Massage, Deep Tissue Massage, Hot Stone Massage, Prenatal Massage, Classic Facial, Anti-Aging Facial, Hydrating Facial, Body Scrub, Detox Body Wrap, Aromatherapy Wrap, Foot Reflexology, Sauna Session
 - **Nail Bar services** — Basic Manicure, Gel Manicure, French Manicure, Polish Change, Basic Pedicure, Gel Pedicure, Spa Pedicure, Acrylic Full Set, Acrylic Fill, Dip Powder, Nail Art (Simple), Paraffin Wax Treatment
@@ -276,10 +308,19 @@ Legacy unprefixed keys (`nuatis-pos:cart`, `nuatis-pos:transactions`, `nuatis-po
 - **Pet Grooming services** (`lib/pet-grooming-services.ts`) — bath & brush, full groom, nail trim, ear cleaning, teeth brushing, de-shedding, flea bath, puppy first groom, cat groom, senior groom, skin treatment, anal gland expression; vaccination gate applies across all services
 - **Tanning services** (`lib/tanning-services.ts`) — 6-bed session-based services with duration (minutes) and bed-type attributes; elapsed-tick counter shown on active cart lines
 - **Laundry services** (`lib/laundry-services.ts`) — 12 services in muted blue + bronze palette; workflow flag `drop_off`; customer required for drop-off
+- **Yoga & Pilates services** (`lib/yoga-services.ts`) — 12 services in sage-green / cream palette; 9 services have `isClass: true` (Vinyasa Flow, Yin Yoga, Power Yoga, Hot Yoga, Aerial Yoga, Restorative Yoga, Pilates Mat, Barre Fusion, Prenatal Yoga); 3 are non-class private sessions
 - **3 staff shared across verticals** (`lib/staff.ts`) — Maria / Stylist, James / Colorist, Lisa / Stylist — **staff list is now editable per-vertical via Settings** (add / deactivate / delete)
 - **Laundry customers** (`lib/laundry-customers.ts`) — dedicated seed customer list for the laundry vertical with phone numbers for mock-SMS "ready" notifications
+- **Yoga customers** (`lib/yoga-customers.ts`) — 4 seed members (Amara Singh, Carlos Mendez, Yuki Tanaka, Sofia Reyes) with yoga-specific badge styling in CustomerSearch
 - **6 customers shared across verticals** (`lib/customers.ts`) — Sarah Chen, Marcus Rodriguez, Priya Patel, David Kim, Emma Thompson, Jordan Williams
 - **6 appointments per vertical** (seeded on first load; tattoo appointments include deposit fields; pet grooming appointments include vaccination status fields)
+- **6 class slots** (`lib/classSlots.ts` `seedClassSlots()`) — seeded for today on first load for yoga_pilates vertical:
+  - 9:00am Vinyasa Flow · Maria · cap 12 · 3 enrolled (partial / green)
+  - 11:00am Yin Yoga · Lisa · cap 10 · 8 enrolled (near-capacity / amber)
+  - 12:00pm Power Yoga · James · cap 15 · 0 enrolled (empty / green)
+  - 4:00pm Hot Yoga · Maria · cap 12 · 12 enrolled (FULL / red — Book button disabled)
+  - 6:00pm Vinyasa Flow · Lisa · cap 12 · 5 enrolled (partial / green)
+  - 7:00pm Aerial Yoga · James · cap 6 · 4 enrolled (partial / green)
 - **Default tax rate** — 8.25% flat (configurable per-vertical via Settings; TaxJar not integrated)
 - **Default tip presets** — 15%, 18%, 20%, 25% (configurable per-vertical via Settings)
 - **Mock card** — unique 4-digit last4 generated per leg at capture time (e.g. `****2847`) — no longer hardcoded `4242`
@@ -335,6 +376,9 @@ Open the Replit-provided URL. Replit Auth gates the app — log in with any Repl
 | B25 | Docs wrap (README + replit.md v5 + /screenshots/README.md + tag v0.0.7-prototype) |
 | B26 | Shift-state envelope (per-vertical open shift, StartShiftModal + EndShiftModal, Charge gated when no shift, shiftId on Transaction) |
 | B27 | Laundry vertical (7th) + drop-off/pickup ticket-lifecycle shape (tag counter, open tickets, DropOffSuccessOverlay, OpenTicketsOverlay, mock-SMS mark-ready, openTicketId on pickup transaction) |
+| B28 | Docs wrap (README v6 + replit.md v6 + screenshots/README.md extended + tag v0.0.9-prototype) |
+| B29 | Yoga & Pilates vertical (8th) + class enrollment / cardinality axis (ClassSlot, ClassEnrollment, useClassSlots, ClassesOverlay, capacity badge states, 6-way overlay mutex, classSlotId on Transaction) |
+| B30 | Docs wrap (README v7 + replit.md v7 + screenshots/README.md extended + tag v0.0.11-prototype) |
 
 ---
 

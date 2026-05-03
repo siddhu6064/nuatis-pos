@@ -1,6 +1,6 @@
 {
   "name": "@workspace/nuatis-pos",
-  "version": "0.0.7-prototype",
+  "version": "0.0.11-prototype",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,0 +1,134 @@
+▶ PROMPT [Phase 3 · Batch 30 · Replit Agent · WRAP · STRICT MODE]
+
+FORMAT CONTRACT — READ THIS BEFORE WRITING ANY CODE OR ANY RESPONSE
+Your response to this prompt will contain exactly four top-level sections, in this exact order, with these exact headings:
+
+WHAT WAS BUILT
+ERRORS ENCOUNTERED
+ITEMS SKIPPED
+OPEN QUESTIONS
+
+No preamble before WHAT WAS BUILT. No closing section after OPEN QUESTIONS. No "Next, I can add..." sentence. No suggestion of follow-on work. No "Would you like me to..." question. The four sections ARE the entire response.
+
+Self-correction reporting is mandatory: any error you encounter during the batch (TypeScript error, runtime error, mis-placed code, incorrect import, scope misread, anything you wrote and then changed) MUST be reported in ERRORS ENCOUNTERED with the original error or wrong code described verbatim and the fix described verbatim. If you self-correct silently, that is a discipline failure. If no errors, write "None." literally.
+
+Evidence over claims: where the spec asks you to paste the output of a command, paste the literal output. Do not paraphrase. Do not summarize. Do not write "matched expected." Paste the bytes.
+
+Acknowledgement requirement: the first line of WHAT WAS BUILT is "Format contract acknowledged."
+
+CONTEXT
+This is a strict-mode docs wrap batch covering B26 (shift-state envelope), B27 (laundry vertical + drop-off/pickup ticket-lifecycle axis), and B29 (yoga_pilates vertical + class enrollment cardinality axis). B28 was the previous wrap producing README v6 + replit.md v6 + screenshots scaffold (37 surfaces) + package.json at v0.0.9-prototype reflecting state through B27. B29 has shipped since (8th vertical yoga_pilates with classEnabled flag, ClassSlot + ClassEnrollment types in lib/classSlots.ts, useClassSlots hook, ClassesOverlay component, Header Classes pill, capacity-gated booking flow with race re-check, roster expand/cancel, transaction.classSlotId linkage, 6-way overlay mutex). B29's ad-hoc report described classesCount semantically as "total enrolled, only when classEnabled" but the spec called for "count of slots with available capacity." This batch verifies the actual semantic in code and documents it accurately, then captures B29 in v7 docs.
+
+GOAL
+README v7 + replit.md v7 reflect state through B29 with the cardinality axis added, screenshots/README.md extended with B29 capture surfaces, package.json bumped to 0.0.11-prototype, and B29's classesCount semantic verified against the source and documented. Zero source code modified.
+
+SCOPE — BUILD THIS
+
+Pre-work verification audit (output goes in WHAT WAS BUILT, before any docs are written):
+
+(1) Run `git log --oneline -10` and paste the literal output. This confirms the recent commit history for context.
+
+(2) Open src/components/Header.tsx and locate the line(s) that compute or render the Classes pill count. Paste those lines verbatim with their line numbers as shown by the view tool.
+
+(3) Open src/pages/RegisterPage.tsx and locate where classesCount (or equivalent) is computed and passed to Header. Paste those lines verbatim with line numbers.
+
+(4) Compute by hand from the B29 seed slot data what the count would be under each of two interpretations:
+    - Interpretation A: count of slots with available capacity (NOT full). Expected: 5 (the 4pm Hot Yoga 12/12 is excluded).
+    - Interpretation B: total enrolled across all slots. Expected: 32 (3+8+0+12+5+4).
+   State which interpretation the actual code implements based on the lines you pasted in (2) and (3). Report this finding explicitly.
+
+(5) Open src/lib/verticals.ts and confirm yoga_pilates is inside the VERTICALS object (not appended after the closing brace). Paste the surrounding 3 lines on each side of the yoga_pilates entry.
+
+(6) Run `grep -rn "setInterval" src/` and paste the literal output. The expected count is exactly 1 match in src/hooks/useElapsedTick.ts.
+
+(7) Run `git diff --name-only HEAD` after all docs changes are written but before reporting. Paste the literal output. Every path in the output must be one of: README.md, replit.md, screenshots/README.md, package.json. Any other path is a discipline failure and must be reverted before reporting.
+
+Documentation work (only after audit steps 1-6 are complete):
+
+README.md → v7. Refresh in place, preserving voice. Update the following:
+- Top header / version stamp to v0.0.11-prototype (through Batch 29).
+- "What's Built" feature inventory expanded to 8 verticals (salon, spa, nail_bar, tattoo, pet_grooming, tanning, laundry, yoga_pilates) and 6-way overlay mutex (Waitlist / Appointments / Today's Sales / Settings / Open Tickets / Classes).
+- New "Class Enrollment / Cardinality Axis" section: explain that prior Appointments (B18) are 1:1 customer-to-slot while Class Slots (B29) are 1:N — one slot, multiple enrollments, capacity gate at slot-level, roster as new data structure. classEnabled config flag scopes this to specific verticals (yoga_pilates only currently). Booking flow includes capacity race re-check at confirmation. Cancel does not auto-refund.
+- "Stack Deviations" block: confirm exactly 1 setInterval in src/hooks/useElapsedTick.ts (paste-back the grep result if there is any deviation from the expected 1; if exactly 1, state so flatly).
+- "What Is NOT In This Prototype" expanded with: class wait-list / auto-promote-on-cancel, attendance check-in tracking, recurring weekly schedule generation, multi-customer single-cart class booking, class packages / punch cards, recurring monthly memberships, family accounts, make-up lesson credits, roster export / printable roster.
+- "Transaction Record Shape" updated to include classSlotId? optional field with one-line annotation.
+- "localStorage Keys" table refreshed to include the per-vertical classSlots key (only yoga uses it currently). Update total count.
+- "Hardcoded Mock Data" section extended to all 8 verticals including yoga_pilates business identity, yoga services, yoga customers, and the 6 seed class slots with their intentional capacity distribution.
+- "Batch History" table: add B29 row and B30 row.
+
+replit.md → v7. Refresh in place. Update:
+- Header to v7 / through Batch 29 / v0.0.11-prototype.
+- Component Tree: add ClassesOverlay, Classes pill, capacity badge, roster row, booking-mode cart label. Note 6-way mutex and 8 verticals.
+- Hooks table: add useClassSlots row.
+- "setInterval Invariant" section: confirm count still 1.
+- State Architecture: add useClassSlots paragraph.
+- Data Flow: add Class enrollment booking flow (overlay → CustomerSearch → capacity re-check → enrollment + cart hydrate → checkout → markEnrollmentPaid). Note transactionId stamping on enrollment after checkout.
+- "Wrinkle Category Framework" section: keep as-is.
+- "Architectural Axes Validated" section: extend with cardinality axis (1:1 vs 1:N customer-to-slot via classEnabled flag).
+- Known Limitations: add bullets on (a) classesCount semantic — document the actual implementation accurately based on the audit finding above; if the semantic deviates from spec, state that plainly and frame as a known limitation, (b) wait-list omitted by design, (c) classes seeded for today only with no recurrence engine, (d) cancel-without-refund as prototype behavior.
+- Storage Architecture: refresh key inventory and totals.
+- Transaction Shape quick-ref: add classSlotId? field.
+- Key Library Modules table: add lib/classSlots.ts, lib/yoga-services.ts, lib/yoga-customers.ts.
+- Batch History table: full B1 through B30, one row each.
+- Tag History table: extend with v0.0.10 (B29) and v0.0.11 (B30) entries with one-line description per tag.
+- "Things to Carry Forward": add cardinality axis (classEnabled flag pattern), capacity race re-check pattern, capacity badge color states (green/amber/red).
+- "Things to Discard": list anything implementation-specific to prototype that production should not reuse.
+
+screenshots/README.md → extend with B29 capture surfaces:
+- yoga_pilates register grid (sage/cream palette)
+- Header Classes pill (with the verified count semantic from the audit)
+- ClassesOverlay open with all 6 slots showing distinct capacity badge colors (green / amber / red FULL)
+- ClassesOverlay with one slot expanded showing roster with Cancel buttons
+- Capacity-full state with disabled Book button + tooltip
+- Cart with class booking banner ("Class booking · 12:00 · Power Yoga")
+- Capacity race re-check toast ("Class filled while you were booking") if reproducible
+- 6-way mutex demonstration (Classes overlay open with sibling overlays closed)
+Update total surface count and capture-order suggestion at the footer.
+
+package.json: version field set to "0.0.11-prototype".
+
+SCOPE — DO NOT BUILD
+- Any source code changes anywhere under src/. This is docs-only.
+- Actual screenshot PNG files (manual capture, not for the agent).
+- Production roadmap content; the production master doc is the source of truth.
+- Suite cross-references.
+- Architecture recommendations for production beyond the existing carry-forward / discard sections.
+- New verticals, features, or flows.
+- "Fixing" the classesCount semantic if it deviates from spec — document the actual implementation in Known Limitations; do not modify code in this batch.
+- Reports overlay extensions of any kind (declined umbrella).
+- Class wait-list functionality (re-declined; was DO NOT BUILD in B29 prompt).
+- README rewrite from scratch — refresh in place, preserve voice.
+- Any closing suggestion section, "Next, I can add..." pitch, or "Would you like me to..." question.
+
+TECH CONSTRAINTS
+- Markdown only. No new dependencies, no package installs.
+- Both files must be valid GitHub-flavored Markdown.
+- No edits to any file under src/.
+- No edits to any config file other than package.json (version field only).
+- Preserve existing tables, sections, and prose blocks unless the spec calls for refresh.
+
+ACCEPTANCE
+- All 7 audit outputs (steps 1-7 above) are present in WHAT WAS BUILT, in order, with literal command output where called for. Paraphrasing instead of pasting is a discipline failure.
+- README.md "What's Built" mentions all 8 verticals, cardinality axis, 6-way overlay mutex, class enrollment flow.
+- README.md stack-deviation block confirms exactly 1 setInterval (or reports the actual count if it has changed).
+- replit.md batch history runs B1 through B30 with one demo-able outcome per row.
+- replit.md tag history extends through v0.0.11 (B30) with batch + description per row.
+- replit.md "Architectural Axes Validated" section now lists the cardinality axis explicitly.
+- replit.md Known Limitations includes the classesCount semantic finding from the audit (exactly as found in code, not as the spec said it should be).
+- screenshots/README.md gained 8+ B29 capture surfaces with updated total count.
+- package.json version is "0.0.11-prototype".
+- `git diff --name-only HEAD` output (audit step 7) shows ONLY: README.md, replit.md, screenshots/README.md, package.json. Any other path = discipline failure to revert before reporting.
+- TypeScript check still clean (sanity).
+
+DO NOT TOUCH GIT — Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab.
+
+REPORT FORMAT — STRICT
+Four sections in order: WHAT WAS BUILT, ERRORS ENCOUNTERED, ITEMS SKIPPED, OPEN QUESTIONS.
+First line of WHAT WAS BUILT is "Format contract acknowledged."
+Audit outputs (steps 1-7) appear in WHAT WAS BUILT before any docs description.
+Self-corrections during this batch are reported in ERRORS ENCOUNTERED with verbatim before/after, not buried in narrative.
+ITEMS SKIPPED enumerates each spec exclusion that is genuinely not present in your output (not a list of "things you didn't do because they weren't asked" — the things explicitly listed in DO NOT BUILD that you confirmed you did not do).
+OPEN QUESTIONS lists genuine ambiguity surfaced during the batch. If none, write "None."
+No fifth section. No closing pitch. No follow-on suggestion. The phrase "Next, I can add" must not appear anywhere in your response.
+
+HARD STOP — stop after scope, do not begin next batch, wait for next prompt.
