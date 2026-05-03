@@ -1,0 +1,119 @@
+▶ PROMPT [Phase 3 · Batch 21 · Replit Agent · DOCS WRAP]
+
+CONTEXT
+Nuatis POS prototype, prototype/replit-day-1 branch. 20 batches shipped clean today, last docs wrap was Batch 15 (README v3 + replit.md v3 reflecting through Batch 14). Since then five batches landed:
+- B16 — Walk-in queue (per-vertical FIFO, cap 10, promote-to-ticket with customer + service hydration)
+- B17 — Cash payment + change calculator (right-to-left cents fill keypad, quick-tender row, cash drawer mock toast, payment mix in Today's Sales)
+- B18 — Appointment-aware register (chronological list, Upcoming/History tabs, status state machine scheduled→started→no_show with undo, tap-to-hydrate from appointment)
+- B19 — Tattoo vertical (4th vertical) + deposit pattern (two-phase transactions, totalPaid as revenue truth, deposit excluded from per-staff but included in payment mix)
+- B20 — Split tender card + cash (internal modal state machine, payments[] array on transaction, payment mix routes split legs to card/cash buckets)
+
+This is a docs-only batch matching the shape of Batch 8 / 12 / 15. No code changes. Update README and replit.md to reflect the current state of the prototype as of B20. Capture the new patterns, the new vertical, and the new transaction shapes so the docs accurately describe what someone cloning the repo would find.
+
+GOAL
+README.md and replit.md updated to v4, accurately reflecting all 20 batches' worth of work, with no contradictions or stale references to earlier states.
+
+SCOPE — BUILD THIS
+
+1. Read the existing README.md and replit.md in full before writing anything. Identify which sections describe the state through B14 vs which sections were already updated in B15. Preserve the v3 voice and structure — this is an incremental update, not a rewrite.
+
+2. README.md — update the following sections (or add if missing):
+
+   a. Top-of-file status line / version: bump to v4 reflecting B20.
+
+   b. Verticals section: now lists FOUR verticals — salon, spa, nail_bar, tattoo. Tattoo is the 4th and is distinct from the launch trio in that it carries a vertical-specific wrinkle (deposits). Note explicitly that the launch trio = salon, spa, nail_bar, and tattoo is a Tier 1 vertical added to validate engine extension past uniform service catalogs. Update any vertical-count references throughout the doc.
+
+   c. Operator loop / features section: add concise bullets covering the five new capabilities. One bullet each, no nested lists:
+      - Walk-in queue (pre-cart customer state, FIFO cap-10, promote-to-ticket hydrates customer + optional service line)
+      - Cash payment with change calculator (right-to-left cents fill, quick-tender row, mock cash drawer toast)
+      - Appointment-aware register (Upcoming/History tabs, scheduled/started/no_show status with undo, tap-to-hydrate)
+      - Deposit pattern on tattoo (two-phase transactions, deposit + balance, totalPaid revenue math, deposit transactions excluded from per-staff but counted in payment mix)
+      - Split tender (card + cash on one transaction, payments[] array, payment mix routes legs by method)
+
+   d. Transaction record shape section (if it exists; create if not): document the current shape including paymentMethod ('card' | 'cash' | 'split'), payments[] (split only), type ('service' | 'deposit'), totalPaid, depositApplied, appointmentRef. Note backward-compat: legacy records read with sane defaults.
+
+   e. localStorage keys section: confirm 6 per-vertical keys are documented (cart, transactions, heldTickets, settings, waitlist, appointments) plus shared keys (activeVerticalId, activeStaffId, cartMeta if it exists from B19). With 4 verticals, total keys = 4 × 6 + shared. Update any stale counts.
+
+   f. Stack deviations table: no changes (deviations are unchanged from v3). Verify table is intact and accurate.
+
+   g. Hardcoded mock data summary: 4 verticals × (12 services + modifiers + business identity), 3-4 staff per vertical, 4-6 customers per vertical, 6 appointments per vertical. Update counts to match what's actually in the config files.
+
+   h. Batch summary section: extend the existing batch table or list to include rows for B16, B17, B18, B19, B20. One-line summary each, matching the voice of existing rows.
+
+   i. Day's numbers section (if it exists): update to reflect 20 batches shipped, 4 verticals, ~35-40 UX patterns validated, current localStorage key count, current file count, latest tag (v0.0.4-prototype at B19), this wrap batch becoming v0.0.5-prototype.
+
+3. replit.md — update with the same fidelity:
+
+   a. Header status line.
+
+   b. "What this is" / overview: ensure the four-vertical, multi-wrinkle validation thesis is reflected.
+
+   c. Architecture notes: per-vertical namespacing pattern still holds; document the appointment + waitlist namespacing additions; document the cartMeta key (if used by B19's deposit context); document the transaction shape extensions and the totalPaid revenue-math principle (revenue = sum(transaction.totalPaid), per-staff iterates type='service' line revenue only).
+
+   d. Recent batches: extend existing recent-work section through B20.
+
+   e. Anything that previously said "3 verticals" or "launch trio only" — update to reflect tattoo as 4th.
+
+4. Verify there are NO references in either doc to:
+   - Hardcoded `salon` paths that should now be vertical-agnostic
+   - Stale localStorage key examples that don't include the new waitlist or appointments keys
+   - "Card or Cash" language that doesn't acknowledge split tender
+   - Single-method-only transaction shape examples
+   - Per-staff revenue calculations that don't note the deposit/split exclusions
+
+5. Do NOT touch:
+   - package.json, tsconfig, vite config, or any code files
+   - Component files, hook files, lib files
+   - The existing structure / voice / headings of README beyond the updates listed above (additive + corrective only, not a rewrite)
+   - replit.md's existing sections beyond the updates listed above
+
+6. Do NOT add:
+   - "Future work" sections enumerating things that haven't been built (the docs describe what IS, not what MIGHT BE)
+   - Marketing-style language ("revolutionary", "powerful", etc.) — match the existing technical voice
+   - Setup/install steps beyond what's already in the doc (no new sections on running locally unless one already exists and has gone stale)
+   - Screenshots or image references
+   - Changelog format if one doesn't already exist
+
+SCOPE — DO NOT BUILD
+- Any code changes whatsoever — this is a docs-only batch
+- New top-level docs files (no CHANGELOG.md, ARCHITECTURE.md, etc. — keep README + replit.md as the only two)
+- Migration guides for the transaction shape extensions (defensive reads handle this)
+- Production roadmap content — Master Plan docs cover that, not the prototype README
+- Comparison tables between prototype and production beyond what already exists in v3
+- "Known issues" or "limitations" sections beyond what already exists
+
+OPEN QUESTIONS section in your report is for clarifying questions about THIS batch's scope. Do NOT use it to suggest follow-on features.
+
+TECH CONSTRAINTS
+- Markdown only, in the existing files
+- Match existing heading levels and voice
+- Code blocks for shape examples should use TypeScript fenced blocks matching the rest of the doc
+- No new dependencies, no new files
+
+ACCEPTANCE
+- README.md status/version line reflects v4 / B20.
+- README.md lists 4 verticals correctly with tattoo identified as the wrinkle-carrying validation.
+- README.md operator features section has the 5 new capability bullets from B16-B20.
+- README.md transaction shape section documents paymentMethod union, payments[], type, totalPaid, depositApplied, appointmentRef.
+- README.md localStorage keys section enumerates 6 per-vertical keys + shared, with current total count.
+- README.md batch table includes B16-B20 rows in matching format.
+- replit.md reflects 4 verticals and the 5 new capabilities at appropriate detail.
+- Neither doc says "3 verticals", "launch trio only", "card or cash" without split, or "single payment method" anywhere.
+- Stack deviations table is intact and accurate (no changes needed but verify).
+- Hardcoded mock data summary counts match actual config.
+- No code files modified — git status should show only README.md and replit.md changed.
+
+DO NOT TOUCH GIT
+Replit Agent sandbox cannot run git. Sid runs commit + push manually in the Shell tab after this batch lands.
+
+REPORT FORMAT — REQUIRED
+Agent's response must include four sections in this order:
+- WHAT WAS BUILT
+- ERRORS ENCOUNTERED
+- ITEMS SKIPPED
+- OPEN QUESTIONS
+
+OPEN QUESTIONS is for clarifying questions about THIS scope only. Do not propose follow-on features.
+
+HARD STOP
+Stop after the scope above. Do not begin a next batch. Wait for the next prompt.

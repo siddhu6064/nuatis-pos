@@ -3,12 +3,14 @@
 > **THROWAWAY UX PROTOTYPE — DO NOT USE AS BASIS FOR PRODUCTION**
 >
 > Built in one day on Replit Agent (May 2, 2026) for UX validation only. Code quality is exploratory. Architecture is intentionally wrong. Production POS build follows the separate Master Plan documents (PRD / MVP / Build Checklist) and starts post-Suite-ship (Aug 2026+).
+>
+> **Prototype version: v4 (through Batch 20 · tag v0.0.5-prototype)**
 
 ---
 
 ## What This Is
 
-- A tablet-portrait multi-vertical point-of-sale UX prototype (salon + spa + nail bar — full launch trio).
+- A tablet-portrait multi-vertical point-of-sale UX prototype (salon + spa + nail bar + tattoo — launch trio plus first wrinkle-vertical).
 - Single-page React app simulating the operator flow from tile-tap to mock checkout to mock receipt.
 - Includes a first-pass owner Settings UX: business identity, tax rate, tip presets, and staff CRUD — all per-vertical.
 - State lives in localStorage. No backend, no real payments, no real auth beyond Replit's session.
@@ -40,6 +42,11 @@
 - Per-vertical settings scoping — edits in one vertical don't affect others
 - Settings layer overrides config defaults dynamically (Receipt, tax math, tip presets, staff list all read from settings hook, not constants)
 - Engine generalisation pattern — adding a 4th vertical requires only adding to VERTICALS registry + extending VerticalId type
+- Walk-in queue (pre-cart customer state, FIFO cap-10, promote-to-ticket hydrates customer + optional service line)
+- Cash payment with change calculator (right-to-left cents fill, quick-tender row, mock cash drawer toast)
+- Appointment-aware register (Upcoming/History tabs, scheduled/started/no_show status with undo, tap-to-hydrate)
+- Deposit pattern on tattoo vertical (two-phase transactions, deposit + balance, totalPaid revenue math, deposit transactions excluded from per-staff but counted in payment mix)
+- Split tender card + cash (single transaction, payments[] array, internal modal state machine, payment mix routes card/cash legs independently)
 
 ---
 
@@ -92,6 +99,56 @@ These deviations are intentional. The prototype was built to answer UX questions
 
 ---
 
+## Transaction Record Shape
+
+All transactions are stored in `nuatis-pos:{verticalId}:transactions` (capped at 50). The shape as of B20:
+
+```typescript
+interface Transaction {
+  id: string;
+  lineItems: CartLine[];
+  subtotalCents: number;
+  taxCents: number;
+  tipCents: number;
+  totalCents: number;                         // pre-deposit, pre-split gross
+  paymentMethod: "card" | "cash" | "split";
+  // Single-method cash only:
+  amountTendered?: number;
+  changeGiven?: number;
+  // Split-tender only (paymentMethod === 'split'):
+  payments?: SplitPayment[];                  // in order of settlement
+  completedAt: string;                        // ISO 8601
+  customer: CartCustomer | null;
+  receiptDelivery?: "print" | "email" | "sms" | "none";
+  receiptDestination?: string;
+  compApplied: boolean;
+  compReason: string | null;
+  refunds?: RefundRecord[];
+  refundedTotalCents?: number;
+  // B19 extensions:
+  type?: "service" | "deposit";              // default "service" on legacy reads
+  depositApplied?: number;                   // cents credited from prior deposit tx
+  appointmentRef?: string;                   // links to Appointment.id
+  totalPaid?: number;                        // actual revenue: totalCents − depositApplied
+  depositBalanceDueCents?: number;           // deposit tx only: servicePriceCents − depositAmountCents
+}
+
+interface SplitPayment {
+  method: "card" | "cash";
+  amountCents: number;
+  processedAt: number;                       // Date.now() at the moment this leg settled
+  // Cash leg only:
+  tenderedCents?: number;
+  changeCents?: number;
+}
+```
+
+**Revenue truth**: `transaction.totalPaid` (not `totalCents`) is the authoritative revenue figure. For split transactions, `totalPaid = sum(payments[].amountCents)` — change given to the customer is excluded. For deposit transactions (`type === 'deposit'`), `totalPaid` is the deposit amount. Per-staff revenue iterates `type === 'service'` line revenue only; deposit transactions are excluded from per-staff breakdown.
+
+**Backward compatibility**: legacy records from B1–B16 have no `payments`, `type`, `depositApplied`, or `totalPaid` fields. All reads use safe defaults (`?? "card"`, `?? 0`, `?? []`). Existing records never crash.
+
+---
+
 ## localStorage Keys
 
 | Key | Purpose |
@@ -99,21 +156,37 @@ These deviations are intentional. The prototype was built to answer UX questions
 | `nuatis-pos:activeVerticalId` | Currently selected vertical (shared across verticals) |
 | `nuatis-pos:activeStaffId` | Currently selected staff (shared across verticals) |
 | `nuatis-pos:salon:cart` | Salon active cart |
-| `nuatis-pos:salon:transactions` | Salon transaction log (last 10) |
+| `nuatis-pos:salon:transactions` | Salon transaction log (last 50) |
 | `nuatis-pos:salon:heldTickets` | Salon held tickets (cap 5) |
 | `nuatis-pos:salon:settings` | Salon settings overrides |
+| `nuatis-pos:salon:waitlist` | Salon walk-in queue (cap 10) |
+| `nuatis-pos:salon:appointments` | Salon appointments (seeded on first load) |
+| `nuatis-pos:salon:cartMeta` | Salon deposit context (appointmentRef + depositApplied) |
 | `nuatis-pos:spa:cart` | Spa active cart |
-| `nuatis-pos:spa:transactions` | Spa transaction log (last 10) |
+| `nuatis-pos:spa:transactions` | Spa transaction log (last 50) |
 | `nuatis-pos:spa:heldTickets` | Spa held tickets (cap 5) |
 | `nuatis-pos:spa:settings` | Spa settings overrides |
+| `nuatis-pos:spa:waitlist` | Spa walk-in queue (cap 10) |
+| `nuatis-pos:spa:appointments` | Spa appointments (seeded on first load) |
+| `nuatis-pos:spa:cartMeta` | Spa deposit context |
 | `nuatis-pos:nail_bar:cart` | Nail Bar active cart |
-| `nuatis-pos:nail_bar:transactions` | Nail Bar transaction log (last 10) |
+| `nuatis-pos:nail_bar:transactions` | Nail Bar transaction log (last 50) |
 | `nuatis-pos:nail_bar:heldTickets` | Nail Bar held tickets (cap 5) |
 | `nuatis-pos:nail_bar:settings` | Nail Bar settings overrides |
+| `nuatis-pos:nail_bar:waitlist` | Nail Bar walk-in queue (cap 10) |
+| `nuatis-pos:nail_bar:appointments` | Nail Bar appointments (seeded on first load) |
+| `nuatis-pos:nail_bar:cartMeta` | Nail Bar deposit context |
+| `nuatis-pos:tattoo:cart` | Tattoo active cart |
+| `nuatis-pos:tattoo:transactions` | Tattoo transaction log (last 50) |
+| `nuatis-pos:tattoo:heldTickets` | Tattoo held tickets (cap 5) |
+| `nuatis-pos:tattoo:settings` | Tattoo settings overrides |
+| `nuatis-pos:tattoo:waitlist` | Tattoo walk-in queue (cap 10) |
+| `nuatis-pos:tattoo:appointments` | Tattoo appointments with deposit fields (seeded on first load) |
+| `nuatis-pos:tattoo:cartMeta` | Tattoo deposit context (primary use case for cartMeta) |
 
-**Total: 14 keys** (2 shared + 4 per vertical × 3 verticals).
+**Total: 30 keys** (2 shared + 7 per-vertical × 4 verticals).
 
-Settings keys are write-on-edit only — if a vertical's settings have never been changed, the key does not exist and `getVerticalSettings()` returns defaults from `lib/verticals.ts` at runtime.
+Settings and cartMeta keys are write-on-edit only — if a vertical's settings have never been changed, the key does not exist and `getVerticalSettings()` returns defaults from `lib/verticals.ts` at runtime. cartMeta is written when an appointment with a deposit is loaded to the register and cleared on checkout completion.
 
 Legacy unprefixed keys (`nuatis-pos:cart`, `nuatis-pos:transactions`, `nuatis-pos:heldTickets`) are migrated to `nuatis-pos:salon:*` on first boot and then deleted.
 
@@ -121,19 +194,22 @@ Legacy unprefixed keys (`nuatis-pos:cart`, `nuatis-pos:transactions`, `nuatis-po
 
 ## Hardcoded Mock Data
 
-- **3 verticals** — Salon, Spa, and Nail Bar (full launch trio), each with 12 services and service-specific modifiers (`lib/verticals.ts`)
+- **4 verticals** — Salon, Spa, Nail Bar, and Tattoo. The launch trio (salon, spa, nail_bar) are uniform-service verticals. Tattoo is the first wrinkle-vertical, carrying the deposit pattern to validate two-phase transaction flows beyond what a uniform service catalog requires.
 - **Salon business** — "Nuatis POS Demo Salon · 123 Main St, Austin, TX 78701 · (512) 555-0100" — **editable via Settings**
 - **Spa business** — "Nuatis POS Demo Spa · 456 Wellness Ave, Austin, TX 78704 · (512) 555-0200" — **editable via Settings**
 - **Nail Bar business** — "Nuatis POS Demo Nail Bar · 789 Polish Lane, Austin, TX 78702 · (512) 555-0300" — **editable via Settings**
+- **Tattoo business** — "Nuatis POS Demo Tattoo · 321 Ink Blvd, Austin, TX 78703 · (512) 555-0400" — **editable via Settings**
 - **Salon services** (`lib/services.ts`) — Women's Cut, Men's Cut, Beard Trim, Kids Cut, Highlights Full, Color Root, Gloss, Olaplex Treatment, Deep Conditioning, Wax, Blowout, Polish Change
 - **Spa services** (`lib/verticals.ts`) — Swedish Massage, Deep Tissue Massage, Hot Stone Massage, Prenatal Massage, Classic Facial, Anti-Aging Facial, Hydrating Facial, Body Scrub, Detox Body Wrap, Aromatherapy Wrap, Foot Reflexology, Sauna Session
 - **Nail Bar services** (`lib/verticals.ts`) — Basic Manicure, Gel Manicure, French Manicure, Polish Change, Basic Pedicure, Gel Pedicure, Spa Pedicure, Acrylic Full Set, Acrylic Fill, Dip Powder, Nail Art (Simple), Paraffin Wax Treatment
+- **Tattoo services** (`lib/tattoo-services.ts`) — 12 services including flash tattoo, small/medium/large custom, fine line, lettering, color fill, blackwork, cover-up, black & grey shading, touch-up, consultation
 - **3 staff shared across verticals** (`lib/staff.ts`) — Maria / Stylist, James / Colorist, Lisa / Stylist — **staff list is now editable per-vertical via Settings** (add / deactivate / delete)
 - **6 customers shared across verticals** (`lib/customers.ts`) — Sarah Chen, Marcus Rodriguez, Priya Patel, David Kim, Emma Thompson, Jordan Williams
-- **Service-specific modifiers** — Salon: Women's Cut, Men's Cut, Highlights Full, Color Root, Gloss. Spa: Swedish Massage, Deep Tissue, Hot Stone, Classic Facial, Anti-Aging Facial. Nail Bar: Basic Mani, Gel Mani, Basic Pedi, Gel Pedi, Acrylic Full Set, Dip Powder
+- **6 appointments per vertical** (`lib/appointments.ts`) — seeded on first load for each vertical; tattoo appointments include deposit fields (`depositRequired`, `depositAmountCents`, `depositStatus`) on 4 of 6 entries
+- **Service-specific modifiers** — Salon: Women's Cut, Men's Cut, Highlights Full, Color Root, Gloss. Spa: Swedish Massage, Deep Tissue, Hot Stone, Classic Facial, Anti-Aging Facial. Nail Bar: Basic Mani, Gel Mani, Basic Pedi, Gel Pedi, Acrylic Full Set, Dip Powder. Tattoo: Custom/Large work modifiers for size/complexity
 - **Default tax rate** — 8.25% flat (configurable per-vertical via Settings; TaxJar not integrated)
 - **Default tip presets** — 15%, 18%, 20%, 25% (configurable per-vertical via Settings)
-- **Mock card** — "Card • Visa •••• 4242" on every receipt
+- **Mock card** — "Card · Visa •••• 4242" on every card or split-card payment
 - **Manager PIN** — ANY 4 digits accepted (mock validation — no real PIN check)
 
 ---
@@ -168,6 +244,12 @@ Open the Replit-provided URL. Replit Auth gates the app — log in with any Repl
 | Batch 13 | Nail Bar vertical (launch trio complete; 2-file change) |
 | Batch 14 | Owner Settings overlay (business + tax + tips + staff, per-vertical) |
 | Batch 15 | Final wrap (README + replit.md + tag v0.0.3-prototype) |
+| Batch 16 | Walk-in queue (FIFO cap-10, per-vertical, promote-to-ticket) |
+| Batch 17 | Cash payment with change calculator (right-to-left keypad, quick-tender row, cash drawer toast) |
+| Batch 18 | Appointment-aware register (Upcoming/History tabs, status state machine, tap-to-hydrate) |
+| Batch 19 | Tattoo vertical (4th vertical) + deposit pattern (two-phase transactions, totalPaid revenue truth) |
+| Batch 20 | Split tender card + cash (SplitTenderModal state machine, payments[] on Transaction, split-aware payment mix) |
+| Batch 21 | Docs wrap (README + replit.md v4 + tag v0.0.5-prototype) |
 
 ---
 
